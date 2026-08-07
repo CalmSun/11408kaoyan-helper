@@ -1,6 +1,6 @@
 {
   "name": "kaoyan-helper",
-  "version": "1.0.0",
+  "version": "2.1.0",
   "description": "考研助手桌面应用 - 你的专属备考伙伴",
   "main": "dist/main/main.js",
   "author": "Kaoyan Helper",
@@ -66,6 +66,12 @@
       "shortcutName": "考研助手"
     }
   },
+"publish": {
+      "provider": "github",
+      "owner": "CalmSun",
+      "repo": "11408kaoyan-helper",
+      "releaseType": "release"
+    },
   "allowScripts": {
     "electron@28.3.3": true,
     "esbuild@0.21.5": true,
