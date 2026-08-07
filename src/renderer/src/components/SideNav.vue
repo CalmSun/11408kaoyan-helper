@@ -1,0 +1,254 @@
+<template>
+  <div class="side-nav">
+    <div class="nav-header">
+      <div class="logo">
+        <el-icon :size="28" color="#667eea"><Reading /></el-icon>
+        <span class="logo-text">11408考研助手</span>
+      </div>
+      <div class="exam-countdown-mini">
+        <span class="countdown-number">{{ store.daysUntilExam }}</span>
+        <span class="countdown-label">天</span>
+      </div>
+    </div>
+    
+    <div class="nav-menu">
+      <div class="nav-group">
+        <div class="nav-group-title">概览</div>
+        <div
+          v-for="item in overviewItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{ active: isActive(item.path) }"
+          @click="navigateTo(item.path)"
+        >
+          <el-icon :size="20">
+            <component :is="item.icon" />
+          </el-icon>
+          <span class="nav-text">{{ item.title }}</span>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-title">11408 专业课</div>
+        <div
+          v-for="item in majorItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{ active: isActive(item.path) }"
+          @click="navigateTo(item.path)"
+        >
+          <el-icon :size="20">
+            <component :is="item.icon" />
+          </el-icon>
+          <span class="nav-text">{{ item.title }}</span>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-title">学习工具</div>
+        <div
+          v-for="item in toolItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{ active: isActive(item.path) }"
+          @click="navigateTo(item.path)"
+        >
+          <el-icon :size="20">
+            <component :is="item.icon" />
+          </el-icon>
+          <span class="nav-text">{{ item.title }}</span>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-title">公共课</div>
+        <div
+          v-for="item in publicItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{ active: isActive(item.path) }"
+          @click="navigateTo(item.path)"
+        >
+          <el-icon :size="20">
+            <component :is="item.icon" />
+          </el-icon>
+          <span class="nav-text">{{ item.title }}</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="nav-footer">
+      <div class="study-tip">
+        <el-icon :size="16" color="#e6a23c"><Warning /></el-icon>
+        <span>一战成硕！</span>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { useRoute, useRouter } from 'vue-router'
+import { useMainStore } from '@/stores'
+import {
+  HomeFilled,
+  AlarmClock,
+  Timer,
+  List,
+  Collection,
+  DataLine,
+  DataAnalysis,
+  Reading,
+  Setting,
+  Warning,
+  Guide,
+  Cpu,
+  Operation
+} from '@element-plus/icons-vue'
+
+const route = useRoute()
+const router = useRouter()
+const store = useMainStore()
+
+const overviewItems = [
+  { path: '/dashboard', title: '首页仪表盘', icon: HomeFilled },
+  { path: '/countdown', title: '考研倒计时', icon: AlarmClock },
+  { path: '/statistics', title: '数据统计', icon: DataLine }
+]
+
+const majorItems = [
+  { path: '/outline', title: '知识大纲', icon: Guide },
+  { path: '/algorithms', title: '算法模板库', icon: Cpu },
+  { path: '/formulas', title: '公式速查', icon: Operation },
+  { path: '/examscores', title: '真题成绩', icon: DataAnalysis }
+]
+
+const toolItems = [
+  { path: '/pomodoro', title: '番茄钟', icon: Timer },
+  { path: '/plan', title: '每日计划', icon: List },
+  { path: '/flashcards', title: '背诵卡片', icon: Collection }
+]
+
+const publicItems = [
+  { path: '/dictionary', title: '单词词典', icon: Reading },
+  { path: '/settings', title: '设置', icon: Setting }
+]
+
+function isActive(path: string) {
+  return route.path === path
+}
+
+function navigateTo(path: string) {
+  router.push(path)
+}
+</script>
+
+<style scoped>
+.side-nav {
+  width: 220px;
+  height: 100%;
+  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.nav-header {
+  padding: 24px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.logo-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.exam-countdown-mini {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 12px 16px;
+  background: rgba(102, 126, 234, 0.15);
+  border-radius: 10px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.countdown-number {
+  font-size: 28px;
+  font-weight: 700;
+  color: #667eea;
+  font-family: 'DIN Alternate', sans-serif;
+}
+
+.countdown-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.nav-menu {
+  flex: 1;
+  padding: 12px 12px;
+  overflow-y: auto;
+}
+
+.nav-group {
+  margin-bottom: 16px;
+}
+
+.nav-group-title {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 8px 16px 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 2px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.nav-text {
+  flex: 1;
+}
+
+.nav-footer {
+  padding: 16px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.study-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+</style>
