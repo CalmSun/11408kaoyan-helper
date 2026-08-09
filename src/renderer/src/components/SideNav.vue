@@ -88,6 +88,22 @@
     </div>
     
     <div v-show="!isCollapsed" class="nav-footer">
+      <!-- 用户信息 -->
+      <div class="user-section">
+        <div class="user-info" @click="goToSettings" :title="userStore.displayName">
+          <el-icon :size="18" color="#667eea"><UserFilled /></el-icon>
+          <span class="user-name">{{ userStore.displayName }}</span>
+        </div>
+        <el-button
+          type="danger"
+          link
+          size="small"
+          @click.stop="handleLogout"
+          v-if="userStore.isLoggedIn"
+        >
+          退出
+        </el-button>
+      </div>
       <div class="study-tip">
         <el-icon :size="16" color="#e6a23c"><Warning /></el-icon>
         <span>一战成硕！</span>
@@ -100,6 +116,7 @@
 import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
+import { useUserStore } from '@/stores/user'
 import {
   HomeFilled,
   AlarmClock,
@@ -115,12 +132,14 @@ import {
   Cpu,
   Operation,
   DArrowLeft,
-  DArrowRight
+  DArrowRight,
+  UserFilled
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useMainStore()
+const userStore = useUserStore()
 
 const isCollapsed = ref(false)
 
@@ -163,6 +182,15 @@ function navigateTo(path: string) {
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
   emit('collapse-change', isCollapsed.value)
+}
+
+function goToSettings() {
+  router.push('/settings')
+}
+
+function handleLogout() {
+  userStore.logout()
+  router.push('/login')
 }
 </script>
 
@@ -321,6 +349,40 @@ function toggleCollapse() {
 .nav-footer {
   padding: 16px 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* 用户信息 */
+.user-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+  min-width: 0;
+}
+
+.user-info:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.user-name {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100px;
 }
 
 .study-tip {

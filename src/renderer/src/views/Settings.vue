@@ -112,6 +112,39 @@
       </div>
     </div>
 
+    <!-- 账号管理 -->
+    <div class="card setting-section">
+      <h3 class="section-title">
+        <el-icon><User /></el-icon>
+        账号管理
+      </h3>
+      <div class="account-info">
+        <div class="info-row">
+          <span class="label">当前用户：</span>
+          <span class="value">{{ userStore.displayName }}</span>
+        </div>
+        <div class="info-row" v-if="userStore.isLoggedIn">
+          <span class="label">账号类型：</span>
+          <el-tag type="success" size="small">已登录</el-tag>
+        </div>
+        <div class="info-row" v-else>
+          <span class="label">账号类型：</span>
+          <el-tag type="info" size="small">游客模式</el-tag>
+        </div>
+      </div>
+      <div class="account-actions">
+        <el-button type="primary" @click="handleLogout" v-if="userStore.isLoggedIn">
+          退出登录
+        </el-button>
+        <el-button type="warning" @click="goToLogin" v-else>
+          登录 / 注册
+        </el-button>
+        <el-button type="danger" @click="handleDeleteAccount" v-if="userStore.isLoggedIn">
+          删除账号
+        </el-button>
+      </div>
+    </div>
+
     <!-- 关于 -->
     <div class="card setting-section">
       <h3 class="section-title">
@@ -145,7 +178,9 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
+import { useUserStore } from '@/stores/user'
 import { exportAllData, importAllData, clearAllStorage } from '@/utils/storage'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -155,10 +190,13 @@ import {
   Download,
   Upload,
   Delete,
-  InfoFilled
+  InfoFilled,
+  User
 } from '@element-plus/icons-vue'
 
 const store = useMainStore()
+const userStore = useUserStore()
+const router = useRouter()
 
 // 从 package.json 读取版本号（通过 Vite define 注入）
 const appVersion = __APP_VERSION__
@@ -317,6 +355,35 @@ function clearAllData() {
   }).catch(() => {})
 }
 
+function handleLogout() {
+  userStore.logout()
+  ElMessage.success('已退出登录')
+  router.push('/login')
+}
+
+function goToLogin() {
+  router.push('/login')
+}
+
+function handleDeleteAccount() {
+  ElMessageBox.confirm(
+    `确定要删除账号「${userStore.displayName}」吗？该操作将删除账号下的所有数据，且不可恢复！`,
+    '删除账号',
+    {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'error'
+    }
+  ).then(() => {
+    const username = userStore.currentUsername
+    userStore.deleteAccount(username)
+    ElMessage.success('账号已删除，页面即将刷新')
+    setTimeout(() => {
+      window.location.reload()
+    }, 1000)
+  }).catch(() => {})
+}
+
 onMounted(() => {
   // 番茄钟设置已通过 store 初始化，无需额外加载
 })
@@ -415,6 +482,40 @@ onMounted(() => {
   font-size: 13px;
   color: #909399;
   margin: 0;
+}
+
+/* 账号管理 */
+.account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 10px;
+}
+
+.info-row .label {
+  font-size: 14px;
+  color: #909399;
+  min-width: 80px;
+}
+
+.info-row .value {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 600;
+}
+
+.account-actions {
+  display: flex;
+  gap: 12px;
 }
 
 /* 关于 */

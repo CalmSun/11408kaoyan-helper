@@ -1,6 +1,13 @@
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
+import { getCurrentUsername } from '@/utils/storage'
 
 const routes: RouteRecordRaw[] = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: { title: '登录', requiresAuth: false }
+  },
   {
     path: '/',
     redirect: '/dashboard'
@@ -90,6 +97,21 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHashHistory(),
   routes
+})
+
+// 路由守卫：未登录时跳转到登录页
+router.beforeEach((to, _from, next) => {
+  // 登录页不需要认证
+  if (to.path === '/login' || to.meta.requiresAuth === false) {
+    next()
+    return
+  }
+  const username = getCurrentUsername()
+  if (!username) {
+    next({ path: '/login', query: { redirect: to.fullPath } })
+  } else {
+    next()
+  }
 })
 
 export default router

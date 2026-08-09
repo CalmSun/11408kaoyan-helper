@@ -138,7 +138,7 @@ import { mathOutline } from '@/data/math-outline'
 
 const store = useMainStore()
 
-const currentSubject = ref<SubjectType>('datastruct')
+const currentSubject = ref<SubjectType>('cs408')
 const expandedChapters = ref(new Set<number>([0]))
 
 const majorSubjects = computed(() => {
@@ -750,11 +750,52 @@ const networkOutline = [
   }
 ]
 
+// 408 计算机学科专业基础综合大纲（合并数据结构、组成原理、操作系统、计算机网络）
+const cs408Outline = [
+  {
+    title: '第一部分 数据结构（约45分）',
+    weight: '45',
+    sections: dataStructOutline.flatMap(chapter => 
+      chapter.sections.map(section => ({
+        title: `${chapter.title} - ${section.title}`,
+        points: section.points
+      }))
+    )
+  },
+  {
+    title: '第二部分 计算机组成原理（约45分）',
+    weight: '45',
+    sections: compositionOutline.flatMap(chapter =>
+      chapter.sections.map(section => ({
+        title: `${chapter.title} - ${section.title}`,
+        points: section.points
+      }))
+    )
+  },
+  {
+    title: '第三部分 操作系统（约35分）',
+    weight: '35',
+    sections: osOutline.flatMap(chapter =>
+      chapter.sections.map(section => ({
+        title: `${chapter.title} - ${section.title}`,
+        points: section.points
+      }))
+    )
+  },
+  {
+    title: '第四部分 计算机网络（约25分）',
+    weight: '25',
+    sections: networkOutline.flatMap(chapter =>
+      chapter.sections.map(section => ({
+        title: `${chapter.title} - ${section.title}`,
+        points: section.points
+      }))
+    )
+  }
+]
+
 const outlineMap: Record<string, any[]> = {
-  datastruct: dataStructOutline,
-  composition: compositionOutline,
-  os: osOutline,
-  network: networkOutline,
+  cs408: cs408Outline,
   politics: politicsOutline,
   math: mathOutline
 }

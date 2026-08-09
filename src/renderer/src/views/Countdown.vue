@@ -132,31 +132,10 @@
         </div>
         <div class="tip-item">
           <div class="tip-header">
-            <span class="tip-dot" :style="{ background: store.SUBJECT_CONFIG.datastruct.color }"></span>
-            <span class="tip-subject">数据结构</span>
+            <span class="tip-dot" :style="{ background: store.SUBJECT_CONFIG.cs408.color }"></span>
+            <span class="tip-subject">408 计算机专业基础</span>
           </div>
-          <p class="tip-content">{{ getSubjectTip('datastruct') }}</p>
-        </div>
-        <div class="tip-item">
-          <div class="tip-header">
-            <span class="tip-dot" :style="{ background: store.SUBJECT_CONFIG.composition.color }"></span>
-            <span class="tip-subject">组成原理</span>
-          </div>
-          <p class="tip-content">{{ getSubjectTip('composition') }}</p>
-        </div>
-        <div class="tip-item">
-          <div class="tip-header">
-            <span class="tip-dot" :style="{ background: store.SUBJECT_CONFIG.os.color }"></span>
-            <span class="tip-subject">操作系统</span>
-          </div>
-          <p class="tip-content">{{ getSubjectTip('os') }}</p>
-        </div>
-        <div class="tip-item">
-          <div class="tip-header">
-            <span class="tip-dot" :style="{ background: store.SUBJECT_CONFIG.network.color }"></span>
-            <span class="tip-subject">计算机网络</span>
-          </div>
-          <p class="tip-content">{{ getSubjectTip('network') }}</p>
+          <p class="tip-content">{{ getSubjectTip('cs408') }}</p>
         </div>
       </div>
     </div>
@@ -284,29 +263,11 @@ function getSubjectTip(subject: SubjectType): string {
       late: '真题+模拟卷，严格限时做，错题一定要搞懂。',
       final: '回顾错题和公式，保持计算手感，不要钻偏题怪题。'
     },
-    datastruct: {
-      early: '理解基本数据结构（线性表、栈队列、树、图），代码要动手写。',
-      mid: '重点攻克算法题，排序查找、图的算法要熟练，多做真题。',
-      late: '真题反复做，总结常考题型，算法代码要能默写。',
-      final: '回顾核心算法和易错点，保持代码手感，重点知识再过一遍。'
-    },
-    composition: {
-      early: '建立整体框架，理解各章节基本概念，存储系统是重点。',
-      mid: '深入学习CPU、存储、指令系统，计算题要多练，注意细节。',
-      late: '真题+大题专项训练，流水线、Cache、虚存是高频考点。',
-      final: '查漏补缺，公式和概念再过一遍，保持做题手感。'
-    },
-    os: {
-      early: '理解五大管理功能，进程同步、内存管理是重中之重。',
-      mid: '重点攻克PV操作、页面置换、磁盘调度等经典算法。',
-      late: '真题研究透，大题要动手写，注意答题规范和步骤。',
-      final: '回顾核心概念和算法，错题再看一遍，保持状态。'
-    },
-    network: {
-      early: '理解五层体系结构，每层的功能和协议要搞清楚。',
-      mid: '重点掌握数据链路层、网络层、传输层，TCP/IP是核心。',
-      late: '真题+计算题专项，CRC、拥塞控制、滑动窗口要熟练。',
-      final: '各层协议再过一遍，重点公式和概念记牢，调整心态。'
+    cs408: {
+      early: '数据结构重在动手写代码；组成原理理解存储系统、CPU流水线；操作系统掌握进程管理、内存管理；计算机网络吃透五层模型和TCP/IP协议。',
+      mid: '算法题反复刷，排序查找图算法要熟练；组成原理重点攻Cache和虚存；操作系统攻克PV操作和页面置换；计网深入数据链路层和网络层。',
+      late: '408真题反复做，总结常考题型；大题要动手写，注意答题规范；算法代码要能默写核心实现。',
+      final: '回顾核心概念和易错点；公式再过一遍；保持代码手感和做题状态，调整心态。'
     }
   }
   

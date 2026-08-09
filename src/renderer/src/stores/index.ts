@@ -8,20 +8,14 @@ export type SubjectType =
   | 'politics'      // 政治
   | 'english'       // 英语一
   | 'math'          // 数学一
-  | 'datastruct'    // 数据结构
-  | 'composition'   // 计算机组成原理
-  | 'os'            // 操作系统
-  | 'network'       // 计算机网络
+  | 'cs408'         // 计算机学科专业基础（408）
 
 // 科目配置
 export const SUBJECT_CONFIG: Record<SubjectType, { name: string; shortName: string; color: string; tagType: string }> = {
   politics: { name: '政治', shortName: '政治', color: '#f56c6c', tagType: 'danger' },
   english: { name: '英语一', shortName: '英语', color: '#67c23a', tagType: 'success' },
   math: { name: '数学一', shortName: '数学', color: '#e6a23c', tagType: 'warning' },
-  datastruct: { name: '数据结构', shortName: '数据结构', color: '#667eea', tagType: 'primary' },
-  composition: { name: '组成原理', shortName: '组成', color: '#909399', tagType: 'info' },
-  os: { name: '操作系统', shortName: '操作系统', color: '#f093fb', tagType: '' },
-  network: { name: '计算机网络', shortName: '计网', color: '#4facfe', tagType: '' }
+  cs408: { name: '408 计算机专业基础', shortName: '408', color: '#667eea', tagType: 'primary' }
 }
 
 export interface PlanItem {
@@ -96,15 +90,12 @@ export interface FormulaItem {
   example?: string
 }
 
-// 各科真题满分（408 各科按卷面占比：数据结构45/组成原理45/操作系统35/计网25，合计150）
+// 各科真题满分（408 满分 150 分）
 export const SUBJECT_FULL_SCORE: Record<SubjectType, number> = {
   politics: 100,
   english: 100,
   math: 150,
-  datastruct: 45,
-  composition: 45,
-  os: 35,
-  network: 25
+  cs408: 150
 }
 
 // 历年真题分数记录
@@ -117,6 +108,86 @@ export interface ExamScoreRecord {
   remark?: string     // 备注
   createdAt: string
 }
+
+// 数据迁移：将旧的 408 子科目数据合并为 cs408
+function migrateOldData() {
+  // 迁移 subjectProgress
+  const oldProgress = getStorage('subjectProgress', {} as Record<string, number>)
+  if (oldProgress && typeof oldProgress === 'object') {
+    const hasOld408 = oldProgress.datastruct !== undefined || 
+                      oldProgress.composition !== undefined || 
+                      oldProgress.os !== undefined || 
+                      oldProgress.network !== undefined
+    
+    if (hasOld408 && oldProgress.cs408 === undefined) {
+      // 计算 408 子科目的平均进度
+      const subProgress = [
+        oldProgress.datastruct || 0,
+        oldProgress.composition || 0,
+        oldProgress.os || 0,
+        oldProgress.network || 0
+      ]
+      const avg = subProgress.reduce((a, b) => a + b, 0) / subProgress.length
+      oldProgress.cs408 = Math.round(avg)
+      
+      // 删除旧的子科目字段
+      delete oldProgress.datastruct
+      delete oldProgress.composition
+      delete oldProgress.os
+      delete oldProgress.network
+      
+      setStorage('subjectProgress', oldProgress)
+    }
+  }
+  
+  // 迁移 examScores：将 408 子科目分数合并为总分
+  const oldScores = getStorage('examScores', [] as ExamScoreRecord[])
+  if (oldScores && Array.isArray(oldScores)) {
+    const hasOld408Scores = oldScores.some(s => 
+      ['datastruct', 'composition', 'os', 'network'].includes(s.subject)
+    )
+    
+    if (hasOld408Scores) {
+      // 按年份分组 408 子科目分数
+      const yearGroups: Record<number, ExamScoreRecord[]> = {}
+      const migratedScores: ExamScoreRecord[] = []
+      
+      oldScores.forEach(score => {
+        if (['datastruct', 'composition', 'os', 'network'].includes(score.subject)) {
+          if (!yearGroups[score.year]) {
+            yearGroups[score.year] = []
+          }
+          yearGroups[score.year].push(score)
+        } else {
+          migratedScores.push(score)
+        }
+      })
+      
+      // 将每年的 408 子科目分数合并为总分
+      Object.entries(yearGroups).forEach(([year, scores]) => {
+        const totalScore = scores.reduce((sum, s) => sum + s.score, 0)
+        const maxScore = scores.reduce((sum, s) => sum + s.fullScore, 0)
+        
+        if (totalScore > 0 && maxScore > 0) {
+          migratedScores.push({
+            id: `migrated_408_${year}`,
+            subject: 'cs408',
+            year: parseInt(year),
+            score: totalScore,
+            fullScore: 150, // 408 满分
+            remark: `合并自 ${scores.length} 个子科目`,
+            createdAt: new Date().toISOString()
+          })
+        }
+      })
+      
+      setStorage('examScores', migratedScores)
+    }
+  }
+}
+
+// 应用启动时执行数据迁移
+migrateOldData()
 
 export const useMainStore = defineStore('main', () => {
   // 考研日期设置
@@ -143,10 +214,7 @@ export const useMainStore = defineStore('main', () => {
     politics: 0,
     english: 0,
     math: 0,
-    datastruct: 0,
-    composition: 0,
-    os: 0,
-    network: 0
+    cs408: 0
   }))
 
   // 番茄钟设置
@@ -200,13 +268,10 @@ export const useMainStore = defineStore('main', () => {
       politics: 0,
       english: 0,
       math: 0,
-      datastruct: 0,
-      composition: 0,
-      os: 0,
-      network: 0
+      cs408: 0
     }
     pomodoroRecords.value.forEach(r => {
-      if (r.subject) {
+      if (r.subject && r.subject in stats) {
         stats[r.subject] += r.duration
       }
     })

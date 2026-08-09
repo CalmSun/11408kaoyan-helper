@@ -41,31 +41,6 @@
           <span class="no-data">暂无记录</span>
         </div>
       </div>
-
-      <!-- 408 汇总卡片 -->
-      <div class="summary-card" style="border-top-color: #764ba2;">
-        <div class="summary-header">
-          <span class="summary-name" style="color: #764ba2;">408 总分（自动汇总）</span>
-          <el-tag size="small" color="#764ba2" style="color:#fff;border:none;">满分 150</el-tag>
-        </div>
-        <div class="summary-stats" v-if="professionalStats">
-          <div class="stat-cell">
-            <span class="stat-num" style="color: #764ba2;">{{ professionalStats.avg }}</span>
-            <span class="stat-txt">平均分</span>
-          </div>
-          <div class="stat-cell">
-            <span class="stat-num">{{ professionalStats.max }}</span>
-            <span class="stat-txt">最高分</span>
-          </div>
-          <div class="stat-cell">
-            <span class="stat-num">{{ professionalStats.count }}</span>
-            <span class="stat-txt">完整年份</span>
-          </div>
-        </div>
-        <div class="summary-stats" v-else>
-          <span class="no-data">录满四个子科目后自动汇总</span>
-        </div>
-      </div>
     </div>
 
     <!-- 总分趋势图 -->
@@ -206,9 +181,6 @@ const subjectList = computed(() =>
   }))
 )
 
-// 408 子科目
-const professionalKeys: SubjectType[] = ['datastruct', 'composition', 'os', 'network']
-
 // 年份 2009-2026（倒序，最近的年份在前）
 const yearOptions = computed(() => {
   const years = []
@@ -257,32 +229,7 @@ function getSubjectStats(subject: SubjectType) {
   }
 }
 
-// 408 总分统计：某年四个子科目都有记录才算完整一年
-const professionalStats = computed(() => {
-  const totals: number[] = []
-  yearOptions.value.forEach(year => {
-    const total = getProfessionalTotal(year)
-    if (total !== null) totals.push(total)
-  })
-  if (totals.length === 0) return null
-  const sum = totals.reduce((a, b) => a + b, 0)
-  return {
-    avg: (sum / totals.length).toFixed(1),
-    max: Math.max(...totals),
-    count: totals.length
-  }
-})
 
-// 某年 408 总分（四个子科目都有记录才返回，否则 null）
-function getProfessionalTotal(year: number): number | null {
-  let total = 0
-  for (const key of professionalKeys) {
-    const record = store.examScores.find(r => r.subject === key && r.year === year)
-    if (!record) return null
-    total += record.score
-  }
-  return total
-}
 
 function getSubjectColor(subject: SubjectType) {
   return store.SUBJECT_CONFIG[subject]?.color || '#667eea'
@@ -408,13 +355,10 @@ function initTrendChart() {
     })
   }))
 
-  // 408 总分折线（每年四科齐全才显示）
-  const totalData = years.map(year => getProfessionalTotal(year))
-
   const option = {
     tooltip: { trigger: 'axis' },
     legend: {
-      data: [...subjectList.value.map(s => s.name), '408总分'],
+      data: subjectList.value.map(s => s.name),
       bottom: 0,
       textStyle: { color: '#606266', fontSize: 11 }
     },
@@ -433,20 +377,8 @@ function initTrendChart() {
       splitLine: { lineStyle: { color: '#f5f7fa' } },
       axisLabel: { color: '#909399' }
     },
-    series: [
-      ...seriesData.map(s => ({ ...s, lineStyle: { width: 2 } })),
-      {
-        name: '408总分',
-        type: 'line' as const,
-        data: totalData,
-        lineStyle: { width: 3, type: 'dashed' as const },
-        symbol: 'diamond',
-        symbolSize: 10,
-        connectNulls: true,
-        itemStyle: { color: '#764ba2' }
-      }
-    ],
-    color: [...subjectList.value.map(s => s.color), '#764ba2']
+    series: seriesData.map(s => ({ ...s, lineStyle: { width: 2 } })),
+    color: subjectList.value.map(s => s.color)
   }
 
   trendChart.setOption(option, true)

@@ -117,7 +117,7 @@ const builtinFormulas: Formula[] = [
   {
     id: 'ds-1',
     name: '时间复杂度计算',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '基础概念',
     content: `O(1) < O(logn) < O(n) < O(nlogn) < O(n²) < O(n³) < O(2ⁿ) < O(n!) < O(nⁿ)`,
     description: '常见时间复杂度从小到大排列。算法分析中，只关心最高阶项，忽略常数系数和低阶项。'
@@ -125,7 +125,7 @@ const builtinFormulas: Formula[] = [
   {
     id: 'ds-2',
     name: '顺序查找 ASL',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '查找',
     content: `ASL = Σ (Pi × Ci)
 
@@ -141,7 +141,7 @@ ASL成功 = (10+1)/2 = 5.5`
   {
     id: 'ds-3',
     name: '折半查找 ASL',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '查找',
     content: `判定树高度：h = ⌈log₂(n+1)⌉
 
@@ -159,7 +159,7 @@ ASL = (1×1 + 2×2 + 3×4 + 4×4) / 11 = 33/11 = 3`
   {
     id: 'ds-4',
     name: 'B树性质',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '查找',
     content: `m阶B树性质：
 1. 每个节点最多有m棵子树
@@ -172,7 +172,7 @@ ASL = (1×1 + 2×2 + 3×4 + 4×4) / 11 = 33/11 = 3`
   {
     id: 'ds-5',
     name: '散列表 ASL（线性探测）',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '查找',
     content: `装填因子 α = 表中记录数 / 散列表长度
 
@@ -184,7 +184,7 @@ ASL失败 ≈ (1 + 1/(1-α)²) / 2`,
   {
     id: 'ds-6',
     name: '排序算法复杂度对比',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '排序',
     content: `算法        时间(平均)  时间(最坏)  空间    稳定
 ─────────────────────────────────────────
@@ -201,7 +201,7 @@ ASL失败 ≈ (1 + 1/(1-α)²) / 2`,
   {
     id: 'ds-7',
     name: '哈夫曼树 WPL',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '树',
     content: `带权路径长度 WPL = Σ (wi × li)
 
@@ -222,7 +222,7 @@ WPL = 2×3 + 3×3 + 5×2 + 7×1 = 6+9+10+7 = 32`
   {
     id: 'ds-8',
     name: '图的基本概念',
-    subject: 'datastruct',
+    subject: 'cs408',
     category: '图',
     content: `无向完全图：n(n-1)/2 条边
 有向完全图：n(n-1) 条边
@@ -242,7 +242,7 @@ WPL = 2×3 + 3×3 + 5×2 + 7×1 = 6+9+10+7 = 32`
   {
     id: 'co-1',
     name: '性能指标公式',
-    subject: 'composition',
+    subject: 'cs408',
     category: '性能指标',
     content: `主频 f = 1 / 时钟周期 T
 
@@ -266,7 +266,7 @@ MIPS = 2000MHz / (2 × 10⁶) = 1000 MIPS
   {
     id: 'co-2',
     name: 'Cache 命中率与平均访问时间',
-    subject: 'composition',
+    subject: 'cs408',
     category: '存储系统',
     content: `命中率 H = Cache命中次数 / 总访问次数
 
@@ -286,7 +286,7 @@ e = 2 / 2.9 ≈ 69%`
   {
     id: 'co-3',
     name: 'Cache 地址映射',
-    subject: 'composition',
+    subject: 'cs408',
     category: '存储系统',
     content: `地址结构：
   直接映射：  标记 + Cache行号 + 块内地址
@@ -303,7 +303,7 @@ Cache行数 = 2^c → 行号 c位
   {
     id: 'co-4',
     name: '流水线性能',
-    subject: 'composition',
+    subject: 'cs408',
     category: 'CPU',
     content: `流水线周期 Δt = max(各段时间)
 
@@ -332,7 +332,7 @@ TP = 100 / 104ns ≈ 962 MIPS`
   {
     id: 'co-5',
     name: '浮点数表示 IEEE754',
-    subject: 'composition',
+    subject: 'cs408',
     category: '数据表示',
     content: `单精度 float（32位）：
   符号位 1位 + 阶码 8位 + 尾数 23位
@@ -350,7 +350,7 @@ TP = 100 / 104ns ≈ 962 MIPS`
   {
     id: 'co-6',
     name: '存储器扩展',
-    subject: 'composition',
+    subject: 'cs408',
     category: '存储系统',
     content: `位扩展（增加字长）：
   芯片数 = 位数 / 每芯片位数
@@ -377,7 +377,7 @@ TP = 100 / 104ns ≈ 962 MIPS`
   {
     id: 'os-1',
     name: '银行家算法',
-    subject: 'os',
+    subject: 'cs408',
     category: '死锁',
     content: `数据结构：
   Available[m]    可用资源数
@@ -401,7 +401,7 @@ TP = 100 / 104ns ≈ 962 MIPS`
   {
     id: 'os-2',
     name: '页面置换算法',
-    subject: 'os',
+    subject: 'cs408',
     category: '内存管理',
     content: `OPT最佳置换：
   置换以后最久不使用（或永不使用）的页
@@ -423,7 +423,7 @@ Clock时钟算法：
   {
     id: 'os-3',
     name: '磁盘调度算法',
-    subject: 'os',
+    subject: 'cs408',
     category: 'I/O管理',
     content: `FCFS先来先服务：
   按请求顺序处理，公平但效率低
@@ -445,7 +445,7 @@ CSCAN循环扫描：
   {
     id: 'os-4',
     name: 'PV操作 信号量',
-    subject: 'os',
+    subject: 'cs408',
     category: '进程同步',
     content: `P操作（wait）：
   P(S): S = S - 1
@@ -467,7 +467,7 @@ V操作（signal）：
   {
     id: 'os-5',
     name: '死锁四个必要条件',
-    subject: 'os',
+    subject: 'cs408',
     category: '死锁',
     content: `1. 互斥条件
    资源独占使用，不能同时被多个进程占用
@@ -490,7 +490,7 @@ V操作（signal）：
   {
     id: 'os-6',
     name: '调度算法比较',
-    subject: 'os',
+    subject: 'cs408',
     category: '处理机调度',
     content: `FCFS先来先服务：
   非抢占，利于长作业，不利于短作业
@@ -519,7 +519,7 @@ SJF短作业优先：
   {
     id: 'cn-1',
     name: '奈奎斯特定理',
-    subject: 'network',
+    subject: 'cs408',
     category: '物理层',
     content: `无噪声信道的极限数据传输率：
 
@@ -542,7 +542,7 @@ R_max = 2 × 3000 × log₂16
   {
     id: 'cn-2',
     name: '香农定理',
-    subject: 'network',
+    subject: 'cs408',
     category: '物理层',
     content: `有噪声信道的极限数据传输率：
 
@@ -566,7 +566,7 @@ C = 3000 × log₂(1+1000)
   {
     id: 'cn-3',
     name: 'CRC 循环冗余校验',
-    subject: 'network',
+    subject: 'cs408',
     category: '数据链路层',
     content: `计算步骤：
 1. 设生成多项式 G(x) 阶数为 r
@@ -592,7 +592,7 @@ CRC码 = 000
   {
     id: 'cn-4',
     name: 'TCP 拥塞控制',
-    subject: 'network',
+    subject: 'cs408',
     category: '传输层',
     content: `四个阶段：
 
@@ -620,7 +620,7 @@ CRC码 = 000
   {
     id: 'cn-5',
     name: '滑动窗口 流量控制',
-    subject: 'network',
+    subject: 'cs408',
     category: '传输层',
     content: `可靠传输机制：
   停止-等待：发送1帧等确认，窗口=1
@@ -643,7 +643,7 @@ n为序号位数`,
   {
     id: 'cn-6',
     name: '时延计算',
-    subject: 'network',
+    subject: 'cs408',
     category: '性能指标',
     content: `总时延 = 发送时延 + 传播时延 + 处理时延 + 排队时延
 
@@ -666,7 +666,7 @@ n为序号位数`,
   {
     id: 'cn-7',
     name: 'OSI七层模型',
-    subject: 'network',
+    subject: 'cs408',
     category: '体系结构',
     content: `应用层     第7层  用户接口
 表示层     第6层  数据格式、加密压缩
@@ -691,7 +691,7 @@ n为序号位数`,
   {
     id: 'cn-8',
     name: 'TCP三次握手/四次挥手',
-    subject: 'network',
+    subject: 'cs408',
     category: '传输层',
     content: `三次握手（建立连接）：
   1. 客户端 → 服务端：SYN, seq=x

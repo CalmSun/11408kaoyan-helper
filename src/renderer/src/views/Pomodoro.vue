@@ -186,7 +186,7 @@ const store = useMainStore()
 const currentMode = ref<PomodoroMode>('work')
 const isRunning = ref(false)
 const hasStarted = ref(false)
-const selectedSubject = ref<SubjectType>('datastruct')
+const selectedSubject = ref<SubjectType>('cs408')
 const completedPomodoros = ref(0)
 
 const workDuration = computed(() => store.pomodoroSettings.workDuration * 60)
