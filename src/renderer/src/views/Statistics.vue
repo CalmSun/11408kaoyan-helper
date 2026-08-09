@@ -6,7 +6,7 @@
     <!-- 总览数据 -->
     <div class="overview-grid">
       <div class="overview-card">
-        <div class="overview-icon">
+        <div class="overview-icon icon-purple">
           <el-icon :size="28"><Timer /></el-icon>
         </div>
         <div class="overview-info">
@@ -15,7 +15,7 @@
         </div>
       </div>
       <div class="overview-card">
-        <div class="overview-icon">
+        <div class="overview-icon icon-green">
           <el-icon :size="28"><Promotion /></el-icon>
         </div>
         <div class="overview-info">
@@ -24,7 +24,7 @@
         </div>
       </div>
       <div class="overview-card">
-        <div class="overview-icon">
+        <div class="overview-icon icon-orange">
           <el-icon :size="28"><Collection /></el-icon>
         </div>
         <div class="overview-info">
@@ -105,7 +105,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useMainStore } from '@/stores'
 import * as echarts from 'echarts'
 import dayjs from 'dayjs'
@@ -220,23 +220,15 @@ const calendarDays = computed(() => {
   return days
 })
 
-function initStudyChart() {
-  if (!studyChartRef.value) return
-  
-  studyChart = echarts.init(studyChartRef.value)
-  
-  const option = {
+// --- 图表初始化与更新（使用 setOption 复用实例，避免内存泄漏）---
+
+function getStudyOption(): echarts.EChartsOption {
+  return {
     tooltip: {
       trigger: 'axis',
       formatter: '{b}<br/>学习时长: {c} 分钟'
     },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      top: '10%',
-      containLabel: true
-    },
+    grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
       type: 'category',
       data: last7Days.value.map(d => dayjs(d).format('MM-DD')),
@@ -264,11 +256,7 @@ function initStudyChart() {
           { offset: 1, color: '#764ba2' }
         ])
       },
-      itemStyle: {
-        color: '#667eea',
-        borderColor: '#fff',
-        borderWidth: 2
-      },
+      itemStyle: { color: '#667eea', borderColor: '#fff', borderWidth: 2 },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(102, 126, 234, 0.3)' },
@@ -277,20 +265,11 @@ function initStudyChart() {
       }
     }]
   }
-  
-  studyChart.setOption(option)
 }
 
-function initSubjectChart() {
-  if (!subjectChartRef.value) return
-  
-  subjectChart = echarts.init(subjectChartRef.value)
-  
-  const option = {
-    tooltip: {
-      trigger: 'item',
-      formatter: '{b}: {c} 小时 ({d}%)'
-    },
+function getSubjectOption(): echarts.EChartsOption {
+  return {
+    tooltip: { trigger: 'item', formatter: '{b}: {c} 小时 ({d}%)' },
     legend: {
       orient: 'vertical',
       right: '5%',
@@ -302,45 +281,20 @@ function initSubjectChart() {
       radius: ['45%', '70%'],
       center: ['35%', '50%'],
       avoidLabelOverlap: false,
-      itemStyle: {
-        borderRadius: 8,
-        borderColor: '#fff',
-        borderWidth: 2
-      },
+      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
       label: { show: false },
-      emphasis: {
-        label: {
-          show: true,
-          fontSize: 14,
-          fontWeight: 'bold'
-        }
-      },
+      emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       labelLine: { show: false },
       data: subjectStudyData.value,
       color: subjectColors.value
     }]
   }
-  
-  subjectChart.setOption(option)
 }
 
-function initPomodoroChart() {
-  if (!pomodoroChartRef.value) return
-  
-  pomodoroChart = echarts.init(pomodoroChartRef.value)
-  
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      formatter: '{b}<br/>番茄数: {c} 个'
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      top: '10%',
-      containLabel: true
-    },
+function getPomodoroOption(): echarts.EChartsOption {
+  return {
+    tooltip: { trigger: 'axis', formatter: '{b}<br/>番茄数: {c} 个' },
+    grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
       type: 'category',
       data: last7Days.value.map(d => dayjs(d).format('MM-DD')),
@@ -368,27 +322,12 @@ function initPomodoroChart() {
       }
     }]
   }
-  
-  pomodoroChart.setOption(option)
 }
 
-function initSubjectHoursChart() {
-  if (!subjectHoursChartRef.value) return
-
-  subjectHoursChart = echarts.init(subjectHoursChartRef.value)
-
-  const option = {
-    tooltip: {
-      trigger: 'axis',
-      formatter: '{b}<br/>学习时长: {c} 小时'
-    },
-    grid: {
-      left: '3%',
-      right: '4%',
-      bottom: '3%',
-      top: '10%',
-      containLabel: true
-    },
+function getSubjectHoursOption(): echarts.EChartsOption {
+  return {
+    tooltip: { trigger: 'axis', formatter: '{b}<br/>学习时长: {c} 小时' },
+    grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
       type: 'category',
       data: subjectHoursData.value.map(d => d.name),
@@ -416,8 +355,32 @@ function initSubjectHoursChart() {
       }
     }]
   }
+}
 
-  subjectHoursChart.setOption(option)
+/** 初始化或更新图表：已有实例则 setOption，否则 init */
+function updateChart(
+  refEl: HTMLElement | undefined,
+  instance: echarts.ECharts | null,
+  setInstance: (c: echarts.ECharts) => void,
+  option: echarts.EChartsOption
+) {
+  if (!refEl) return
+  if (!instance) {
+    const chart = echarts.init(refEl)
+    chart.setOption(option)
+    setInstance(chart)
+  } else {
+    instance.setOption(option, { notMerge: true })
+  }
+}
+
+function updateAllCharts() {
+  nextTick(() => {
+    updateChart(studyChartRef.value, studyChart, c => { studyChart = c }, getStudyOption())
+    updateChart(subjectChartRef.value, subjectChart, c => { subjectChart = c }, getSubjectOption())
+    updateChart(pomodoroChartRef.value, pomodoroChart, c => { pomodoroChart = c }, getPomodoroOption())
+    updateChart(subjectHoursChartRef.value, subjectHoursChart, c => { subjectHoursChart = c }, getSubjectHoursOption())
+  })
 }
 
 function resizeCharts() {
@@ -428,24 +391,25 @@ function resizeCharts() {
 }
 
 onMounted(() => {
-  nextTick(() => {
-    initStudyChart()
-    initSubjectChart()
-    initPomodoroChart()
-    initSubjectHoursChart()
-  })
-
+  updateAllCharts()
   window.addEventListener('resize', resizeCharts)
 })
 
-// 监听数据变化更新图表
+onUnmounted(() => {
+  window.removeEventListener('resize', resizeCharts)
+  studyChart?.dispose()
+  subjectChart?.dispose()
+  pomodoroChart?.dispose()
+  subjectHoursChart?.dispose()
+  studyChart = null
+  subjectChart = null
+  pomodoroChart = null
+  subjectHoursChart = null
+})
+
+// 监听数据变化，使用 setOption 更新而非重新 init
 watch(() => store.pomodoroRecords.length, () => {
-  nextTick(() => {
-    initStudyChart()
-    initSubjectChart()
-    initPomodoroChart()
-    initSubjectHoursChart()
-  })
+  updateAllCharts()
 })
 </script>
 
@@ -471,7 +435,7 @@ watch(() => store.pomodoroRecords.length, () => {
 /* 总览卡片 */
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 20px;
   margin-bottom: 24px;
 }
@@ -484,18 +448,35 @@ watch(() => store.pomodoroRecords.length, () => {
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.overview-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
 .overview-icon {
   width: 56px;
   height: 56px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   flex-shrink: 0;
+}
+
+.overview-icon.icon-purple {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.overview-icon.icon-green {
+  background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+}
+
+.overview-icon.icon-orange {
+  background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
 }
 
 .overview-info {
@@ -508,7 +489,7 @@ watch(() => store.pomodoroRecords.length, () => {
   font-size: 28px;
   font-weight: 700;
   color: #303133;
-  font-family: 'DIN Alternate', sans-serif;
+  font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
   line-height: 1;
 }
 

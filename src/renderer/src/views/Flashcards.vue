@@ -332,8 +332,13 @@ function deleteCard(id: string) {
 }
 
 function startReview() {
-  // 根据当前筛选条件开始背诵
-  reviewCards.value = [...filteredCards.value].sort(() => Math.random() - 0.5)
+  // Fisher-Yates 洗牌算法
+  const cards = [...filteredCards.value]
+  for (let i = cards.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[cards[i], cards[j]] = [cards[j], cards[i]]
+  }
+  reviewCards.value = cards
   currentReviewIndex.value = 0
   isFlipped.value = false
   showReviewDialog.value = true

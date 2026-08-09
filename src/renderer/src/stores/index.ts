@@ -31,6 +31,8 @@ export interface PlanItem {
   completed: boolean
   createdAt: string
   completedAt?: string
+  recurring?: boolean // 是否为循环待办
+  completedDates?: string[] // 已完成日期列表（仅用于循环计划，格式 YYYY-MM-DD）
 }
 
 export interface Flashcard {
@@ -152,7 +154,10 @@ export const useMainStore = defineStore('main', () => {
     workDuration: 25,
     breakDuration: 5,
     longBreakDuration: 15,
-    longBreakInterval: 4
+    longBreakInterval: 4,
+    enableNotification: true,  // 启用通知
+    enableSound: true,          // 启用声音
+    enableTitleFlash: true      // 启用页面标题闪烁
   }))
 
   // 计算倒计时天数
@@ -223,7 +228,6 @@ export const useMainStore = defineStore('main', () => {
       createdAt: new Date().toISOString()
     }
     examScores.value.unshift(newRecord)
-    saveExamScores()
   }
 
   // 更新真题分数记录
@@ -231,43 +235,56 @@ export const useMainStore = defineStore('main', () => {
     const index = examScores.value.findIndex(r => r.id === id)
     if (index !== -1) {
       examScores.value[index] = { ...examScores.value[index], ...updates }
-      saveExamScores()
     }
   }
 
   // 删除真题分数记录
   function deleteExamScore(id: string) {
     examScores.value = examScores.value.filter(r => r.id !== id)
-    saveExamScores()
   }
 
   // 添加计划
-  function addPlan(title: string, subject?: SubjectType) {
+  function addPlan(title: string, subject?: SubjectType, recurring: boolean = false) {
     const newPlan: PlanItem = {
       id: Date.now().toString(),
       title,
       subject,
       completed: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      recurring,
+      completedDates: []
     }
     plans.value.unshift(newPlan)
-    savePlans()
   }
 
   // 切换计划完成状态
   function togglePlan(id: string) {
     const plan = plans.value.find(p => p.id === id)
-    if (plan) {
+    if (!plan) return
+
+    const today = dayjs().format('YYYY-MM-DD')
+
+    if (plan.recurring) {
+      // 循环计划：在 completedDates 数组中添加/移除今天日期
+      if (!plan.completedDates) plan.completedDates = []
+      const idx = plan.completedDates.indexOf(today)
+      if (idx === -1) {
+        plan.completedDates.push(today)
+      } else {
+        plan.completedDates.splice(idx, 1)
+      }
+      // 同步 completed 字段为今天的完成状态（供 Dashboard 使用）
+      plan.completed = plan.completedDates.includes(today)
+    } else {
+      // 普通计划：直接切换 completed
       plan.completed = !plan.completed
       plan.completedAt = plan.completed ? new Date().toISOString() : undefined
-      savePlans()
     }
   }
 
   // 删除计划
   function deletePlan(id: string) {
     plans.value = plans.value.filter(p => p.id !== id)
-    savePlans()
   }
 
   // 添加番茄钟记录
@@ -281,7 +298,6 @@ export const useMainStore = defineStore('main', () => {
     }
     pomodoroRecords.value.push(record)
     updateDailyRecord()
-    savePomodoroRecords()
   }
 
   // 添加背诵卡片
@@ -294,7 +310,6 @@ export const useMainStore = defineStore('main', () => {
       correctCount: 0
     }
     flashcards.value.unshift(newCard)
-    saveFlashcards()
   }
 
   // 更新背诵卡片
@@ -302,20 +317,17 @@ export const useMainStore = defineStore('main', () => {
     const index = flashcards.value.findIndex(c => c.id === id)
     if (index !== -1) {
       flashcards.value[index] = { ...flashcards.value[index], ...updates }
-      saveFlashcards()
     }
   }
 
   // 删除背诵卡片
   function deleteFlashcard(id: string) {
     flashcards.value = flashcards.value.filter(c => c.id !== id)
-    saveFlashcards()
   }
 
   // 更新科目进度
   function setSubjectProgress(subject: SubjectType, progress: number) {
     subjectProgress.value[subject] = Math.max(0, Math.min(100, progress))
-    saveSubjectProgress()
   }
 
   // 更新每日学习记录
@@ -339,7 +351,6 @@ export const useMainStore = defineStore('main', () => {
         planTotal: 0
       })
     }
-    saveDailyRecords()
   }
 
   // 设置考试日期
@@ -353,7 +364,6 @@ export const useMainStore = defineStore('main', () => {
   // 更新番茄钟设置
   function updatePomodoroSettings(settings: Partial<typeof pomodoroSettings.value>) {
     Object.assign(pomodoroSettings.value, settings)
-    savePomodoroSettings()
   }
 
   // 持久化函数

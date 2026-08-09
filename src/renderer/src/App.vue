@@ -1,7 +1,7 @@
 <template>
   <div class="app-container">
-    <SideNav />
-    <div class="main-content">
+    <SideNav @collapse-change="handleCollapseChange" />
+    <div class="main-content" :class="{ expanded: isSidebarCollapsed }">
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />
@@ -12,7 +12,14 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import SideNav from '@/components/SideNav.vue'
+
+const isSidebarCollapsed = ref(false)
+
+function handleCollapseChange(collapsed: boolean) {
+  isSidebarCollapsed.value = collapsed
+}
 </script>
 
 <style scoped>
@@ -28,6 +35,7 @@ import SideNav from '@/components/SideNav.vue'
   overflow-y: auto;
   padding: 24px 32px;
   background: #f5f7fa;
+  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .fade-enter-active,

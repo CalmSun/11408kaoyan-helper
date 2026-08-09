@@ -73,9 +73,9 @@
             v-for="plan in todayPlans.slice(0, 5)"
             :key="plan.id"
             class="plan-item"
-            :class="{ completed: plan.completed }"
+            :class="{ completed: isPlanCompletedToday(plan) }"
           >
-            <el-checkbox :model-value="plan.completed" @change="togglePlan(plan.id)" />
+            <el-checkbox :model-value="isPlanCompletedToday(plan)" @change="togglePlan(plan.id)" />
             <span class="plan-title">{{ plan.title }}</span>
             <el-tag
               v-if="plan.subject"
@@ -241,7 +241,11 @@ const weekDay = computed(() => {
 
 const todayPlans = computed(() => {
   const today = dayjs().format('YYYY-MM-DD')
-  return store.plans.filter(p => p.createdAt.startsWith(today))
+  // 显示循环计划 + 今天创建的计划
+  return store.plans.filter(p => {
+    if (p.recurring) return true
+    return p.createdAt.startsWith(today)
+  })
 })
 
 // 计算某科目学习时长占全部学习时长的百分比
@@ -258,6 +262,14 @@ function formatHours(minutes: number) {
 
 function togglePlan(id: string) {
   store.togglePlan(id)
+}
+
+function isPlanCompletedToday(plan: any): boolean {
+  if (plan.recurring) {
+    const today = dayjs().format('YYYY-MM-DD')
+    return plan.completedDates?.includes(today) || false
+  }
+  return plan.completed
 }
 
 function goToPlan() { router.push('/plan') }

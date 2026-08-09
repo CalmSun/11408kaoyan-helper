@@ -50,6 +50,7 @@
             />
             <el-option label="其他" value="" />
           </el-select>
+          <el-checkbox v-model="newPlanRecurring" label="每日循环" />
           <el-button type="primary" @click="handleAdd">添加</el-button>
         </template>
       </el-input>
@@ -89,13 +90,24 @@
           v-for="plan in todayPlans"
           :key="plan.id"
           class="plan-item"
-          :class="{ completed: plan.completed }"
+          :class="{ completed: isPlanCompletedToday(plan) }"
         >
           <el-checkbox
-            :model-value="plan.completed"
+            :model-value="isPlanCompletedToday(plan)"
             @change="togglePlan(plan.id)"
           />
-          <span class="plan-title">{{ plan.title }}</span>
+          <span class="plan-title">
+            {{ plan.title }}
+            <el-tag
+              v-if="plan.recurring"
+              type="info"
+              size="small"
+              effect="plain"
+              style="margin-left: 8px;"
+            >
+              循环
+            </el-tag>
+          </span>
           <el-tag
             v-if="plan.subject"
             :color="store.SUBJECT_CONFIG[plan.subject].color"
@@ -104,7 +116,7 @@
           >
             {{ store.SUBJECT_CONFIG[plan.subject].shortName }}
           </el-tag>
-          <span class="plan-time" v-if="plan.completed && plan.completedAt">
+          <span class="plan-time" v-if="!plan.recurring && plan.completed && plan.completedAt">
             {{ formatTime(plan.completedAt) }}
           </span>
           <el-button
@@ -187,16 +199,29 @@ const store = useMainStore()
 
 const newPlanTitle = ref('')
 const newPlanSubject = ref<SubjectType | ''>('')
+const newPlanRecurring = ref(false)
 const showHistory = ref(false)
 
 const todayStr = computed(() => dayjs().format('YYYY年MM月DD日'))
 
 const todayPlans = computed(() => {
   const today = dayjs().format('YYYY-MM-DD')
-  return store.plans.filter(p => p.createdAt.startsWith(today))
+  // 显示循环计划 + 今天创建的计划
+  return store.plans.filter(p => {
+    if (p.recurring) return true
+    return p.createdAt.startsWith(today)
+  })
 })
 
-const completedCount = computed(() => todayPlans.value.filter(p => p.completed).length)
+const completedCount = computed(() => {
+  const today = dayjs().format('YYYY-MM-DD')
+  return todayPlans.value.filter(p => {
+    if (p.recurring) {
+      return p.completedDates?.includes(today) || false
+    }
+    return p.completed
+  }).length
+})
 const totalCount = computed(() => todayPlans.value.length)
 const progressPercent = computed(() => {
   if (totalCount.value === 0) return 0
@@ -236,12 +261,23 @@ function handleAdd() {
     ElMessage.warning('请输入计划内容')
     return
   }
+  const isRecurring = newPlanRecurring.value
   store.addPlan(
     newPlanTitle.value.trim(),
-    newPlanSubject.value || undefined
+    newPlanSubject.value || undefined,
+    isRecurring
   )
   newPlanTitle.value = ''
-  ElMessage.success('添加成功')
+  newPlanRecurring.value = false
+  ElMessage.success(isRecurring ? '已添加每日循环计划' : '添加成功')
+}
+
+function isPlanCompletedToday(plan: PlanItem): boolean {
+  if (plan.recurring) {
+    const today = dayjs().format('YYYY-MM-DD')
+    return plan.completedDates?.includes(today) || false
+  }
+  return plan.completed
 }
 
 function togglePlan(id: string) {
@@ -254,7 +290,7 @@ function deletePlan(id: string) {
 
 function completeAll() {
   todayPlans.value.forEach(plan => {
-    if (!plan.completed) {
+    if (!isPlanCompletedToday(plan)) {
       store.togglePlan(plan.id)
     }
   })

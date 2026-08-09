@@ -14,3 +14,6 @@ interface ElectronAPI {
 interface Window {
   electronAPI?: ElectronAPI
 }
+
+// Vite define 注入的版本号
+declare const __APP_VERSION__: string

@@ -1,83 +1,93 @@
 <template>
-  <div class="side-nav">
+  <div class="side-nav" :class="{ collapsed: isCollapsed }">
     <div class="nav-header">
       <div class="logo">
         <el-icon :size="28" color="#667eea"><Reading /></el-icon>
-        <span class="logo-text">11408考研助手</span>
+        <span v-show="!isCollapsed" class="logo-text">11408考研助手</span>
       </div>
-      <div class="exam-countdown-mini">
+      <div v-show="!isCollapsed" class="exam-countdown-mini">
         <span class="countdown-number">{{ store.daysUntilExam }}</span>
         <span class="countdown-label">天</span>
       </div>
     </div>
+
+    <div class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'">
+      <el-icon :size="16">
+        <component :is="isCollapsed ? 'DArrowRight' : 'DArrowLeft'" />
+      </el-icon>
+    </div>
     
     <div class="nav-menu">
       <div class="nav-group">
-        <div class="nav-group-title">概览</div>
+        <div v-show="!isCollapsed" class="nav-group-title">概览</div>
         <div
           v-for="item in overviewItems"
           :key="item.path"
           class="nav-item"
           :class="{ active: isActive(item.path) }"
+          :title="isCollapsed ? item.title : ''"
           @click="navigateTo(item.path)"
         >
           <el-icon :size="20">
             <component :is="item.icon" />
           </el-icon>
-          <span class="nav-text">{{ item.title }}</span>
+          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
         </div>
       </div>
 
       <div class="nav-group">
-        <div class="nav-group-title">11408 专业课</div>
+        <div v-show="!isCollapsed" class="nav-group-title">11408 专业课</div>
         <div
           v-for="item in majorItems"
           :key="item.path"
           class="nav-item"
           :class="{ active: isActive(item.path) }"
+          :title="isCollapsed ? item.title : ''"
           @click="navigateTo(item.path)"
         >
           <el-icon :size="20">
             <component :is="item.icon" />
           </el-icon>
-          <span class="nav-text">{{ item.title }}</span>
+          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
         </div>
       </div>
 
       <div class="nav-group">
-        <div class="nav-group-title">学习工具</div>
+        <div v-show="!isCollapsed" class="nav-group-title">学习工具</div>
         <div
           v-for="item in toolItems"
           :key="item.path"
           class="nav-item"
           :class="{ active: isActive(item.path) }"
+          :title="isCollapsed ? item.title : ''"
           @click="navigateTo(item.path)"
         >
           <el-icon :size="20">
             <component :is="item.icon" />
           </el-icon>
-          <span class="nav-text">{{ item.title }}</span>
+          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
         </div>
       </div>
 
       <div class="nav-group">
-        <div class="nav-group-title">公共课</div>
+        <div v-show="!isCollapsed" class="nav-group-title">公共课</div>
         <div
           v-for="item in publicItems"
           :key="item.path"
           class="nav-item"
           :class="{ active: isActive(item.path) }"
+          :title="isCollapsed ? item.title : ''"
           @click="navigateTo(item.path)"
         >
           <el-icon :size="20">
             <component :is="item.icon" />
           </el-icon>
-          <span class="nav-text">{{ item.title }}</span>
+          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
         </div>
       </div>
     </div>
     
-    <div class="nav-footer">
+    <div v-show="!isCollapsed" class="nav-footer">
       <div class="study-tip">
         <el-icon :size="16" color="#e6a23c"><Warning /></el-icon>
         <span>一战成硕！</span>
@@ -87,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import {
@@ -102,12 +113,20 @@ import {
   Warning,
   Guide,
   Cpu,
-  Operation
+  Operation,
+  DArrowLeft,
+  DArrowRight
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useMainStore()
+
+const isCollapsed = ref(false)
+
+const emit = defineEmits<{
+  (e: 'collapse-change', collapsed: boolean): void
+}>()
 
 const overviewItems = [
   { path: '/dashboard', title: '首页仪表盘', icon: HomeFilled },
@@ -140,6 +159,11 @@ function isActive(path: string) {
 function navigateTo(path: string) {
   router.push(path)
 }
+
+function toggleCollapse() {
+  isCollapsed.value = !isCollapsed.value
+  emit('collapse-change', isCollapsed.value)
+}
 </script>
 
 <style scoped>
@@ -150,11 +174,22 @@ function navigateTo(path: string) {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.side-nav.collapsed {
+  width: 64px;
 }
 
 .nav-header {
   padding: 24px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.side-nav.collapsed .nav-header {
+  padding: 16px 12px;
 }
 
 .logo {
@@ -164,11 +199,17 @@ function navigateTo(path: string) {
   margin-bottom: 16px;
 }
 
+.side-nav.collapsed .logo {
+  justify-content: center;
+  margin-bottom: 0;
+}
+
 .logo-text {
   font-size: 16px;
   font-weight: 600;
   color: #fff;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .exam-countdown-mini {
@@ -185,7 +226,7 @@ function navigateTo(path: string) {
   font-size: 28px;
   font-weight: 700;
   color: #667eea;
-  font-family: 'DIN Alternate', sans-serif;
+  font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
 }
 
 .countdown-label {
@@ -193,10 +234,41 @@ function navigateTo(path: string) {
   color: rgba(255, 255, 255, 0.6);
 }
 
+/* 折叠按钮 */
+.collapse-btn {
+  position: absolute;
+  top: 80px;
+  right: -12px;
+  width: 24px;
+  height: 24px;
+  background: #16213e;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.6);
+  z-index: 10;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.collapse-btn:hover {
+  background: #667eea;
+  color: #fff;
+  border-color: #667eea;
+}
+
 .nav-menu {
   flex: 1;
   padding: 12px 12px;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.side-nav.collapsed .nav-menu {
+  padding: 12px 8px;
 }
 
 .nav-group {
@@ -209,6 +281,7 @@ function navigateTo(path: string) {
   padding: 8px 16px 4px;
   text-transform: uppercase;
   letter-spacing: 1px;
+  white-space: nowrap;
 }
 
 .nav-item {
@@ -222,6 +295,12 @@ function navigateTo(path: string) {
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 14px;
+  white-space: nowrap;
+}
+
+.side-nav.collapsed .nav-item {
+  justify-content: center;
+  padding: 10px;
 }
 
 .nav-item:hover {

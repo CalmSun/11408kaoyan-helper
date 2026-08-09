@@ -51,8 +51,21 @@
           <el-input-number v-model="pomodoroForm.longBreakInterval" :min="2" :max="10" />
           <span class="unit">个番茄后</span>
         </el-form-item>
+        <el-form-item label="桌面通知">
+          <el-switch v-model="pomodoroForm.enableNotification" />
+          <span class="unit-desc">番茄完成/休息结束时推送系统通知</span>
+        </el-form-item>
+        <el-form-item label="提示音">
+          <el-switch v-model="pomodoroForm.enableSound" />
+          <span class="unit-desc">播放提示音提醒</span>
+        </el-form-item>
+        <el-form-item label="标题闪烁">
+          <el-switch v-model="pomodoroForm.enableTitleFlash" />
+          <span class="unit-desc">切换其他标签页时，浏览器标题闪烁提醒</span>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="savePomodoroSettings">保存设置</el-button>
+          <el-button @click="requestNotificationPermission">测试通知权限</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -112,7 +125,7 @@
         </div>
         <div class="about-item">
           <span class="about-label">版本</span>
-          <span class="about-value">v1.0.0</span>
+          <span class="about-value">v{{ appVersion }}</span>
         </div>
         <div class="about-item">
           <span class="about-label">技术栈</span>
@@ -147,6 +160,9 @@ import {
 
 const store = useMainStore()
 
+// 从 package.json 读取版本号（通过 Vite define 注入）
+const appVersion = __APP_VERSION__
+
 const examForm = reactive({
   name: store.examName,
   date: store.examDate
@@ -156,7 +172,10 @@ const pomodoroForm = reactive({
   workDuration: store.pomodoroSettings.workDuration,
   shortBreak: store.pomodoroSettings.breakDuration,
   longBreak: store.pomodoroSettings.longBreakDuration,
-  longBreakInterval: store.pomodoroSettings.longBreakInterval
+  longBreakInterval: store.pomodoroSettings.longBreakInterval,
+  enableNotification: store.pomodoroSettings.enableNotification,
+  enableSound: store.pomodoroSettings.enableSound,
+  enableTitleFlash: store.pomodoroSettings.enableTitleFlash
 })
 
 function saveExamSettings() {
@@ -173,9 +192,30 @@ function savePomodoroSettings() {
     workDuration: pomodoroForm.workDuration,
     breakDuration: pomodoroForm.shortBreak,
     longBreakDuration: pomodoroForm.longBreak,
-    longBreakInterval: pomodoroForm.longBreakInterval
+    longBreakInterval: pomodoroForm.longBreakInterval,
+    enableNotification: pomodoroForm.enableNotification,
+    enableSound: pomodoroForm.enableSound,
+    enableTitleFlash: pomodoroForm.enableTitleFlash
   })
   ElMessage.success('设置已保存')
+}
+
+function requestNotificationPermission() {
+  if ('Notification' in window) {
+    Notification.requestPermission().then(permission => {
+      if (permission === 'granted') {
+        ElMessage.success('通知权限已授权，将收到桌面通知')
+        new Notification('考研助手', {
+          body: '通知测试成功！番茄钟完成时会收到类似通知。',
+          icon: '/favicon.ico'
+        })
+      } else {
+        ElMessage.warning('通知权限被拒绝，不会收到桌面通知')
+      }
+    })
+  } else {
+    ElMessage.error('当前浏览器不支持桌面通知')
+  }
 }
 
 async function exportData() {
@@ -327,6 +367,12 @@ onMounted(() => {
   margin-left: 10px;
   font-size: 14px;
   color: #606266;
+}
+
+.unit-desc {
+  margin-left: 10px;
+  font-size: 13px;
+  color: #909399;
 }
 
 /* 数据管理 */

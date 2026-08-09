@@ -197,6 +197,10 @@ const remainingSeconds = ref(workDuration.value)
 const totalSeconds = ref(workDuration.value)
 
 let timer: number | null = null
+let titleFlashTimer: number | null = null
+let timerStartAt: number = 0     // 计时开始时的绝对时间戳
+let timerRemainingAtStart: number = 0  // 计时开始时的剩余秒数
+let audioContext: AudioContext | null = null  // 复用单一 AudioContext 实例
 
 const circumference = 2 * Math.PI * 135
 
@@ -261,13 +265,17 @@ function startTimer() {
   isRunning.value = true
   hasStarted.value = true
   
+  timerStartAt = Date.now()
+  timerRemainingAtStart = remainingSeconds.value
+  
   timer = window.setInterval(() => {
-    if (remainingSeconds.value > 0) {
-      remainingSeconds.value--
-    } else {
+    const elapsed = Math.floor((Date.now() - timerStartAt) / 1000)
+    remainingSeconds.value = Math.max(0, timerRemainingAtStart - elapsed)
+    
+    if (remainingSeconds.value === 0) {
       completeTimer()
     }
-  }, 1000)
+  }, 200)  // 使用更短的间隔以提高精度
 }
 
 function pauseTimer() {
@@ -301,21 +309,131 @@ function completeTimer() {
     completedPomodoros.value++
     ElMessage.success('🎉 完成一个番茄！休息一下吧~')
     
+    // 发送通知
+    sendNotification('番茄钟完成', '专注时间结束，休息一下吧！', 'work')
+    
     // 每4个番茄后长休息
-    if (completedPomodoros.value % 4 === 0) {
+    if (completedPomodoros.value % store.pomodoroSettings.longBreakInterval === 0) {
       switchMode('longBreak')
     } else {
       switchMode('shortBreak')
     }
   } else {
     ElMessage.info('休息结束，继续加油！')
+    
+    // 发送通知
+    sendNotification('休息结束', '休息完成，继续专注学习吧！', 'break')
+    
     switchMode('work')
   }
+}
+
+// 发送通知
+function sendNotification(title: string, body: string, type: 'work' | 'break') {
+  // 播放提示音
+  if (store.pomodoroSettings.enableSound) {
+    playNotificationSound()
+  }
+  
+  // 桌面通知
+  if (store.pomodoroSettings.enableNotification) {
+    showDesktopNotification(title, body)
+  }
+  
+  // 页面标题闪烁
+  if (store.pomodoroSettings.enableTitleFlash) {
+    startTitleFlash(title)
+  }
+}
+
+// 播放提示音
+function playNotificationSound() {
+  // 复用单一 AudioContext 实例，避免泄漏
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+  }
+  
+  const oscillator = audioContext.createOscillator()
+  const gainNode = audioContext.createGain()
+  
+  oscillator.connect(gainNode)
+  gainNode.connect(audioContext.destination)
+  
+  oscillator.frequency.value = 800
+  oscillator.type = 'sine'
+  
+  gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+  
+  oscillator.start(audioContext.currentTime)
+  oscillator.stop(audioContext.currentTime + 0.5)
+}
+
+// 显示桌面通知
+function showDesktopNotification(title: string, body: string) {
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      new Notification(title, {
+        body: body,
+        icon: '/favicon.ico'
+      })
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          new Notification(title, {
+            body: body,
+            icon: '/favicon.ico'
+          })
+        }
+      })
+    }
+  }
+}
+
+// 页面标题闪烁
+function startTitleFlash(title: string) {
+  const originalTitle = document.title
+  let isFlashing = true
+  
+  if (titleFlashTimer) {
+    clearInterval(titleFlashTimer)
+  }
+  
+  titleFlashTimer = window.setInterval(() => {
+    document.title = isFlashing ? `🔔 ${title}` : originalTitle
+    isFlashing = !isFlashing
+  }, 1000)
+  
+  // 10秒后停止闪烁
+  setTimeout(() => {
+    if (titleFlashTimer) {
+      clearInterval(titleFlashTimer)
+      titleFlashTimer = null
+    }
+    document.title = originalTitle
+  }, 10000)
+  
+  // 页面获得焦点时停止闪烁
+  window.addEventListener('focus', () => {
+    if (titleFlashTimer) {
+      clearInterval(titleFlashTimer)
+      titleFlashTimer = null
+      document.title = originalTitle
+    }
+  }, { once: true })
 }
 
 onUnmounted(() => {
   if (timer) {
     clearInterval(timer)
+  }
+  if (titleFlashTimer) {
+    clearInterval(titleFlashTimer)
+  }
+  // 清理 AudioContext
+  if (audioContext) {
+    audioContext.close()
+    audioContext = null
   }
 })
 </script>
