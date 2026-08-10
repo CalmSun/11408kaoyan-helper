@@ -12,11 +12,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useMainStore } from '@/stores'
 import SideNav from '@/components/SideNav.vue'
 
 const route = useRoute()
+const store = useMainStore()
 const isSidebarCollapsed = ref(false)
 
 const isLoginPage = computed(() => route.path === '/login')
@@ -24,6 +26,11 @@ const isLoginPage = computed(() => route.path === '/login')
 function handleCollapseChange(collapsed: boolean) {
   isSidebarCollapsed.value = collapsed
 }
+
+// Record app usage time when the app closes
+onUnmounted(() => {
+  store.recordAppUsage()
+})
 </script>
 
 <style scoped>

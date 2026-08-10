@@ -217,6 +217,20 @@ export const useMainStore = defineStore('main', () => {
     cs408: 0
   }))
 
+  // 应用使用时长统计（分钟）
+  const appUsageMinutes = ref<number>(getStorage('appUsageMinutes', 0))
+  const appSessionStart = ref<number>(Date.now())
+
+  // 记录应用使用时长
+  function recordAppUsage() {
+    const elapsed = Math.round((Date.now() - appSessionStart.value) / 60000)
+    if (elapsed > 0) {
+      appUsageMinutes.value += elapsed
+      setStorage('appUsageMinutes', appUsageMinutes.value)
+      appSessionStart.value = Date.now()
+    }
+  }
+
   // 番茄钟设置
   const pomodoroSettings = ref(getStorage('pomodoroSettings', {
     workDuration: 25,
@@ -469,6 +483,7 @@ export const useMainStore = defineStore('main', () => {
     todayPlanTotal,
     subjectStudyMinutes,
     totalStudyHours,
+    appUsageMinutes,
     // 方法
     addPlan,
     togglePlan,
@@ -482,6 +497,7 @@ export const useMainStore = defineStore('main', () => {
     updatePomodoroSettings,
     addExamScore,
     updateExamScore,
-    deleteExamScore
+    deleteExamScore,
+    recordAppUsage
   }
 })

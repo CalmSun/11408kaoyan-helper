@@ -53,6 +53,15 @@
           <span class="stat-label">累计学习（小时）</span>
         </div>
       </div>
+      <div class="stat-card stat-card-info">
+        <div class="stat-icon">
+          <el-icon :size="28"><Monitor /></el-icon>
+        </div>
+        <div class="stat-info">
+          <span class="stat-value">{{ formatUsageTime(store.appUsageMinutes) }}</span>
+          <span class="stat-label">应用使用时长</span>
+        </div>
+      </div>
     </div>
 
     <!-- 下方两栏 -->
@@ -216,7 +225,8 @@ import {
   DataAnalysis,
   Guide,
   Cpu,
-  Operation
+  Operation,
+  Monitor
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -258,6 +268,21 @@ function getStudyPercentage(subject: SubjectType) {
 // 分钟转小时显示
 function formatHours(minutes: number) {
   return (minutes / 60).toFixed(1)
+}
+
+// 应用使用时长格式化
+function formatUsageTime(minutes: number) {
+  if (minutes < 60) {
+    return `${minutes} 分钟`
+  } else if (minutes < 1440) {
+    const hours = Math.floor(minutes / 60)
+    const mins = minutes % 60
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+  } else {
+    const days = Math.floor(minutes / 1440)
+    const hours = Math.floor((minutes % 1440) / 60)
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`
+  }
 }
 
 function togglePlan(id: string) {
@@ -340,7 +365,7 @@ function goToFormulas() { router.push('/formulas') }
 /* 数据卡片 */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 20px;
   margin-bottom: 24px;
 }
@@ -386,6 +411,10 @@ function goToFormulas() { router.push('/formulas') }
 
 .stat-card-danger .stat-icon {
   background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.stat-card-info .stat-icon {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 }
 
 .stat-info {

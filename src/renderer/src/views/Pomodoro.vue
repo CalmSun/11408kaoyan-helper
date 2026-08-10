@@ -30,7 +30,7 @@
       </div>
 
       <!-- 计时器 -->
-      <div class="timer-section">
+      <div class="timer-section" :class="{ 'timer-pulse': isPulsing }">
         <div class="timer-ring">
           <svg class="progress-ring" width="300" height="300">
             <circle
@@ -57,7 +57,7 @@
             />
           </svg>
           <div class="timer-center">
-            <span class="timer-text">{{ formatTime(remainingSeconds) }}</span>
+            <span class="timer-text" :class="{ 'timer-flash': isFlashing }">{{ formatTime(remainingSeconds) }}</span>
             <span class="timer-mode">{{ modeLabel }}</span>
           </div>
         </div>
@@ -163,6 +163,19 @@
         </div>
       </div>
     </div>
+    <!-- 提醒遮罩 -->
+    <Transition name="fade">
+      <div v-if="showAlert" class="alert-overlay" @click="dismissAlert">
+        <div class="alert-card" @click.stop>
+          <div class="alert-icon">{{ alertIcon }}</div>
+          <h2 class="alert-title">{{ alertMessage }}</h2>
+          <p class="alert-subtitle">{{ alertSubtitle }}</p>
+          <el-button type="primary" size="large" round @click="dismissAlert" class="alert-btn">
+            好的
+          </el-button>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -201,6 +214,14 @@ let titleFlashTimer: number | null = null
 let timerStartAt: number = 0     // 计时开始时的绝对时间戳
 let timerRemainingAtStart: number = 0  // 计时开始时的剩余秒数
 let audioContext: AudioContext | null = null  // 复用单一 AudioContext 实例
+
+// 提醒相关状态
+const showAlert = ref(false)
+const alertMessage = ref('')
+const alertSubtitle = ref('')
+const alertIcon = ref('')
+const isPulsing = ref(false)
+const isFlashing = ref(false)
 
 const circumference = 2 * Math.PI * 135
 
@@ -270,7 +291,16 @@ function startTimer() {
   
   timer = window.setInterval(() => {
     const elapsed = Math.floor((Date.now() - timerStartAt) / 1000)
+    const prev = remainingSeconds.value
     remainingSeconds.value = Math.max(0, timerRemainingAtStart - elapsed)
+    
+    // 倒计时预警：最后5秒
+    if (remainingSeconds.value <= 5 && remainingSeconds.value > 0 && remainingSeconds.value !== prev) {
+      playCountdownBeep()
+      isFlashing.value = true
+      triggerVibration([50])
+      setTimeout(() => { isFlashing.value = false }, 300)
+    }
     
     if (remainingSeconds.value === 0) {
       completeTimer()
@@ -307,10 +337,24 @@ function completeTimer() {
       selectedSubject.value
     )
     completedPomodoros.value++
-    ElMessage.success('🎉 完成一个番茄！休息一下吧~')
     
-    // 发送通知
-    sendNotification('番茄钟完成', '专注时间结束，休息一下吧！', 'work')
+    const msg = getCompletionMessage(completedPomodoros.value)
+    alertMessage.value = msg
+    alertSubtitle.value = `已完成 ${completedPomodoros.value} 个番茄`
+    alertIcon.value = '🎉'
+    
+    // 第4的倍数个番茄用长休息图标
+    if (completedPomodoros.value % store.pomodoroSettings.longBreakInterval === 0) {
+      alertIcon.value = '💪'
+      alertSubtitle.value = '太棒了！完成一组番茄，享受长休息吧！'
+    }
+    
+    showAlert.value = true
+    isPulsing.value = true
+    triggerVibration([200, 100, 200, 100, 200])
+    
+    // 发送通知（声音区分：工作完成用上升旋律）
+    sendNotification('番茄钟完成', alertMessage.value, 'work')
     
     // 每4个番茄后长休息
     if (completedPomodoros.value % store.pomodoroSettings.longBreakInterval === 0) {
@@ -319,10 +363,17 @@ function completeTimer() {
       switchMode('shortBreak')
     }
   } else {
-    ElMessage.info('休息结束，继续加油！')
+    // 休息结束
+    const isLongBreak = currentMode.value === 'longBreak'
+    alertMessage.value = isLongBreak ? '能量充沛，开始新一轮专注吧！' : '休息结束，继续专注学习！'
+    alertSubtitle.value = isLongBreak ? '长休息结束，状态满满' : '短休息结束，保持节奏'
+    alertIcon.value = '⚡'
+    showAlert.value = true
+    isPulsing.value = true
+    triggerVibration([300, 100, 300])
     
-    // 发送通知
-    sendNotification('休息结束', '休息完成，继续专注学习吧！', 'break')
+    // 发送通知（声音区分：休息结束用下降旋律）
+    sendNotification('休息结束', alertMessage.value, 'break')
     
     switchMode('work')
   }
@@ -330,9 +381,9 @@ function completeTimer() {
 
 // 发送通知
 function sendNotification(title: string, body: string, type: 'work' | 'break') {
-  // 播放提示音
+  // 播放提示音（根据类型区分旋律）
   if (store.pomodoroSettings.enableSound) {
-    playNotificationSound()
+    playNotificationSound(type)
   }
   
   // 桌面通知
@@ -346,27 +397,53 @@ function sendNotification(title: string, body: string, type: 'work' | 'break') {
   }
 }
 
-// 播放提示音
-function playNotificationSound() {
-  // 复用单一 AudioContext 实例，避免泄漏
+// 播放提示音（声音区分：上升/下降旋律）
+function playNotificationSound(type: 'work' | 'break' = 'work') {
   if (!audioContext) {
     audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
   }
   
-  const oscillator = audioContext.createOscillator()
-  const gainNode = audioContext.createGain()
+  const now = audioContext.currentTime
+  // 上升旋律（工作完成）: 800→1000→1200  下降旋律（休息结束）: 1200→1000→800
+  const freqs = type === 'work' ? [800, 1000, 1200] : [1200, 1000, 800]
   
-  oscillator.connect(gainNode)
-  gainNode.connect(audioContext.destination)
-  
-  oscillator.frequency.value = 800
-  oscillator.type = 'sine'
-  
-  gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
-  gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-  
-  oscillator.start(audioContext.currentTime)
-  oscillator.stop(audioContext.currentTime + 0.5)
+  for (let round = 0; round < 2; round++) {
+    const baseTime = round === 0 ? now : now + 2.5
+    freqs.forEach((freq, i) => {
+      const osc = audioContext!.createOscillator()
+      const gain = audioContext!.createGain()
+      osc.connect(gain)
+      gain.connect(audioContext!.destination)
+      osc.frequency.value = freq
+      osc.type = 'sine'
+      const t = baseTime + i * 0.3
+      const vol = 0.8 + (i * 0.05)  // 逐音增强
+      gain.gain.setValueAtTime(0.01, t)
+      gain.gain.exponentialRampToValueAtTime(vol, t + 0.05)
+      gain.gain.setValueAtTime(vol, t + (i === 2 ? 0.9 : 0.6))
+      gain.gain.exponentialRampToValueAtTime(0.01, t + (i === 2 ? 1.0 : 0.7))
+      osc.start(t)
+      osc.stop(t + (i === 2 ? 1.0 : 0.7))
+    })
+  }
+}
+
+// 倒计时预警短促提示音
+function playCountdownBeep() {
+  if (!audioContext) {
+    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+  }
+  const now = audioContext.currentTime
+  const osc = audioContext.createOscillator()
+  const gain = audioContext.createGain()
+  osc.connect(gain)
+  gain.connect(audioContext.destination)
+  osc.frequency.value = 500
+  osc.type = 'sine'
+  gain.gain.setValueAtTime(0.5, now)
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1)
+  osc.start(now)
+  osc.stop(now + 0.1)
 }
 
 // 显示桌面通知
@@ -421,6 +498,30 @@ function startTitleFlash(title: string) {
       document.title = originalTitle
     }
   }, { once: true })
+}
+
+// 个性化提醒文案
+function getCompletionMessage(count: number): string {
+  switch (count) {
+    case 1: return '第一个番茄完成！休息一下吧~'
+    case 4: return '太棒了！完成一组番茄！'
+    case 8: return '超级厉害！已完成8个番茄！'
+    case 12: return '专注大师！12个番茄达成！'
+    default: return `第 ${count} 个番茄完成！继续保持！`
+  }
+}
+
+// 关闭提醒遮罩
+function dismissAlert() {
+  showAlert.value = false
+  isPulsing.value = false
+}
+
+// 振动反馈
+function triggerVibration(pattern: number[]) {
+  if (navigator.vibrate) {
+    navigator.vibrate(pattern)
+  }
 }
 
 onUnmounted(() => {
@@ -674,5 +775,91 @@ onUnmounted(() => {
   font-size: 14px;
   color: #303133;
   font-weight: 500;
+}
+/* 提醒遮罩 */
+.alert-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.alert-card {
+  background: #fff;
+  border-radius: 20px;
+  padding: 48px 40px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: alertPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes alertPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.alert-icon {
+  font-size: 72px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.alert-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+  margin: 0 0 8px 0;
+}
+
+.alert-subtitle {
+  font-size: 14px;
+  color: #909399;
+  margin: 0 0 24px 0;
+}
+
+.alert-btn {
+  min-width: 120px;
+}
+
+/* 倒计时闪烁 */
+.timer-flash {
+  animation: timerFlash 0.3s ease-in-out;
+}
+
+@keyframes timerFlash {
+  0% { opacity: 1; }
+  50% { opacity: 0.3; color: #f56c6c; }
+  100% { opacity: 1; }
+}
+
+/* 进度环脉冲动画 */
+.timer-pulse .progress-ring-fill {
+  animation: ringPulse 1s ease-in-out infinite;
+}
+
+@keyframes ringPulse {
+  0% { stroke-width: 14; }
+  50% { stroke-width: 22; opacity: 0.7; }
+  100% { stroke-width: 14; }
+}
+
+/* 遮罩过渡动画 */
+.fade-enter-active {
+  transition: opacity 0.3s ease;
+}
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
