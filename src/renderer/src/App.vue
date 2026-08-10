@@ -12,7 +12,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMainStore } from '@/stores'
 import SideNav from '@/components/SideNav.vue'
@@ -27,8 +27,22 @@ function handleCollapseChange(collapsed: boolean) {
   isSidebarCollapsed.value = collapsed
 }
 
-// Record app usage time when the app closes
+// 每分钟定时记录应用使用时长（实时累计）
+let usageTimer: number | null = null
+
+onMounted(() => {
+  // 每60秒记录一次使用时长
+  usageTimer = window.setInterval(() => {
+    store.recordAppUsage()
+  }, 60000)
+})
+
 onUnmounted(() => {
+  if (usageTimer) {
+    clearInterval(usageTimer)
+    usageTimer = null
+  }
+  // 最终保存
   store.recordAppUsage()
 })
 </script>
