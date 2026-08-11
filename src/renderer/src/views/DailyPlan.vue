@@ -359,7 +359,7 @@ function clearCompleted() {
 .progress-percent {
   font-size: 20px;
   font-weight: 700;
-  color: #8a9bb5;
+  color: #c4956a;
   font-family: 'DIN Alternate', sans-serif;
 }
 

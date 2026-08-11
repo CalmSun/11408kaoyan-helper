@@ -196,9 +196,11 @@ function handleLogout() {
 
 <style scoped>
 .side-nav {
+  position: relative;
+  z-index: 1;
   width: 220px;
   height: 100%;
-  background: linear-gradient(180deg, #474e5d 0%, #3a3f4c 100%);
+  background: linear-gradient(180deg, #474e5d 0%, #4a4438 100%);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -253,7 +255,7 @@ function handleLogout() {
 .countdown-number {
   font-size: 28px;
   font-weight: 700;
-  color: #8a9bb5;
+  color: #c4956a;
   font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
 }
 
@@ -337,7 +339,7 @@ function handleLogout() {
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   color: #fff;
   box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
 }

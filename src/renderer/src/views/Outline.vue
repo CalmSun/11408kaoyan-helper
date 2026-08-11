@@ -129,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useMainStore, SubjectType } from '@/stores'
 import { ElMessage } from 'element-plus'
 import { ArrowRight, Document } from '@element-plus/icons-vue'
@@ -801,6 +801,11 @@ const outlineMap: Record<string, any[]> = {
 }
 
 const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
+
+// 切换科目时重置展开状态（避免展开索引错位）
+watch(currentSubject, () => {
+  expandedChapters.value = new Set<number>([0])
+})
 </script>
 
 <style scoped>
@@ -855,7 +860,7 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
 .progress-total {
   font-size: 28px;
   font-weight: 700;
-  color: #8a9bb5;
+  color: #c4956a;
   font-family: 'DIN Alternate', sans-serif;
 }
 
@@ -875,7 +880,7 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
   border-radius: 14px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  border-top: 4px solid #8a9bb5;
+  border-top: 2px solid rgba(138, 155, 181, 0.5);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1043,11 +1048,8 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
 
 .point-tag {
   padding: 4px 10px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--glass-border);
-  border: 1px solid #e4e7ed;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(180, 185, 195, 0.3);
   border-radius: 6px;
   font-size: 12px;
   color: var(--mo-text-2);

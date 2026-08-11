@@ -358,7 +358,7 @@ function goToFormulas() { router.push('/formulas') }
   align-items: baseline;
   gap: 6px;
   padding: 16px 28px;
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   border-radius: 16px;
   color: #fff;
   box-shadow: 0 8px 24px rgba(138, 155, 181, 0.3);
@@ -420,23 +420,23 @@ function goToFormulas() { router.push('/formulas') }
 }
 
 .stat-card-primary .stat-icon {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
 }
 
 .stat-card-success .stat-icon {
-  background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%);
+  background: linear-gradient(135deg, #a9c4b2 0%, #c4a88a 100%);
 }
 
 .stat-card-warning .stat-icon {
-  background: linear-gradient(135deg, #d3b294 0%, #b29cb8 100%);
+  background: linear-gradient(135deg, #c4956a 0%, #8fa5b5 100%);
 }
 
 .stat-card-danger .stat-icon {
-  background: linear-gradient(135deg, #c98d94 0%, #d2c39a 100%);
+  background: linear-gradient(135deg, #c08484 0%, #8a9bb5 100%);
 }
 
 .stat-card-info .stat-icon {
-  background: linear-gradient(135deg, #8fa9bd 0%, #9cc0ba 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c9a26a 100%);
 }
 
 .stat-info {
@@ -645,13 +645,13 @@ function goToFormulas() { router.push('/formulas') }
   color: #fff;
 }
 
-.outline-icon { background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%); }
-.algo-icon { background: linear-gradient(135deg, #b498bb 0%, #c98d94 100%); }
-.formula-icon { background: linear-gradient(135deg, #8fa9bd 0%, #9cc0ba 100%); }
-.pomodoro-icon { background: linear-gradient(135deg, #c98d94 0%, #d2c39a 100%); }
-.exam-icon { background: linear-gradient(135deg, #c98d94 0%, #d2c39a 100%); }
-.flashcard-icon { background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%); }
-.dict-icon { background: linear-gradient(135deg, #a795b8 0%, #d1b6c4 100%); }
-.plan-icon { background: linear-gradient(135deg, #d3b294 0%, #b29cb8 100%); }
-.stat-icon { background: linear-gradient(135deg, #8fa9bd 0%, #9cc0ba 100%); }
+.outline-icon { background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%); }
+.algo-icon { background: linear-gradient(135deg, #9d8bab 0%, #8fa876 100%); }
+.formula-icon { background: linear-gradient(135deg, #8a9bb5 0%, #c9a26a 100%); }
+.pomodoro-icon { background: linear-gradient(135deg, #c08484 0%, #8a9bb5 100%); }
+.exam-icon { background: linear-gradient(135deg, #c08484 0%, #8a9bb5 100%); }
+.flashcard-icon { background: linear-gradient(135deg, #a9c4b2 0%, #c4a88a 100%); }
+.dict-icon { background: linear-gradient(135deg, #9d8bab 0%, #a9c4b2 100%); }
+.plan-icon { background: linear-gradient(135deg, #c4956a 0%, #8fa5b5 100%); }
+.stat-icon { background: linear-gradient(135deg, #8a9bb5 0%, #c9a26a 100%); }
 </style>

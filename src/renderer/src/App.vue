@@ -1,5 +1,7 @@
 <template>
   <div class="app-container">
+    <!-- 弥散渐变背景装饰层，凸显玻璃质感 -->
+    <div class="app-bg-decor"></div>
     <SideNav v-if="!isLoginPage" @collapse-change="handleCollapseChange" />
     <div class="main-content" :class="{ expanded: isSidebarCollapsed, 'full-width': isLoginPage }">
       <router-view v-slot="{ Component }">
@@ -56,6 +58,8 @@ onUnmounted(() => {
 }
 
 .main-content {
+  position: relative;
+  z-index: 1;
   flex: 1;
   overflow-y: auto;
   padding: 24px 32px;

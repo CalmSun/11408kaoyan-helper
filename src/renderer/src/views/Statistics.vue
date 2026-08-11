@@ -471,15 +471,15 @@ watch(() => store.pomodoroRecords.length, () => {
 }
 
 .overview-icon.icon-purple {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
 }
 
 .overview-icon.icon-green {
-  background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%);
+  background: linear-gradient(135deg, #a9c4b2 0%, #c4a88a 100%);
 }
 
 .overview-icon.icon-orange {
-  background: linear-gradient(135deg, #d0c194 0%, #cba58e 100%);
+  background: linear-gradient(135deg, #c9a26a 0%, #8fa5b5 100%);
 }
 
 .overview-info {

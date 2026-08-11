@@ -350,7 +350,7 @@ onUnmounted(() => {
 .countdown-days {
   font-size: 72px;
   font-weight: 700;
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -439,7 +439,7 @@ onUnmounted(() => {
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   display: flex;
   align-items: center;
   justify-content: center;

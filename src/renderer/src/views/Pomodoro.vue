@@ -305,7 +305,7 @@ function startTimer() {
     if (remainingSeconds.value === 0) {
       completeTimer()
     }
-  }, 200)  // 使用更短的间隔以提高精度
+  }, 1000)  // 使用绝对时间差计算，1秒间隔足够精确且节省性能
 }
 
 function pauseTimer() {
@@ -594,7 +594,7 @@ onUnmounted(() => {
 }
 
 .mode-tab.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   color: #fff;
   box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
 }
@@ -727,7 +727,7 @@ onUnmounted(() => {
   display: block;
   font-size: 28px;
   font-weight: 700;
-  color: #8a9bb5;
+  color: #c4956a;
   font-family: 'DIN Alternate', sans-serif;
   margin-bottom: 4px;
 }

@@ -445,7 +445,7 @@ function markCorrect() {
 }
 
 .tab-item.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   color: #fff;
 }
 
@@ -486,7 +486,7 @@ function markCorrect() {
 }
 
 .card-front {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   color: #fff;
 }
 
@@ -613,12 +613,12 @@ function markCorrect() {
 }
 
 .review-front {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   color: #fff;
 }
 
 .review-back {
-  background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%);
+  background: linear-gradient(135deg, #a9c4b2 0%, #c4a88a 100%);
   color: var(--mo-text-1);
   transform: rotateY(180deg);
 }

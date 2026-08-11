@@ -801,7 +801,7 @@ function handleAdd() {
 }
 
 .tab-item.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   color: #fff;
 }
 
@@ -879,7 +879,7 @@ function handleAdd() {
 .meta-value {
   font-size: 13px;
   font-weight: 600;
-  color: #8a9bb5;
+  color: #c4956a;
   font-family: 'Consolas', monospace;
 }
 
@@ -938,7 +938,7 @@ function handleAdd() {
 }
 
 .meta-text strong {
-  color: #8a9bb5;
+  color: #c4956a;
   font-family: 'Consolas', monospace;
 }
 

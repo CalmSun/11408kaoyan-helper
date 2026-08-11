@@ -682,7 +682,7 @@ function addToFlashcards(word: WordItem) {
 }
 
 .cat-item.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
   color: #fff;
 }
 
