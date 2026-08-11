@@ -22,8 +22,8 @@
       <svg width="0" height="0">
         <defs>
           <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#8a9bb5" />
-            <stop offset="100%" stop-color="#9d8bab" />
+            <stop offset="0%" stop-color="#3b82f6" />
+            <stop offset="100%" stop-color="#60a5fa" />
           </linearGradient>
         </defs>
       </svg>
@@ -35,25 +35,29 @@
         v-model="newPlanTitle"
         placeholder="添加新的学习计划..."
         size="large"
+        clearable
         @keyup.enter="handleAdd"
       >
         <template #prefix>
           <el-icon><Plus /></el-icon>
         </template>
-        <template #append>
-          <el-select v-model="newPlanSubject" placeholder="科目" style="width: 110px;">
-            <el-option
-              v-for="(config, key) in store.SUBJECT_CONFIG"
-              :key="key"
-              :label="config.shortName"
-              :value="key"
-            />
-            <el-option label="其他" value="" />
-          </el-select>
-          <el-checkbox v-model="newPlanRecurring" label="每日循环" />
-          <el-button type="primary" @click="handleAdd">添加</el-button>
-        </template>
       </el-input>
+      <div class="add-plan-options">
+        <el-select v-model="newPlanSubject" placeholder="选择科目" size="large" class="subject-select-field">
+          <el-option label="其他" value="" />
+          <el-option
+            v-for="(config, key) in store.SUBJECT_CONFIG"
+            :key="key"
+            :label="config.shortName"
+            :value="key"
+          />
+        </el-select>
+        <el-checkbox v-model="newPlanRecurring" label="每日循环" size="large" />
+        <el-button type="primary" size="large" @click="handleAdd" class="add-btn">
+          <el-icon><Plus /></el-icon>
+          添加计划
+        </el-button>
+      </div>
     </div>
 
     <!-- 计划列表 -->
@@ -164,7 +168,7 @@
                 class="history-plan-item"
                 :class="{ completed: plan.completed }"
               >
-                <el-icon v-if="plan.completed" color="#8fa876"><Check /></el-icon>
+                <el-icon v-if="plan.completed" color="#34d399"><Check /></el-icon>
                 <el-icon v-else color="#b0b6bd"><Close /></el-icon>
                 <span>{{ plan.title }}</span>
               </div>
@@ -359,20 +363,52 @@ function clearCompleted() {
 .progress-percent {
   font-size: 20px;
   font-weight: 700;
-  color: #c4956a;
+  color: #60a5fa;
   font-family: 'DIN Alternate', sans-serif;
 }
 
 /* 添加计划 */
 .add-plan-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  padding: 16px;
+  padding: 20px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
+}
+
+.add-plan-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.add-plan-options .subject-select-field {
+  width: 150px;
+}
+
+.add-plan-options .el-checkbox {
+  margin-right: auto;
+}
+
+.add-plan-options .add-btn {
+  min-width: 110px;
+}
+
+@media (max-width: 600px) {
+  .add-plan-options .subject-select-field {
+    width: 100%;
+  }
+  .add-plan-options .el-checkbox {
+    margin-right: 0;
+  }
+  .add-plan-options .add-btn {
+    width: 100%;
+  }
 }
 
 /* 计划列表 */
@@ -446,7 +482,7 @@ function clearCompleted() {
 
 .plan-time {
   font-size: 12px;
-  color: #8fa876;
+  color: #34d399;
   font-family: 'DIN Alternate', sans-serif;
 }
 
@@ -563,7 +599,7 @@ function clearCompleted() {
 }
 
 .history-plan-item.completed {
-  color: #8fa876;
+  color: #34d399;
   text-decoration: line-through;
 }
 </style>

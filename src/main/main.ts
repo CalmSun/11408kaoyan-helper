@@ -11,7 +11,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: '考研助手',
-    backgroundColor: '#eceef0',
+    backgroundColor: '#e8f0ff',
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,

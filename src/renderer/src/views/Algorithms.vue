@@ -801,7 +801,7 @@ function handleAdd() {
 }
 
 .tab-item.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   color: #fff;
 }
 
@@ -828,7 +828,7 @@ function handleAdd() {
 .algo-card:hover {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
   transform: translateY(-2px);
-  border-color: #8a9bb5;
+  border-color: #3b82f6;
 }
 
 .algo-header {
@@ -879,7 +879,7 @@ function handleAdd() {
 .meta-value {
   font-size: 13px;
   font-weight: 600;
-  color: #c4956a;
+  color: #60a5fa;
   font-family: 'Consolas', monospace;
 }
 
@@ -938,7 +938,7 @@ function handleAdd() {
 }
 
 .meta-text strong {
-  color: #c4956a;
+  color: #60a5fa;
   font-family: 'Consolas', monospace;
 }
 

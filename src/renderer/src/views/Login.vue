@@ -177,7 +177,7 @@ const continueAsGuest = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   padding: 20px;
 }
 

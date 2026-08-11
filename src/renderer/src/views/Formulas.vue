@@ -743,7 +743,7 @@ const filteredFormulas = computed(() => {
 
 function getSubjectColor(subject: string) {
   const config = store.SUBJECT_CONFIG[subject as keyof typeof store.SUBJECT_CONFIG]
-  return config?.color || '#8a9bb5'
+  return config?.color || '#3b82f6'
 }
 
 function getSubjectName(subject: string) {
@@ -862,7 +862,7 @@ function getSubjectName(subject: string) {
   border-radius: 10px;
   padding: 16px 20px;
   margin-bottom: 14px;
-  border-left: 3px solid #8a9bb5;
+  border-left: 3px solid #3b82f6;
 }
 
 .formula-content pre {
@@ -882,7 +882,7 @@ function getSubjectName(subject: string) {
 .desc-label {
   font-size: 12px;
   font-weight: 600;
-  color: #8fa876;
+  color: #34d399;
   margin-bottom: 6px;
 }
 

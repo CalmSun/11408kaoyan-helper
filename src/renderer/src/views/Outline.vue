@@ -22,8 +22,8 @@
       <svg width="0" height="0">
         <defs>
           <linearGradient id="overallGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#8a9bb5" />
-            <stop offset="100%" stop-color="#9d8bab" />
+            <stop offset="0%" stop-color="#3b82f6" />
+            <stop offset="100%" stop-color="#60a5fa" />
           </linearGradient>
         </defs>
       </svg>
@@ -860,7 +860,7 @@ watch(currentSubject, () => {
 .progress-total {
   font-size: 28px;
   font-weight: 700;
-  color: #c4956a;
+  color: #60a5fa;
   font-family: 'DIN Alternate', sans-serif;
 }
 
@@ -880,7 +880,7 @@ watch(currentSubject, () => {
   border-radius: 14px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  border-top: 2px solid rgba(138, 155, 181, 0.5);
+  border-top: 2px solid rgba(59, 130, 246, 0.4);
   cursor: pointer;
   transition: all 0.2s ease;
 }

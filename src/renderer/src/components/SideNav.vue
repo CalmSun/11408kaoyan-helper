@@ -2,7 +2,7 @@
   <div class="side-nav" :class="{ collapsed: isCollapsed }">
     <div class="nav-header">
       <div class="logo">
-        <el-icon :size="28" color="#8a9bb5"><Reading /></el-icon>
+        <el-icon :size="28" color="#3b82f6"><Reading /></el-icon>
         <span v-show="!isCollapsed" class="logo-text">11408考研助手</span>
       </div>
       <div v-show="!isCollapsed" class="exam-countdown-mini">
@@ -91,7 +91,7 @@
       <!-- 用户信息 -->
       <div class="user-section">
         <div class="user-info" @click="goToSettings" :title="userStore.displayName">
-          <el-icon :size="18" color="#8a9bb5"><UserFilled /></el-icon>
+          <el-icon :size="18" color="#3b82f6"><UserFilled /></el-icon>
           <span class="user-name">{{ userStore.displayName }}</span>
         </div>
         <el-button
@@ -105,7 +105,7 @@
         </el-button>
       </div>
       <div class="study-tip">
-        <el-icon :size="16" color="#c9a26a"><Warning /></el-icon>
+        <el-icon :size="16" color="#60a5fa"><Warning /></el-icon>
         <span>一战成硕！</span>
       </div>
     </div>
@@ -200,7 +200,7 @@ function handleLogout() {
   z-index: 1;
   width: 220px;
   height: 100%;
-  background: linear-gradient(180deg, #474e5d 0%, #4a4438 100%);
+  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -255,7 +255,7 @@ function handleLogout() {
 .countdown-number {
   font-size: 28px;
   font-weight: 700;
-  color: #c4956a;
+  color: #60a5fa;
   font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
 }
 
@@ -285,9 +285,9 @@ function handleLogout() {
 }
 
 .collapse-btn:hover {
-  background: #8a9bb5;
+  background: #3b82f6;
   color: #fff;
-  border-color: #8a9bb5;
+  border-color: #3b82f6;
 }
 
 .nav-menu {
@@ -339,7 +339,7 @@ function handleLogout() {
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   color: #fff;
   box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
 }

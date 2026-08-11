@@ -12,10 +12,10 @@ export type SubjectType =
 
 // 科目配置
 export const SUBJECT_CONFIG: Record<SubjectType, { name: string; shortName: string; color: string; tagType: string }> = {
-  politics: { name: '政治', shortName: '政治', color: '#c08484', tagType: 'danger' },
-  english: { name: '英语一', shortName: '英语', color: '#8fa876', tagType: 'success' },
-  math: { name: '数学一', shortName: '数学', color: '#c9a26a', tagType: 'warning' },
-  cs408: { name: '408 计算机专业基础', shortName: '408', color: '#667eea', tagType: 'primary' }
+  politics: { name: '政治', shortName: '政治', color: '#f87171', tagType: 'danger' },
+  english: { name: '英语一', shortName: '英语', color: '#34d399', tagType: 'success' },
+  math: { name: '数学一', shortName: '数学', color: '#fbbf24', tagType: 'warning' },
+  cs408: { name: '408 计算机专业基础', shortName: '408', color: '#3b82f6', tagType: 'primary' }
 }
 
 export interface PlanItem {

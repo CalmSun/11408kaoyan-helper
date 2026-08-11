@@ -358,7 +358,7 @@ function goToFormulas() { router.push('/formulas') }
   align-items: baseline;
   gap: 6px;
   padding: 16px 28px;
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   border-radius: 16px;
   color: #fff;
   box-shadow: 0 8px 24px rgba(138, 155, 181, 0.3);
@@ -420,23 +420,23 @@ function goToFormulas() { router.push('/formulas') }
 }
 
 .stat-card-primary .stat-icon {
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
 }
 
 .stat-card-success .stat-icon {
-  background: linear-gradient(135deg, #a9c4b2 0%, #c4a88a 100%);
+  background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);
 }
 
 .stat-card-warning .stat-icon {
-  background: linear-gradient(135deg, #c4956a 0%, #8fa5b5 100%);
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%);
 }
 
 .stat-card-danger .stat-icon {
-  background: linear-gradient(135deg, #c08484 0%, #8a9bb5 100%);
+  background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%);
 }
 
 .stat-card-info .stat-icon {
-  background: linear-gradient(135deg, #8a9bb5 0%, #c9a26a 100%);
+  background: linear-gradient(135deg, #14b8a6 0%, #2dd4bf 100%);
 }
 
 .stat-info {
@@ -566,9 +566,9 @@ function goToFormulas() { router.push('/formulas') }
   border-radius: 50%;
 }
 
-.subject-dot.politics { background: #c08484; }
-.subject-dot.english { background: #8fa876; }
-.subject-dot.math { background: #c9a26a; }
+.subject-dot.politics { background: #f87171; }
+.subject-dot.english { background: #34d399; }
+.subject-dot.math { background: #fbbf24; }
 .subject-dot.professional { background: #909399; }
 
 .subject-name {
@@ -593,7 +593,7 @@ function goToFormulas() { router.push('/formulas') }
 }
 
 .study-summary strong {
-  color: #8a9bb5;
+  color: #3b82f6;
   font-size: 16px;
   font-family: 'DIN Alternate', sans-serif;
 }
@@ -645,13 +645,13 @@ function goToFormulas() { router.push('/formulas') }
   color: #fff;
 }
 
-.outline-icon { background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%); }
-.algo-icon { background: linear-gradient(135deg, #9d8bab 0%, #8fa876 100%); }
-.formula-icon { background: linear-gradient(135deg, #8a9bb5 0%, #c9a26a 100%); }
-.pomodoro-icon { background: linear-gradient(135deg, #c08484 0%, #8a9bb5 100%); }
-.exam-icon { background: linear-gradient(135deg, #c08484 0%, #8a9bb5 100%); }
-.flashcard-icon { background: linear-gradient(135deg, #a9c4b2 0%, #c4a88a 100%); }
-.dict-icon { background: linear-gradient(135deg, #9d8bab 0%, #a9c4b2 100%); }
-.plan-icon { background: linear-gradient(135deg, #c4956a 0%, #8fa5b5 100%); }
-.stat-icon { background: linear-gradient(135deg, #8a9bb5 0%, #c9a26a 100%); }
+.outline-icon { background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%); }
+.algo-icon { background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%); }
+.formula-icon { background: linear-gradient(135deg, #14b8a6 0%, #2dd4bf 100%); }
+.pomodoro-icon { background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%); }
+.exam-icon { background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%); }
+.flashcard-icon { background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%); }
+.dict-icon { background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%); }
+.plan-icon { background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%); }
+.stat-icon { background: linear-gradient(135deg, #14b8a6 0%, #2dd4bf 100%); }
 </style>

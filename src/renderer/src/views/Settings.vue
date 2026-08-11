@@ -593,7 +593,7 @@ onMounted(() => {
 
 .about-tip {
   font-size: 13px;
-  color: #c9a26a;
+  color: #f59e0b;
   padding: 12px 16px;
   background: #f3eee4;
   border-radius: 10px;

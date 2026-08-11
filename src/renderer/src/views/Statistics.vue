@@ -252,11 +252,11 @@ function getStudyOption(): echarts.EChartsOption {
       lineStyle: {
         width: 3,
         color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#8a9bb5' },
-          { offset: 1, color: '#9d8bab' }
+          { offset: 0, color: '#3b82f6' },
+          { offset: 1, color: '#60a5fa' }
         ])
       },
-      itemStyle: { color: '#8a9bb5', borderColor: '#fff', borderWidth: 2 },
+      itemStyle: { color: '#3b82f6', borderColor: '#fff', borderWidth: 2 },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
           { offset: 0, color: 'rgba(138, 155, 181, 0.3)' },
@@ -349,8 +349,8 @@ function getSubjectHoursOption(): echarts.EChartsOption {
       itemStyle: {
         borderRadius: [6, 6, 0, 0],
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: '#8a9bb5' },
-          { offset: 1, color: '#9d8bab' }
+          { offset: 0, color: '#3b82f6' },
+          { offset: 1, color: '#60a5fa' }
         ])
       }
     }]
@@ -471,15 +471,15 @@ watch(() => store.pomodoroRecords.length, () => {
 }
 
 .overview-icon.icon-purple {
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
 }
 
 .overview-icon.icon-green {
-  background: linear-gradient(135deg, #a9c4b2 0%, #c4a88a 100%);
+  background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);
 }
 
 .overview-icon.icon-orange {
-  background: linear-gradient(135deg, #c9a26a 0%, #8fa5b5 100%);
+  background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);
 }
 
 .overview-info {
@@ -543,7 +543,7 @@ watch(() => store.pomodoroRecords.length, () => {
 .calendar-day {
   aspect-ratio: 1;
   border-radius: 4px;
-  background: #ebedf0;
+  background: rgba(59, 130, 246, 0.06);
   transition: transform 0.2s ease;
 }
 
@@ -551,11 +551,11 @@ watch(() => store.pomodoroRecords.length, () => {
   transform: scale(1.2);
 }
 
-.calendar-day.level-0 { background: #ebedf0; }
-.calendar-day.level-1 { background: #b5c9ae; }
-.calendar-day.level-2 { background: #96b18e; }
-.calendar-day.level-3 { background: #7a9a72; }
-.calendar-day.level-4 { background: #5f7d5a; }
+.calendar-day.level-0 { background: rgba(59, 130, 246, 0.06); }
+.calendar-day.level-1 { background: rgba(59, 130, 246, 0.25); }
+.calendar-day.level-2 { background: rgba(59, 130, 246, 0.45); }
+.calendar-day.level-3 { background: rgba(59, 130, 246, 0.65); }
+.calendar-day.level-4 { background: rgba(59, 130, 246, 0.85); }
 
 .calendar-legend {
   display: flex;
@@ -572,9 +572,9 @@ watch(() => store.pomodoroRecords.length, () => {
   border-radius: 3px;
 }
 
-.legend-level.level-0 { background: #ebedf0; }
-.legend-level.level-1 { background: #b5c9ae; }
-.legend-level.level-2 { background: #96b18e; }
-.legend-level.level-3 { background: #7a9a72; }
-.legend-level.level-4 { background: #5f7d5a; }
+.legend-level.level-0 { background: rgba(59, 130, 246, 0.06); }
+.legend-level.level-1 { background: rgba(59, 130, 246, 0.25); }
+.legend-level.level-2 { background: rgba(59, 130, 246, 0.45); }
+.legend-level.level-3 { background: rgba(59, 130, 246, 0.65); }
+.legend-level.level-4 { background: rgba(59, 130, 246, 0.85); }
 </style>

@@ -38,7 +38,7 @@
 
     <!-- 在线查询加载中 -->
     <div class="online-searching" v-if="isSearchingOnline">
-      <el-icon class="is-loading" :size="24" color="#8a9bb5"><Loading /></el-icon>
+      <el-icon class="is-loading" :size="24" color="#3b82f6"><Loading /></el-icon>
       <span>本地词库未收录，正在在线查询 "{{ searchWord.trim() }}" ...</span>
     </div>
 
@@ -682,7 +682,7 @@ function addToFlashcards(word: WordItem) {
 }
 
 .cat-item.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   color: #fff;
 }
 
@@ -695,7 +695,7 @@ function addToFlashcards(word: WordItem) {
 }
 
 .cat-item:not(.active) .cat-count {
-  background: #e4e7ed;
+  background: rgba(59, 130, 246, 0.08);
   color: var(--mo-text-3);
 }
 
@@ -798,7 +798,7 @@ function addToFlashcards(word: WordItem) {
   border-radius: 12px;
   margin-bottom: 16px;
   font-size: 14px;
-  color: #8a9bb5;
+  color: #3b82f6;
 }
 
 /* 单词详情 */
@@ -827,7 +827,7 @@ function addToFlashcards(word: WordItem) {
 
 .detail-section h4 {
   font-size: 14px;
-  color: #8a9bb5;
+  color: #3b82f6;
   margin-bottom: 10px;
 }
 

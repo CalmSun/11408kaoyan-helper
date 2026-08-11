@@ -232,7 +232,7 @@ function getSubjectStats(subject: SubjectType) {
 
 
 function getSubjectColor(subject: SubjectType) {
-  return store.SUBJECT_CONFIG[subject]?.color || '#8a9bb5'
+  return store.SUBJECT_CONFIG[subject]?.color || '#3b82f6'
 }
 
 function getSubjectName(subject: SubjectType) {
@@ -248,9 +248,9 @@ function getScoreRate(row: ExamScoreRecord) {
 }
 
 function getScoreColor(rate: number) {
-  if (rate >= 80) return '#8fa876'
-  if (rate >= 60) return '#c9a26a'
-  return '#c08484'
+  if (rate >= 80) return '#22c55e'
+  if (rate >= 60) return '#f59e0b'
+  return '#ef4444'
 }
 
 function formatDate(dateStr: string) {
@@ -446,7 +446,7 @@ onUnmounted(() => {
   border-radius: 14px;
   padding: 18px 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  border-top: 4px solid #8a9bb5;
+  border-top: 3px solid rgba(59, 130, 246, 0.4);
 }
 
 .summary-header {

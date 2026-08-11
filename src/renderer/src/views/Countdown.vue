@@ -31,8 +31,8 @@
           />
           <defs>
             <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#8a9bb5" />
-              <stop offset="100%" stop-color="#9d8bab" />
+              <stop offset="0%" stop-color="#3b82f6" />
+              <stop offset="100%" stop-color="#60a5fa" />
             </linearGradient>
           </defs>
         </svg>
@@ -350,7 +350,7 @@ onUnmounted(() => {
 .countdown-days {
   font-size: 72px;
   font-weight: 700;
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -439,7 +439,7 @@ onUnmounted(() => {
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   display: flex;
   align-items: center;
   justify-content: center;

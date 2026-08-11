@@ -594,7 +594,7 @@ onUnmounted(() => {
 }
 
 .mode-tab.active {
-  background: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   color: #fff;
   box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
 }
@@ -626,15 +626,15 @@ onUnmounted(() => {
 
 .progress-ring-fill.work {
   stroke: url(#workGradient);
-  stroke: #8a9bb5;
+  stroke: #3b82f6;
 }
 
 .progress-ring-fill.shortBreak {
-  stroke: #8fa876;
+  stroke: #34d399;
 }
 
 .progress-ring-fill.longBreak {
-  stroke: #c9a26a;
+  stroke: #fbbf24;
 }
 
 .timer-center {
@@ -727,7 +727,7 @@ onUnmounted(() => {
   display: block;
   font-size: 28px;
   font-weight: 700;
-  color: #c4956a;
+  color: #60a5fa;
   font-family: 'DIN Alternate', sans-serif;
   margin-bottom: 4px;
 }
@@ -842,7 +842,7 @@ onUnmounted(() => {
 
 @keyframes timerFlash {
   0% { opacity: 1; }
-  50% { opacity: 0.3; color: #c08484; }
+  50% { opacity: 0.3; color: #ef4444; }
   100% { opacity: 1; }
 }
 

@@ -1,41 +1,41 @@
 /* ═══════════════════════════════════════════
-   莫兰迪互补色系 · 玻璃拟态 设计体系 v2
+   浅色淡蓝 · 玻璃拟态 设计体系 v3
    ═══════════════════════════════════════════ */
 :root {
-  /* 主色（互补色：冷蓝 ↔ 暖棕） */
-  --mo-primary: #8a9bb5;
-  --mo-primary-dark: #6e7f99;
-  --mo-primary-light: #a8b7cc;
-  --mo-accent: #c4956a;
-  --mo-gradient: linear-gradient(135deg, #8a9bb5 0%, #c4956a 100%);
+  /* 主题强调色 */
+  --mo-primary: #3b82f6;
+  --mo-primary-dark: #2563eb;
+  --mo-primary-light: #60a5fa;
+  --mo-accent: #3b82f6;
+  --mo-gradient: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
 
-  /* 语义色（莫兰迪低饱和） */
-  --mo-danger: #c08484;
-  --mo-success: #8fa876;
-  --mo-warning: #c9a26a;
-  --mo-info: #8fa5b5;
+  /* 语义色 */
+  --mo-danger: #ef4444;
+  --mo-success: #22c55e;
+  --mo-warning: #f59e0b;
+  --mo-info: #3b82f6;
 
-  /* 背景 */
-  --mo-bg-base: #eceef0;
-  --mo-bg-gradient: linear-gradient(135deg, #e8ecf0 0%, #f0ece6 50%, #e6eaef 100%);
+  /* 背景：淡蓝柔和线性渐变 */
+  --mo-bg-base: #e8f0ff;
+  --mo-bg-gradient: linear-gradient(160deg, #e8f0ff 0%, #f0f7ff 100%);
 
-  /* 玻璃拟态卡片 */
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-strong: rgba(255, 255, 255, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.55);
-  --glass-shadow: 0 2px 16px rgba(130, 140, 155, 0.08), 0 8px 32px rgba(130, 140, 155, 0.04);
-  --glass-shadow-hover: 0 4px 20px rgba(130, 140, 155, 0.12), 0 12px 40px rgba(130, 140, 155, 0.06);
+  /* 玻璃拟态卡片：白色半透明磨砂玻璃 */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-shadow: 0 2px 12px rgba(59, 130, 246, 0.06), 0 8px 24px rgba(59, 130, 246, 0.04);
+  --glass-shadow-hover: 0 4px 16px rgba(59, 130, 246, 0.10), 0 12px 32px rgba(59, 130, 246, 0.06);
 
   /* 中性表面（次级容器） */
-  --mo-surface: rgba(255, 255, 255, 0.42);
-  --mo-surface-hover: rgba(255, 255, 255, 0.58);
-  --mo-border: rgba(160, 165, 175, 0.18);
+  --mo-surface: rgba(255, 255, 255, 0.55);
+  --mo-surface-hover: rgba(255, 255, 255, 0.72);
+  --mo-border: rgba(59, 130, 246, 0.10);
 
-  /* 文字（保证对比度） */
-  --mo-text-1: #3f444c;
-  --mo-text-2: #6b7078;
-  --mo-text-3: #8f959d;
-  --mo-text-disabled: #b0b5bc;
+  /* 文字 */
+  --mo-text-1: #222831;
+  --mo-text-2: #586072;
+  --mo-text-3: #8b92a0;
+  --mo-text-disabled: #b8bec8;
 
   /* 圆角（适中） */
   --mo-radius: 14px;
@@ -72,16 +72,16 @@ html, body, #app {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(160, 168, 180, 0.4);
+  background: rgba(59, 130, 246, 0.2);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(140, 150, 165, 0.55);
+  background: rgba(59, 130, 246, 0.35);
 }
 
 /* ═══════════════════════════════════════════
-   背景装饰层（弥散渐变图形，凸显玻璃质感）
+   背景装饰层（淡蓝弥散光斑，凸显玻璃质感）
    ═══════════════════════════════════════════ */
 .app-bg-decor {
   position: fixed;
@@ -99,23 +99,23 @@ html, body, #app {
   content: '';
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
+  filter: blur(90px);
 }
 
 .app-bg-decor::before {
-  width: 500px;
-  height: 500px;
-  top: -120px;
-  right: -80px;
-  background: radial-gradient(circle, rgba(138, 155, 181, 0.22) 0%, transparent 70%);
+  width: 520px;
+  height: 520px;
+  top: -140px;
+  right: -100px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.12) 0%, transparent 70%);
 }
 
 .app-bg-decor::after {
-  width: 450px;
-  height: 450px;
-  bottom: -100px;
-  left: -60px;
-  background: radial-gradient(circle, rgba(196, 149, 106, 0.16) 0%, transparent 70%);
+  width: 460px;
+  height: 460px;
+  bottom: -120px;
+  left: -80px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.10) 0%, transparent 70%);
 }
 
 /* ═══════════════════════════════════════════
@@ -123,8 +123,8 @@ html, body, #app {
    ═══════════════════════════════════════════ */
 .card {
   background: var(--glass-bg);
-  backdrop-filter: blur(16px) saturate(1.3);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius);
   padding: 24px;
@@ -176,22 +176,22 @@ html, body, #app {
 }
 
 /* ═══════════════════════════════════════════
-   Element Plus 主题覆盖（莫兰迪互补色）
+   Element Plus 主题覆盖
    ═══════════════════════════════════════════ */
 :root {
   --el-color-primary: var(--mo-primary);
   --el-color-primary-dark-2: var(--mo-primary-dark);
-  --el-color-primary-light-3: #a3b2c7;
-  --el-color-primary-light-5: #bac6d6;
-  --el-color-primary-light-7: #d1dae4;
-  --el-color-primary-light-8: #dde4eb;
-  --el-color-primary-light-9: #e9edf2;
+  --el-color-primary-light-3: #60a5fa;
+  --el-color-primary-light-5: #93c5fd;
+  --el-color-primary-light-7: #bfdbfe;
+  --el-color-primary-light-8: #dbeafe;
+  --el-color-primary-light-9: #eff6ff;
 
   --el-color-success: var(--mo-success);
   --el-color-warning: var(--mo-warning);
   --el-color-danger: var(--mo-danger);
   --el-color-error: var(--mo-danger);
-  --el-color-info: var(--mo-info);
+  --el-color-info: #6b7280;
 
   --el-text-color-primary: var(--mo-text-1);
   --el-text-color-regular: var(--mo-text-2);
@@ -204,17 +204,22 @@ html, body, #app {
 /* 输入框/选择器玻璃质感 */
 .el-input__wrapper,
 .el-textarea__inner {
-  background-color: rgba(255, 255, 255, 0.55) !important;
-  box-shadow: 0 0 0 1px var(--mo-border) inset !important;
+  background-color: rgba(255, 255, 255, 0.7) !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12) inset !important;
   transition: var(--mo-transition);
 }
 
 .el-input__wrapper:hover,
 .el-textarea__inner:hover {
-  box-shadow: 0 0 0 1px rgba(138, 155, 181, 0.4) inset !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3) inset !important;
 }
 
-/* 主按钮莫兰迪互补渐变 */
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--mo-primary) inset !important;
+}
+
+/* 主按钮 */
 .el-button--primary {
   background: var(--mo-gradient);
   border: none;
@@ -223,15 +228,15 @@ html, body, #app {
 
 .el-button--primary:hover,
 .el-button--primary:focus {
-  background: linear-gradient(135deg, #7b8ca6 0%, #b5875e 100%);
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
   transform: translateY(-1px);
 }
 
 /* 对话框玻璃拟态 */
 .el-dialog {
   background: var(--glass-bg-strong) !important;
-  backdrop-filter: blur(20px) saturate(1.4);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-lg) !important;
 }
@@ -240,12 +245,12 @@ html, body, #app {
 .el-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(255, 255, 255, 0.35);
-  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.5);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.6);
   background-color: transparent !important;
 }
 
-/* 多选框莫兰迪色 */
+/* 多选框 */
 .el-checkbox__input.is-checked .el-checkbox__inner {
   background-color: var(--mo-primary);
   border-color: var(--mo-primary);
