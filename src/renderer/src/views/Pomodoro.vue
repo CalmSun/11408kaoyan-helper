@@ -163,26 +163,13 @@
         </div>
       </div>
     </div>
-    <!-- 提醒遮罩 -->
-    <Transition name="fade">
-      <div v-if="showAlert" class="alert-overlay" @click="dismissAlert">
-        <div class="alert-card" @click.stop>
-          <div class="alert-icon">{{ alertIcon }}</div>
-          <h2 class="alert-title">{{ alertMessage }}</h2>
-          <p class="alert-subtitle">{{ alertSubtitle }}</p>
-          <el-button type="primary" size="large" round @click="dismissAlert" class="alert-btn">
-            好的
-          </el-button>
-        </div>
-      </div>
-    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onUnmounted, watch } from 'vue'
-import { useMainStore, SubjectType } from '@/stores'
-import { ElMessage } from 'element-plus'
+import { computed } from 'vue'
+import { useMainStore, type SubjectType } from '@/stores'
+import { usePomodoroStore } from '@/stores/pomodoro'
 import dayjs from 'dayjs'
 import {
   VideoPlay,
@@ -192,51 +179,33 @@ import {
   List
 } from '@element-plus/icons-vue'
 
-type PomodoroMode = 'work' | 'shortBreak' | 'longBreak'
-
 const store = useMainStore()
+// 计时状态已提升至全局 store：切换页面不会中断计时、不会重置进度
+const pmd = usePomodoroStore()
 
-const currentMode = ref<PomodoroMode>('work')
-const isRunning = ref(false)
-const hasStarted = ref(false)
-const selectedSubject = ref<SubjectType>('cs408')
-const completedPomodoros = ref(0)
+const currentMode = computed(() => pmd.currentMode)
+const isRunning = computed(() => pmd.isRunning)
+const hasStarted = computed(() => pmd.hasStarted)
+const remainingSeconds = computed(() => pmd.remainingSeconds)
+const totalSeconds = computed(() => pmd.totalSeconds)
+const completedPomodoros = computed(() => pmd.completedPomodoros)
+const isPulsing = computed(() => pmd.isPulsing)
+const modeLabel = computed(() => pmd.modeLabel)
+const selectedSubject = computed({
+  get: () => pmd.selectedSubject,
+  set: (v) => { pmd.selectedSubject = v }
+})
 
-const workDuration = computed(() => store.pomodoroSettings.workDuration * 60)
-const shortBreakDuration = computed(() => store.pomodoroSettings.breakDuration * 60)
-const longBreakDuration = computed(() => store.pomodoroSettings.longBreakDuration * 60)
-
-const remainingSeconds = ref(workDuration.value)
-const totalSeconds = ref(workDuration.value)
-
-let timer: number | null = null
-let titleFlashTimer: number | null = null
-let timerStartAt: number = 0     // 计时开始时的绝对时间戳
-let timerRemainingAtStart: number = 0  // 计时开始时的剩余秒数
-let audioContext: AudioContext | null = null  // 复用单一 AudioContext 实例
-
-// 提醒相关状态
-const showAlert = ref(false)
-const alertMessage = ref('')
-const alertSubtitle = ref('')
-const alertIcon = ref('')
-const isPulsing = ref(false)
-const isFlashing = ref(false)
+// 最后5秒数字闪烁（视觉提醒）
+const isFlashing = computed(() =>
+  isRunning.value && remainingSeconds.value <= 5 && remainingSeconds.value > 0
+)
 
 const circumference = 2 * Math.PI * 135
 
 const progressOffset = computed(() => {
   const progress = remainingSeconds.value / totalSeconds.value
   return circumference * progress
-})
-
-const modeLabel = computed(() => {
-  const labels: Record<PomodoroMode, string> = {
-    work: '专注学习中',
-    shortBreak: '短暂休息',
-    longBreak: '长休息'
-  }
-  return labels[currentMode.value]
 })
 
 const todayRecords = computed(() => {
@@ -263,280 +232,25 @@ function formatRecordTime(dateStr: string): string {
   return dayjs(dateStr).format('HH:mm')
 }
 
-function getDuration(mode: PomodoroMode): number {
-  switch (mode) {
-    case 'work': return workDuration.value
-    case 'shortBreak': return shortBreakDuration.value
-    case 'longBreak': return longBreakDuration.value
-  }
-}
-
-function switchMode(mode: PomodoroMode) {
-  if (isRunning.value) {
-    pauseTimer()
-  }
-  currentMode.value = mode
-  hasStarted.value = false
-  remainingSeconds.value = getDuration(mode)
-  totalSeconds.value = getDuration(mode)
+function switchMode(mode: 'work' | 'shortBreak' | 'longBreak') {
+  pmd.switchMode(mode)
 }
 
 function startTimer() {
-  if (isRunning.value) return
-  isRunning.value = true
-  hasStarted.value = true
-  
-  timerStartAt = Date.now()
-  timerRemainingAtStart = remainingSeconds.value
-  
-  timer = window.setInterval(() => {
-    const elapsed = Math.floor((Date.now() - timerStartAt) / 1000)
-    const prev = remainingSeconds.value
-    remainingSeconds.value = Math.max(0, timerRemainingAtStart - elapsed)
-    
-    // 倒计时预警：最后5秒
-    if (remainingSeconds.value <= 5 && remainingSeconds.value > 0 && remainingSeconds.value !== prev) {
-      playCountdownBeep()
-      isFlashing.value = true
-      triggerVibration([50])
-      setTimeout(() => { isFlashing.value = false }, 300)
-    }
-    
-    if (remainingSeconds.value === 0) {
-      completeTimer()
-    }
-  }, 1000)  // 使用绝对时间差计算，1秒间隔足够精确且节省性能
+  pmd.startTimer()
 }
 
 function pauseTimer() {
-  isRunning.value = false
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
+  pmd.pauseTimer()
 }
 
 function resetTimer() {
-  pauseTimer()
-  hasStarted.value = false
-  remainingSeconds.value = getDuration(currentMode.value)
-  totalSeconds.value = getDuration(currentMode.value)
+  pmd.resetTimer()
 }
 
 function skipTimer() {
-  completeTimer()
+  pmd.skipTimer()
 }
-
-function completeTimer() {
-  pauseTimer()
-  
-  // 如果是工作模式，记录番茄
-  if (currentMode.value === 'work') {
-    store.addPomodoroRecord(
-      totalSeconds.value / 60,
-      selectedSubject.value
-    )
-    completedPomodoros.value++
-    
-    const msg = getCompletionMessage(completedPomodoros.value)
-    alertMessage.value = msg
-    alertSubtitle.value = `已完成 ${completedPomodoros.value} 个番茄`
-    alertIcon.value = '🎉'
-    
-    // 第4的倍数个番茄用长休息图标
-    if (completedPomodoros.value % store.pomodoroSettings.longBreakInterval === 0) {
-      alertIcon.value = '💪'
-      alertSubtitle.value = '太棒了！完成一组番茄，享受长休息吧！'
-    }
-    
-    showAlert.value = true
-    isPulsing.value = true
-    triggerVibration([200, 100, 200, 100, 200])
-    
-    // 发送通知（声音区分：工作完成用上升旋律）
-    sendNotification('番茄钟完成', alertMessage.value, 'work')
-    
-    // 每4个番茄后长休息
-    if (completedPomodoros.value % store.pomodoroSettings.longBreakInterval === 0) {
-      switchMode('longBreak')
-    } else {
-      switchMode('shortBreak')
-    }
-  } else {
-    // 休息结束
-    const isLongBreak = currentMode.value === 'longBreak'
-    alertMessage.value = isLongBreak ? '能量充沛，开始新一轮专注吧！' : '休息结束，继续专注学习！'
-    alertSubtitle.value = isLongBreak ? '长休息结束，状态满满' : '短休息结束，保持节奏'
-    alertIcon.value = '⚡'
-    showAlert.value = true
-    isPulsing.value = true
-    triggerVibration([300, 100, 300])
-    
-    // 发送通知（声音区分：休息结束用下降旋律）
-    sendNotification('休息结束', alertMessage.value, 'break')
-    
-    switchMode('work')
-  }
-}
-
-// 发送通知
-function sendNotification(title: string, body: string, type: 'work' | 'break') {
-  // 播放提示音（根据类型区分旋律）
-  if (store.pomodoroSettings.enableSound) {
-    playNotificationSound(type)
-  }
-  
-  // 桌面通知
-  if (store.pomodoroSettings.enableNotification) {
-    showDesktopNotification(title, body)
-  }
-  
-  // 页面标题闪烁
-  if (store.pomodoroSettings.enableTitleFlash) {
-    startTitleFlash(title)
-  }
-}
-
-// 播放提示音（声音区分：上升/下降旋律）
-function playNotificationSound(type: 'work' | 'break' = 'work') {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-  }
-  
-  const now = audioContext.currentTime
-  // 上升旋律（工作完成）: 800→1000→1200  下降旋律（休息结束）: 1200→1000→800
-  const freqs = type === 'work' ? [800, 1000, 1200] : [1200, 1000, 800]
-  
-  for (let round = 0; round < 2; round++) {
-    const baseTime = round === 0 ? now : now + 2.5
-    freqs.forEach((freq, i) => {
-      const osc = audioContext!.createOscillator()
-      const gain = audioContext!.createGain()
-      osc.connect(gain)
-      gain.connect(audioContext!.destination)
-      osc.frequency.value = freq
-      osc.type = 'sine'
-      const t = baseTime + i * 0.3
-      const vol = 0.8 + (i * 0.05)  // 逐音增强
-      gain.gain.setValueAtTime(0.01, t)
-      gain.gain.exponentialRampToValueAtTime(vol, t + 0.05)
-      gain.gain.setValueAtTime(vol, t + (i === 2 ? 0.9 : 0.6))
-      gain.gain.exponentialRampToValueAtTime(0.01, t + (i === 2 ? 1.0 : 0.7))
-      osc.start(t)
-      osc.stop(t + (i === 2 ? 1.0 : 0.7))
-    })
-  }
-}
-
-// 倒计时预警短促提示音
-function playCountdownBeep() {
-  if (!audioContext) {
-    audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-  }
-  const now = audioContext.currentTime
-  const osc = audioContext.createOscillator()
-  const gain = audioContext.createGain()
-  osc.connect(gain)
-  gain.connect(audioContext.destination)
-  osc.frequency.value = 500
-  osc.type = 'sine'
-  gain.gain.setValueAtTime(0.5, now)
-  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1)
-  osc.start(now)
-  osc.stop(now + 0.1)
-}
-
-// 显示桌面通知
-function showDesktopNotification(title: string, body: string) {
-  if ('Notification' in window) {
-    if (Notification.permission === 'granted') {
-      new Notification(title, {
-        body: body,
-        icon: '/favicon.ico'
-      })
-    } else if (Notification.permission !== 'denied') {
-      Notification.requestPermission().then(permission => {
-        if (permission === 'granted') {
-          new Notification(title, {
-            body: body,
-            icon: '/favicon.ico'
-          })
-        }
-      })
-    }
-  }
-}
-
-// 页面标题闪烁
-function startTitleFlash(title: string) {
-  const originalTitle = document.title
-  let isFlashing = true
-  
-  if (titleFlashTimer) {
-    clearInterval(titleFlashTimer)
-  }
-  
-  titleFlashTimer = window.setInterval(() => {
-    document.title = isFlashing ? `🔔 ${title}` : originalTitle
-    isFlashing = !isFlashing
-  }, 1000)
-  
-  // 10秒后停止闪烁
-  setTimeout(() => {
-    if (titleFlashTimer) {
-      clearInterval(titleFlashTimer)
-      titleFlashTimer = null
-    }
-    document.title = originalTitle
-  }, 10000)
-  
-  // 页面获得焦点时停止闪烁
-  window.addEventListener('focus', () => {
-    if (titleFlashTimer) {
-      clearInterval(titleFlashTimer)
-      titleFlashTimer = null
-      document.title = originalTitle
-    }
-  }, { once: true })
-}
-
-// 个性化提醒文案
-function getCompletionMessage(count: number): string {
-  switch (count) {
-    case 1: return '第一个番茄完成！休息一下吧~'
-    case 4: return '太棒了！完成一组番茄！'
-    case 8: return '超级厉害！已完成8个番茄！'
-    case 12: return '专注大师！12个番茄达成！'
-    default: return `第 ${count} 个番茄完成！继续保持！`
-  }
-}
-
-// 关闭提醒遮罩
-function dismissAlert() {
-  showAlert.value = false
-  isPulsing.value = false
-}
-
-// 振动反馈
-function triggerVibration(pattern: number[]) {
-  if (navigator.vibrate) {
-    navigator.vibrate(pattern)
-  }
-}
-
-onUnmounted(() => {
-  if (timer) {
-    clearInterval(timer)
-  }
-  if (titleFlashTimer) {
-    clearInterval(titleFlashTimer)
-  }
-  // 清理 AudioContext
-  if (audioContext) {
-    audioContext.close()
-    audioContext = null
-  }
-})
 </script>
 
 <style scoped>
@@ -778,61 +492,6 @@ onUnmounted(() => {
   font-size: 14px;
   color: var(--mo-text-1);
   font-weight: 500;
-}
-/* 提醒遮罩 */
-.alert-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(74, 79, 87, 0.42);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-}
-
-.alert-card {
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
-  border: 1px solid var(--glass-border);
-  border-radius: 20px;
-  padding: 48px 40px;
-  text-align: center;
-  max-width: 400px;
-  width: 90%;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-  animation: alertPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes alertPop {
-  0% { transform: scale(0.5); opacity: 0; }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-.alert-icon {
-  font-size: 72px;
-  margin-bottom: 16px;
-  line-height: 1;
-}
-
-.alert-title {
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--mo-text-1);
-  margin: 0 0 8px 0;
-}
-
-.alert-subtitle {
-  font-size: 14px;
-  color: var(--mo-text-3);
-  margin: 0 0 24px 0;
-}
-
-.alert-btn {
-  min-width: 120px;
 }
 
 /* 倒计时闪烁 */

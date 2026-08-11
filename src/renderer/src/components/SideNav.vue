@@ -231,7 +231,7 @@ function handleLogout() {
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
   border-right: 1px solid var(--side-nav-border);
-  box-shadow: 2px 0 16px rgba(31, 64, 130, 0.06);
+  box-shadow: 2px 0 16px rgba(31, 64, 130, 0.06), inset 1px 0 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.6));
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -240,7 +240,7 @@ function handleLogout() {
 }
 
 html.dark .side-nav {
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3);
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3), inset 1px 0 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.6));
 }
 
 .side-nav.collapsed {

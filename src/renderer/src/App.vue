@@ -10,6 +10,20 @@
         </transition>
       </router-view>
     </div>
+
+    <!-- 番茄钟完成提醒（全局渲染，切换页面后依然弹出） -->
+    <Transition name="alert-fade">
+      <div v-if="pmd.showAlert" class="alert-overlay" @click="pmd.dismissAlert()">
+        <div class="alert-card" @click.stop>
+          <div class="alert-icon">{{ pmd.alertIcon }}</div>
+          <h2 class="alert-title">{{ pmd.alertMessage }}</h2>
+          <p class="alert-subtitle">{{ pmd.alertSubtitle }}</p>
+          <el-button type="primary" size="large" round @click="pmd.dismissAlert()" class="alert-btn">
+            好的
+          </el-button>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -17,6 +31,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMainStore } from '@/stores'
+import { usePomodoroStore } from '@/stores/pomodoro'
 import { initTheme } from '@/utils/theme'
 import SideNav from '@/components/SideNav.vue'
 
@@ -25,6 +40,7 @@ initTheme()
 
 const route = useRoute()
 const store = useMainStore()
+const pmd = usePomodoroStore()
 const isSidebarCollapsed = ref(false)
 
 const isLoginPage = computed(() => route.path === '/login')
@@ -88,5 +104,71 @@ onUnmounted(() => {
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* 番茄钟完成提醒遮罩 */
+.alert-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(74, 79, 87, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.alert-card {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-filter-pop);
+  -webkit-backdrop-filter: var(--glass-filter-pop);
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  padding: 48px 40px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: alertPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes alertPop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.alert-icon {
+  font-size: 72px;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+
+.alert-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--mo-text-1);
+  margin: 0 0 8px 0;
+}
+
+.alert-subtitle {
+  font-size: 14px;
+  color: var(--mo-text-3);
+  margin: 0 0 24px 0;
+}
+
+.alert-btn {
+  min-width: 120px;
+}
+
+.alert-fade-enter-active,
+.alert-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.alert-fade-enter-from,
+.alert-fade-leave-to {
+  opacity: 0;
 }
 </style>

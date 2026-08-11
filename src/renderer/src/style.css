@@ -1,7 +1,8 @@
 /* ═══════════════════════════════════════════
-   双主题 · 玻璃拟态 设计体系 v5
+   双主题 · 玻璃拟态 设计体系 v6
    - 统一玻璃封装：.glass / .glass-strong / .glass-lite 三级工具类
-   - 模糊强度统一由 --glass-blur 控制（本版本整体调低）
+   - 玻璃背景烘焙斜向光泽渐变，质感明显且全站一致
+   - 复合阴影变量（弥散阴影 + 顶部入光 + 底部边缘折光）
    - 深色模式叠加噪点纹理，@supports 提供无滤镜降级
    - Element Plus 浮层统一玻璃化
    ═══════════════════════════════════════════ */
@@ -25,18 +26,21 @@
   --mo-bg-gradient: linear-gradient(160deg, #e8f0ff 0%, #f0f7ff 100%);
   --ring-track: rgba(255, 255, 255, 0.6);
 
-  /* ── 玻璃拟态统一变量（模糊强度整体调低，减少合成开销） ── */
-  --glass-bg: rgba(255, 255, 255, 0.66);
-  --glass-bg-strong: rgba(255, 255, 255, 0.86);
+  /* ── 玻璃拟态统一变量（背景自带斜向光泽渐变，质感统一烘焙进变量） ── */
+  --glass-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.80) 0%, rgba(255, 255, 255, 0.62) 48%, rgba(255, 255, 255, 0.56) 100%);
+  --glass-bg-strong: linear-gradient(145deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.86) 55%, rgba(255, 255, 255, 0.80) 100%);
   --glass-bg-fallback: #f3f6fc;          /* 无滤镜降级：近似不透明底色 */
   --glass-bg-strong-fallback: #fbfcff;
-  --glass-border: rgba(255, 255, 255, 0.62);
-  --glass-blur: 10px;                      /* v2.6.1：14px → 10px */
+  --glass-border: rgba(255, 255, 255, 0.72);
+  --glass-blur: 10px;
   --glass-blur-pop: 12px;                  /* 浮层专用模糊 */
-  --glass-saturate: 1.3;
-  --glass-highlight: 0.5;
-  --glass-shadow: 0 2px 12px rgba(31, 64, 130, 0.08), 0 8px 24px rgba(31, 64, 130, 0.05);
-  --glass-shadow-hover: 0 4px 16px rgba(31, 64, 130, 0.12), 0 12px 32px rgba(31, 64, 130, 0.08);
+  --glass-saturate: 1.45;
+  --glass-highlight: 0.7;
+  --glass-shadow: 0 2px 12px rgba(31, 64, 130, 0.10), 0 10px 28px rgba(31, 64, 130, 0.06);
+  --glass-shadow-hover: 0 4px 16px rgba(31, 64, 130, 0.14), 0 14px 36px rgba(31, 64, 130, 0.10);
+  /* 复合阴影：外部弥散 + 顶部入光高光 + 底部边缘折光，统一玻璃质感表达式 */
+  --glass-shadow-card: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight)), inset 0 -1px 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.35));
+  --glass-shadow-card-hover: var(--glass-shadow-hover), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight)), inset 0 -1px 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.35));
   /* 统一滤镜表达式：所有玻璃层只引用该变量，便于一处调参 */
   --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
@@ -54,9 +58,9 @@
   --mo-text-3: #8b92a0;
   --mo-text-disabled: #b8bec8;
 
-  /* 侧边导航（玻璃） */
-  --side-nav-bg: rgba(255, 255, 255, 0.58);
-  --side-nav-border: rgba(255, 255, 255, 0.55);
+  /* 侧边导航（玻璃，渐变光泽） */
+  --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.55) 60%, rgba(255, 255, 255, 0.50) 100%);
+  --side-nav-border: rgba(255, 255, 255, 0.65);
   --side-nav-text-1: #222831;
   --side-nav-text-2: rgba(34, 40, 49, 0.62);
   --side-nav-text-3: rgba(34, 40, 49, 0.38);
@@ -87,17 +91,17 @@ html.dark {
   --mo-bg-gradient: linear-gradient(160deg, #0b1220 0%, #111a2c 55%, #0d1424 100%);
   --ring-track: rgba(255, 255, 255, 0.12);
 
-  /* 深色玻璃（模糊与浅色一致，统一低开销） */
-  --glass-bg: rgba(23, 30, 44, 0.60);
-  --glass-bg-strong: rgba(18, 24, 36, 0.88);
+  /* 深色玻璃（与浅色统一：渐变光泽 + 多层高光） */
+  --glass-bg: linear-gradient(145deg, rgba(34, 44, 63, 0.72) 0%, rgba(23, 30, 44, 0.58) 50%, rgba(18, 24, 36, 0.52) 100%);
+  --glass-bg-strong: linear-gradient(145deg, rgba(26, 34, 50, 0.94) 0%, rgba(18, 24, 36, 0.88) 100%);
   --glass-bg-fallback: #151c2b;
   --glass-bg-strong-fallback: #141b2a;
-  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.12);
   --glass-blur: 10px;
-  --glass-saturate: 1.2;
-  --glass-highlight: 0.07;
-  --glass-shadow: 0 2px 12px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
-  --glass-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.45), 0 12px 32px rgba(0, 0, 0, 0.32);
+  --glass-saturate: 1.25;
+  --glass-highlight: 0.14;
+  --glass-shadow: 0 2px 12px rgba(0, 0, 0, 0.35), 0 10px 28px rgba(0, 0, 0, 0.25);
+  --glass-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.45), 0 14px 36px rgba(0, 0, 0, 0.32);
 
   /* 中性表面 */
   --mo-surface: rgba(255, 255, 255, 0.06);
@@ -111,9 +115,9 @@ html.dark {
   --mo-text-3: #79828f;
   --mo-text-disabled: #4b5361;
 
-  /* 侧边导航（深色玻璃） */
-  --side-nav-bg: rgba(13, 19, 31, 0.66);
-  --side-nav-border: rgba(255, 255, 255, 0.07);
+  /* 侧边导航（深色玻璃，渐变光泽） */
+  --side-nav-bg: linear-gradient(160deg, rgba(34, 44, 63, 0.72) 0%, rgba(20, 27, 42, 0.60) 60%, rgba(13, 19, 31, 0.55) 100%);
+  --side-nav-border: rgba(255, 255, 255, 0.10);
   --side-nav-text-1: #e8ebf1;
   --side-nav-text-2: rgba(232, 235, 241, 0.60);
   --side-nav-text-3: rgba(232, 235, 241, 0.32);
@@ -248,8 +252,8 @@ html.dark .app-bg-decor::after {
   -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius);
-  box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
-  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
+  box-shadow: var(--glass-shadow-card);
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   contain: layout style;
 }
 
@@ -258,7 +262,7 @@ html.dark .app-bg-decor::after {
 }
 
 .card:hover {
-  box-shadow: var(--glass-shadow-hover), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
+  box-shadow: var(--glass-shadow-card-hover);
 }
 
 .glass-strong {
@@ -266,7 +270,7 @@ html.dark .app-bg-decor::after {
   backdrop-filter: var(--glass-filter-pop);
   -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-hover), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
+  box-shadow: var(--glass-shadow-card);
 }
 
 /* 列表/网格高频元素：不使用滤镜，仅半透明底色 + 细边框，保障滚动性能 */
@@ -422,7 +426,7 @@ html.dark .el-textarea__inner:focus {
   -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-lg) !important;
-  box-shadow: var(--glass-shadow-hover) !important;
+  box-shadow: var(--glass-shadow-card) !important;
 }
 
 /* 消息确认框 */
@@ -432,7 +436,7 @@ html.dark .el-textarea__inner:focus {
   -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border) !important;
   border-radius: var(--mo-radius-lg) !important;
-  box-shadow: var(--glass-shadow-hover) !important;
+  box-shadow: var(--glass-shadow-card) !important;
 }
 
 /* 轻提示 */
