@@ -2,7 +2,7 @@
   <div class="side-nav" :class="{ collapsed: isCollapsed }">
     <div class="nav-header">
       <div class="logo">
-        <el-icon :size="28" color="#667eea"><Reading /></el-icon>
+        <el-icon :size="28" color="#8a9bb5"><Reading /></el-icon>
         <span v-show="!isCollapsed" class="logo-text">11408考研助手</span>
       </div>
       <div v-show="!isCollapsed" class="exam-countdown-mini">
@@ -91,7 +91,7 @@
       <!-- 用户信息 -->
       <div class="user-section">
         <div class="user-info" @click="goToSettings" :title="userStore.displayName">
-          <el-icon :size="18" color="#667eea"><UserFilled /></el-icon>
+          <el-icon :size="18" color="#8a9bb5"><UserFilled /></el-icon>
           <span class="user-name">{{ userStore.displayName }}</span>
         </div>
         <el-button
@@ -105,7 +105,7 @@
         </el-button>
       </div>
       <div class="study-tip">
-        <el-icon :size="16" color="#e6a23c"><Warning /></el-icon>
+        <el-icon :size="16" color="#c9a26a"><Warning /></el-icon>
         <span>一战成硕！</span>
       </div>
     </div>
@@ -198,7 +198,7 @@ function handleLogout() {
 .side-nav {
   width: 220px;
   height: 100%;
-  background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+  background: linear-gradient(180deg, #474e5d 0%, #3a3f4c 100%);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -245,15 +245,15 @@ function handleLogout() {
   align-items: baseline;
   gap: 4px;
   padding: 12px 16px;
-  background: rgba(102, 126, 234, 0.15);
+  background: rgba(138, 155, 181, 0.15);
   border-radius: 10px;
-  border: 1px solid rgba(102, 126, 234, 0.3);
+  border: 1px solid rgba(138, 155, 181, 0.3);
 }
 
 .countdown-number {
   font-size: 28px;
   font-weight: 700;
-  color: #667eea;
+  color: #8a9bb5;
   font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
 }
 
@@ -283,9 +283,9 @@ function handleLogout() {
 }
 
 .collapse-btn:hover {
-  background: #667eea;
+  background: #8a9bb5;
   color: #fff;
-  border-color: #667eea;
+  border-color: #8a9bb5;
 }
 
 .nav-menu {
@@ -337,9 +337,9 @@ function handleLogout() {
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
 }
 
 .nav-text {

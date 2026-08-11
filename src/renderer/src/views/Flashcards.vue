@@ -88,7 +88,7 @@
 
     <!-- 空状态 -->
     <div class="empty-state" v-else>
-      <el-icon :size="64" color="#c0c4cc"><Collection /></el-icon>
+      <el-icon :size="64" color="#b0b6bd"><Collection /></el-icon>
       <p class="empty-text">还没有背诵卡片，添加一些吧~</p>
       <el-button type="primary" @click="showAddDialog = true">添加卡片</el-button>
     </div>
@@ -394,13 +394,13 @@ function markCorrect() {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
@@ -416,7 +416,10 @@ function markCorrect() {
   align-items: center;
   margin-bottom: 20px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
@@ -431,18 +434,18 @@ function markCorrect() {
   padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #f5f7fa;
+  background: var(--mo-surface);
 }
 
 .tab-item:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .tab-item.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   color: #fff;
 }
 
@@ -483,15 +486,18 @@ function markCorrect() {
 }
 
 .card-front {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   color: #fff;
 }
 
 .card-back {
-  background: #fff;
-  color: #303133;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
+  color: var(--mo-text-1);
   transform: rotateY(180deg);
-  border: 2px solid #ebeef5;
+  border: 2px solid rgba(255, 255, 255, 0.6);
 }
 
 .card-category {
@@ -503,8 +509,8 @@ function markCorrect() {
 }
 
 .card-back .card-category {
-  background: #f0f2f5;
-  color: #606266;
+  background: rgba(150, 158, 170, 0.10);
+  color: var(--mo-text-2);
 }
 
 .card-text {
@@ -531,7 +537,7 @@ function markCorrect() {
   align-items: center;
   padding: 10px 4px 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .review-count {
@@ -548,12 +554,15 @@ function markCorrect() {
   justify-content: center;
   padding: 80px 20px;
   gap: 16px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
 }
 
 .empty-text {
-  color: #909399;
+  color: var(--mo-text-3);
   font-size: 14px;
   margin: 0;
 }
@@ -568,7 +577,7 @@ function markCorrect() {
   align-items: center;
   margin-bottom: 24px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .review-card {
@@ -604,13 +613,13 @@ function markCorrect() {
 }
 
 .review-front {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   color: #fff;
 }
 
 .review-back {
-  background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
-  color: #303133;
+  background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%);
+  color: var(--mo-text-1);
   transform: rotateY(180deg);
 }
 

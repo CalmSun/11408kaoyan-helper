@@ -13,7 +13,7 @@
             cy="140"
             r="125"
             fill="none"
-            stroke="#ebeef5"
+            stroke="rgba(255, 255, 255, 0.6)"
             stroke-width="12"
           />
           <circle
@@ -31,8 +31,8 @@
           />
           <defs>
             <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stop-color="#667eea" />
-              <stop offset="100%" stop-color="#764ba2" />
+              <stop offset="0%" stop-color="#8a9bb5" />
+              <stop offset="100%" stop-color="#9d8bab" />
             </linearGradient>
           </defs>
         </svg>
@@ -305,13 +305,13 @@ onUnmounted(() => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin-bottom: 32px;
 }
 
@@ -350,7 +350,7 @@ onUnmounted(() => {
 .countdown-days {
   font-size: 72px;
   font-weight: 700;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -360,13 +360,13 @@ onUnmounted(() => {
 
 .countdown-unit {
   font-size: 18px;
-  color: #606266;
+  color: var(--mo-text-2);
   margin-top: 4px;
 }
 
 .countdown-label {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin-top: 8px;
 }
 
@@ -389,11 +389,14 @@ onUnmounted(() => {
 .time-value {
   font-size: 36px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   font-family: 'DIN Alternate', sans-serif;
   min-width: 60px;
   text-align: center;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   padding: 8px 16px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
@@ -401,20 +404,20 @@ onUnmounted(() => {
 
 .time-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .time-separator {
   font-size: 28px;
   font-weight: 700;
-  color: #c0c4cc;
+  color: var(--mo-text-disabled);
   margin-top: -20px;
 }
 
 /* 信息卡片 */
 .info-cards {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -424,7 +427,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 14px;
   padding: 20px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
@@ -433,7 +439,7 @@ onUnmounted(() => {
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -449,13 +455,13 @@ onUnmounted(() => {
 
 .info-label {
   font-size: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .info-value {
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   font-family: 'DIN Alternate', sans-serif;
 }
 
@@ -467,7 +473,7 @@ onUnmounted(() => {
 .card-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -476,13 +482,13 @@ onUnmounted(() => {
 
 .tips-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 16px;
 }
 
 .tip-item {
   padding: 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 12px;
 }
 
@@ -502,12 +508,12 @@ onUnmounted(() => {
 .tip-subject {
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
 }
 
 .tip-content {
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
   line-height: 1.7;
   margin: 0;
 }

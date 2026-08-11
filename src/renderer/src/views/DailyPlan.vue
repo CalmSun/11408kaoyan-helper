@@ -22,8 +22,8 @@
       <svg width="0" height="0">
         <defs>
           <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#667eea" />
-            <stop offset="100%" stop-color="#764ba2" />
+            <stop offset="0%" stop-color="#8a9bb5" />
+            <stop offset="100%" stop-color="#9d8bab" />
           </linearGradient>
         </defs>
       </svg>
@@ -132,7 +132,7 @@
       </div>
 
       <div class="empty-state" v-else>
-        <el-icon :size="48" color="#c0c4cc"><Document /></el-icon>
+        <el-icon :size="48" color="#b0b6bd"><Document /></el-icon>
         <p>今天还没有计划，添加一个开始学习吧~</p>
       </div>
     </div>
@@ -164,15 +164,15 @@
                 class="history-plan-item"
                 :class="{ completed: plan.completed }"
               >
-                <el-icon v-if="plan.completed" color="#67c23a"><Check /></el-icon>
-                <el-icon v-else color="#c0c4cc"><Close /></el-icon>
+                <el-icon v-if="plan.completed" color="#8fa876"><Check /></el-icon>
+                <el-icon v-else color="#b0b6bd"><Close /></el-icon>
                 <span>{{ plan.title }}</span>
               </div>
             </div>
           </div>
         </div>
         <div class="empty-state" v-else>
-          <p style="color: #909399; margin: 0;">暂无历史记录</p>
+          <p style="color: var(--mo-text-3); margin: 0;">暂无历史记录</p>
         </div>
       </div>
     </div>
@@ -326,19 +326,22 @@ function clearCompleted() {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
 /* 进度卡片 */
 .progress-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
   margin-bottom: 16px;
@@ -350,19 +353,22 @@ function clearCompleted() {
   justify-content: space-between;
   margin-bottom: 12px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .progress-percent {
   font-size: 20px;
   font-weight: 700;
-  color: #667eea;
+  color: #8a9bb5;
   font-family: 'DIN Alternate', sans-serif;
 }
 
 /* 添加计划 */
 .add-plan-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 16px;
   margin-bottom: 16px;
@@ -371,7 +377,10 @@ function clearCompleted() {
 
 /* 计划列表 */
 .plan-list-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
   margin-bottom: 16px;
@@ -388,7 +397,7 @@ function clearCompleted() {
 .list-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -411,13 +420,13 @@ function clearCompleted() {
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 10px;
   transition: all 0.2s ease;
 }
 
 .plan-item:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .plan-item.completed {
@@ -426,18 +435,18 @@ function clearCompleted() {
 
 .plan-item.completed .plan-title {
   text-decoration: line-through;
-  color: #c0c4cc;
+  color: var(--mo-text-disabled);
 }
 
 .plan-title {
   flex: 1;
   font-size: 14px;
-  color: #303133;
+  color: var(--mo-text-1);
 }
 
 .plan-time {
   font-size: 12px;
-  color: #67c23a;
+  color: #8fa876;
   font-family: 'DIN Alternate', sans-serif;
 }
 
@@ -458,13 +467,16 @@ function clearCompleted() {
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
   font-size: 14px;
 }
 
 /* 历史记录 */
 .history-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
   overflow: hidden;
@@ -480,13 +492,13 @@ function clearCompleted() {
 }
 
 .history-header:hover {
-  background: #f5f7fa;
+  background: var(--mo-surface);
 }
 
 .history-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -495,7 +507,7 @@ function clearCompleted() {
 
 .history-header .el-icon {
   transition: transform 0.3s ease;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .history-header .el-icon.rotated {
@@ -504,7 +516,7 @@ function clearCompleted() {
 
 .history-content {
   padding: 0 24px 20px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .history-days {
@@ -516,7 +528,7 @@ function clearCompleted() {
 
 .history-day {
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 10px;
 }
 
@@ -528,12 +540,12 @@ function clearCompleted() {
 }
 
 .day-date {
-  color: #606266;
+  color: var(--mo-text-2);
   font-weight: 500;
 }
 
 .day-stats {
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .day-plans {
@@ -547,11 +559,11 @@ function clearCompleted() {
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .history-plan-item.completed {
-  color: #67c23a;
+  color: #8fa876;
   text-decoration: line-through;
 }
 </style>

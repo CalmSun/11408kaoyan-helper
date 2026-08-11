@@ -1,3 +1,47 @@
+/* ═══════════════════════════════════════════
+   莫兰迪色系 · 玻璃拟态 设计体系
+   ═══════════════════════════════════════════ */
+:root {
+  /* 主色 */
+  --mo-primary: #8a9bb5;
+  --mo-primary-dark: #6e7f99;
+  --mo-primary-light: #a8b7cc;
+  --mo-gradient: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
+
+  /* 语义色（莫兰迪低饱和） */
+  --mo-danger: #c08484;
+  --mo-success: #8fa876;
+  --mo-warning: #c9a26a;
+  --mo-info: #8fa5b5;
+
+  /* 背景 */
+  --mo-bg-base: #eceef0;
+  --mo-bg-gradient: linear-gradient(135deg, #eceef0 0%, #eee9e4 50%, #e8ecef 100%);
+
+  /* 玻璃拟态卡片 */
+  --glass-bg: rgba(255, 255, 255, 0.58);
+  --glass-bg-strong: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-shadow: 0 4px 24px rgba(120, 130, 145, 0.10);
+  --glass-shadow-hover: 0 8px 32px rgba(120, 130, 145, 0.16);
+
+  /* 中性表面（次级容器） */
+  --mo-surface: rgba(255, 255, 255, 0.45);
+  --mo-surface-hover: rgba(255, 255, 255, 0.62);
+  --mo-border: rgba(150, 158, 170, 0.22);
+
+  /* 文字 */
+  --mo-text-1: #4a4f57;
+  --mo-text-2: #7d8289;
+  --mo-text-3: #9aa0a8;
+  --mo-text-disabled: #b5bac0;
+
+  /* 圆角 */
+  --mo-radius: 16px;
+  --mo-radius-lg: 20px;
+  --mo-radius-sm: 12px;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -8,8 +52,9 @@ html, body, #app {
   width: 100%;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background: #f5f7fa;
-  color: #303133;
+  background: var(--mo-bg-gradient);
+  background-attachment: fixed;
+  color: var(--mo-text-1);
 }
 
 ::-webkit-scrollbar {
@@ -22,38 +67,41 @@ html, body, #app {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c0c4cc;
+  background: #c5cad1;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #909399;
+  background: #a8adb5;
 }
 
-/* 通用卡片样式 */
+/* 玻璃拟态通用卡片 */
 .card {
-  background: #fff;
-  border-radius: 12px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--mo-radius);
   padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: clamp(22px, 2.4vw, 26px);
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 8px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-2);
   margin-bottom: 24px;
 }
 
 /* 渐变文字 */
 .gradient-text {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--mo-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -73,4 +121,77 @@ html, body, #app {
 .number-emphasis {
   font-family: 'DIN Alternate', -apple-system, sans-serif;
   font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════
+   Element Plus 主题覆盖（莫兰迪色）
+   ═══════════════════════════════════════════ */
+:root {
+  --el-color-primary: var(--mo-primary);
+  --el-color-primary-dark-2: var(--mo-primary-dark);
+  --el-color-primary-light-3: #a3b2c7;
+  --el-color-primary-light-5: #bac6d6;
+  --el-color-primary-light-7: #d1dae4;
+  --el-color-primary-light-8: #dde4eb;
+  --el-color-primary-light-9: #e9edf2;
+
+  --el-color-success: var(--mo-success);
+  --el-color-warning: var(--mo-warning);
+  --el-color-danger: var(--mo-danger);
+  --el-color-error: var(--mo-danger);
+  --el-color-info: var(--mo-info);
+
+  --el-text-color-primary: var(--mo-text-1);
+  --el-text-color-regular: var(--mo-text-2);
+  --el-text-color-secondary: var(--mo-text-3);
+  --el-text-color-placeholder: var(--mo-text-disabled);
+
+  --el-border-radius-base: 10px;
+}
+
+/* 输入框/选择器玻璃质感 */
+.el-input__wrapper,
+.el-textarea__inner {
+  background-color: rgba(255, 255, 255, 0.6) !important;
+  box-shadow: 0 0 0 1px var(--mo-border) inset !important;
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover {
+  box-shadow: 0 0 0 1px var(--mo-primary-light) inset !important;
+}
+
+/* 主按钮莫兰迪渐变 */
+.el-button--primary {
+  background: var(--mo-gradient);
+  border: none;
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  background: linear-gradient(135deg, #7b8ca6 0%, #8e7c9c 100%);
+}
+
+/* 对话框玻璃拟态 */
+.el-dialog {
+  background: var(--glass-bg-strong) !important;
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--mo-radius-lg) !important;
+}
+
+/* 表格玻璃拟态 */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.35);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.5);
+  background-color: transparent !important;
+}
+
+/* 多选框莫兰迪色 */
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: var(--mo-primary);
+  border-color: var(--mo-primary);
 }

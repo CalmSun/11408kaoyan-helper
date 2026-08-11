@@ -177,17 +177,20 @@ const continueAsGuest = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   padding: 20px;
 }
 
 .login-card {
   width: 100%;
   max-width: 420px;
-  background: white;
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 20px;
   padding: 48px 40px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(100, 110, 130, 0.25);
 }
 
 .login-header {
@@ -198,13 +201,13 @@ const continueAsGuest = () => {
 .login-title {
   font-size: 32px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0 0 8px 0;
 }
 
 .login-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
@@ -227,7 +230,7 @@ const continueAsGuest = () => {
   text-align: center;
   margin-bottom: 16px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .login-footer .el-link {

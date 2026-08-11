@@ -38,7 +38,7 @@
 
     <!-- 在线查询加载中 -->
     <div class="online-searching" v-if="isSearchingOnline">
-      <el-icon class="is-loading" :size="24" color="#667eea"><Loading /></el-icon>
+      <el-icon class="is-loading" :size="24" color="#8a9bb5"><Loading /></el-icon>
       <span>本地词库未收录，正在在线查询 "{{ searchWord.trim() }}" ...</span>
     </div>
 
@@ -75,17 +75,17 @@
     <!-- 空状态 -->
     <div class="empty-state" v-else-if="!isSearchingOnline">
       <template v-if="onlineSearchFailed && searchWord.trim()">
-        <el-icon :size="64" color="#c0c4cc"><Warning /></el-icon>
+        <el-icon :size="64" color="#b0b6bd"><Warning /></el-icon>
         <p class="empty-text">未找到 "{{ searchWord.trim() }}" 的释义</p>
         <p class="empty-hint">本地词库未收录该词，在线查询也未获取到结果（可能是网络原因），请检查网络后重试</p>
       </template>
       <template v-else-if="searchWord.trim() && isEnglishWord(searchWord.trim()) && localMatchCount === 0">
-        <el-icon :size="64" color="#c0c4cc"><Reading /></el-icon>
+        <el-icon :size="64" color="#b0b6bd"><Reading /></el-icon>
         <p class="empty-text">本地词库未收录 "{{ searchWord.trim() }}"</p>
         <p class="empty-hint">按回车键或点击「搜索」按钮，将自动在线查询该单词的音标与释义</p>
       </template>
       <template v-else>
-        <el-icon :size="64" color="#c0c4cc"><Reading /></el-icon>
+        <el-icon :size="64" color="#b0b6bd"><Reading /></el-icon>
         <p class="empty-text">{{ searchWord ? '没有找到相关单词' : '开始搜索单词吧' }}</p>
       </template>
     </div>
@@ -632,13 +632,13 @@ function addToFlashcards(word: WordItem) {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin-bottom: 24px;
 }
 
@@ -651,7 +651,10 @@ function addToFlashcards(word: WordItem) {
 .category-section {
   margin-bottom: 20px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
@@ -668,18 +671,18 @@ function addToFlashcards(word: WordItem) {
   padding: 8px 18px;
   border-radius: 10px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #f5f7fa;
+  background: var(--mo-surface);
 }
 
 .cat-item:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .cat-item.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   color: #fff;
 }
 
@@ -693,18 +696,21 @@ function addToFlashcards(word: WordItem) {
 
 .cat-item:not(.active) .cat-count {
   background: #e4e7ed;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 /* 单词列表 */
 .word-list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 16px;
 }
 
 .word-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 18px 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
@@ -727,18 +733,18 @@ function addToFlashcards(word: WordItem) {
 .word-text {
   font-size: 20px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
 }
 
 .word-phonetic {
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
   font-style: italic;
 }
 
 .word-meaning {
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   line-height: 1.6;
   margin-bottom: 12px;
   white-space: pre-line;
@@ -748,7 +754,7 @@ function addToFlashcards(word: WordItem) {
   display: flex;
   justify-content: flex-end;
   padding-top: 10px;
-  border-top: 1px solid #f5f7fa;
+  border-top: 1px solid var(--mo-border);
 }
 
 /* 空状态 */
@@ -759,18 +765,21 @@ function addToFlashcards(word: WordItem) {
   justify-content: center;
   padding: 80px 20px;
   gap: 16px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
 }
 
 .empty-text {
-  color: #909399;
+  color: var(--mo-text-3);
   font-size: 14px;
   margin: 0;
 }
 
 .empty-hint {
-  color: #c0c4cc;
+  color: var(--mo-text-disabled);
   font-size: 12px;
   margin: 0;
   max-width: 420px;
@@ -784,12 +793,12 @@ function addToFlashcards(word: WordItem) {
   align-items: center;
   gap: 10px;
   padding: 16px 20px;
-  background: #f0f2ff;
-  border: 1px solid #d9deff;
+  background: #e8ebef;
+  border: 1px solid #d5dbe2;
   border-radius: 12px;
   margin-bottom: 16px;
   font-size: 14px;
-  color: #667eea;
+  color: #8a9bb5;
 }
 
 /* 单词详情 */
@@ -803,12 +812,12 @@ function addToFlashcards(word: WordItem) {
   gap: 12px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .detail-phonetic {
   font-size: 16px;
-  color: #909399;
+  color: var(--mo-text-3);
   font-style: italic;
 }
 
@@ -818,24 +827,24 @@ function addToFlashcards(word: WordItem) {
 
 .detail-section h4 {
   font-size: 14px;
-  color: #667eea;
+  color: #8a9bb5;
   margin-bottom: 10px;
 }
 
 .detail-section p {
   font-size: 15px;
-  color: #303133;
+  color: var(--mo-text-1);
   line-height: 1.7;
   margin: 0;
 }
 
 .example-en {
   font-style: italic;
-  color: #606266 !important;
+  color: var(--mo-text-2) !important;
   margin-bottom: 6px !important;
 }
 
 .example-cn {
-  color: #909399 !important;
+  color: var(--mo-text-3) !important;
 }
 </style>

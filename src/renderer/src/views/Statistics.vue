@@ -232,16 +232,16 @@ function getStudyOption(): echarts.EChartsOption {
     xAxis: {
       type: 'category',
       data: last7Days.value.map(d => dayjs(d).format('MM-DD')),
-      axisLine: { lineStyle: { color: '#e4e7ed' } },
-      axisLabel: { color: '#909399' }
+      axisLine: { lineStyle: { color: '#d8dde2' } },
+      axisLabel: { color: '#9aa0a8' }
     },
     yAxis: {
       type: 'value',
       name: '分钟',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#f5f7fa' } },
-      axisLabel: { color: '#909399' }
+      splitLine: { lineStyle: { color: '#e2e6e9' } },
+      axisLabel: { color: '#9aa0a8' }
     },
     series: [{
       data: studyMinutesByDay.value,
@@ -252,15 +252,15 @@ function getStudyOption(): echarts.EChartsOption {
       lineStyle: {
         width: 3,
         color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-          { offset: 0, color: '#667eea' },
-          { offset: 1, color: '#764ba2' }
+          { offset: 0, color: '#8a9bb5' },
+          { offset: 1, color: '#9d8bab' }
         ])
       },
-      itemStyle: { color: '#667eea', borderColor: '#fff', borderWidth: 2 },
+      itemStyle: { color: '#8a9bb5', borderColor: '#fff', borderWidth: 2 },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(102, 126, 234, 0.3)' },
-          { offset: 1, color: 'rgba(102, 126, 234, 0.05)' }
+          { offset: 0, color: 'rgba(138, 155, 181, 0.3)' },
+          { offset: 1, color: 'rgba(138, 155, 181, 0.05)' }
         ])
       }
     }]
@@ -274,7 +274,7 @@ function getSubjectOption(): echarts.EChartsOption {
       orient: 'vertical',
       right: '5%',
       top: 'center',
-      textStyle: { color: '#606266' }
+      textStyle: { color: '#7d8289' }
     },
     series: [{
       type: 'pie',
@@ -298,16 +298,16 @@ function getPomodoroOption(): echarts.EChartsOption {
     xAxis: {
       type: 'category',
       data: last7Days.value.map(d => dayjs(d).format('MM-DD')),
-      axisLine: { lineStyle: { color: '#e4e7ed' } },
-      axisLabel: { color: '#909399' }
+      axisLine: { lineStyle: { color: '#d8dde2' } },
+      axisLabel: { color: '#9aa0a8' }
     },
     yAxis: {
       type: 'value',
       name: '个',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#f5f7fa' } },
-      axisLabel: { color: '#909399' }
+      splitLine: { lineStyle: { color: '#e2e6e9' } },
+      axisLabel: { color: '#9aa0a8' }
     },
     series: [{
       data: pomodoroCountByDay.value,
@@ -331,16 +331,16 @@ function getSubjectHoursOption(): echarts.EChartsOption {
     xAxis: {
       type: 'category',
       data: subjectHoursData.value.map(d => d.name),
-      axisLine: { lineStyle: { color: '#e4e7ed' } },
-      axisLabel: { color: '#909399', rotate: 30 }
+      axisLine: { lineStyle: { color: '#d8dde2' } },
+      axisLabel: { color: '#9aa0a8', rotate: 30 }
     },
     yAxis: {
       type: 'value',
       name: '小时',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#f5f7fa' } },
-      axisLabel: { color: '#909399' }
+      splitLine: { lineStyle: { color: '#e2e6e9' } },
+      axisLabel: { color: '#9aa0a8' }
     },
     series: [{
       data: subjectHoursData.value.map(d => d.value),
@@ -349,8 +349,8 @@ function getSubjectHoursOption(): echarts.EChartsOption {
       itemStyle: {
         borderRadius: [6, 6, 0, 0],
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: '#667eea' },
-          { offset: 1, color: '#764ba2' }
+          { offset: 0, color: '#8a9bb5' },
+          { offset: 1, color: '#9d8bab' }
         ])
       }
     }]
@@ -422,20 +422,20 @@ watch(() => store.pomodoroRecords.length, () => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin-bottom: 24px;
 }
 
 /* 总览卡片 */
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 20px;
   margin-bottom: 24px;
 }
@@ -445,7 +445,10 @@ watch(() => store.pomodoroRecords.length, () => {
   align-items: center;
   gap: 16px;
   padding: 20px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -468,15 +471,15 @@ watch(() => store.pomodoroRecords.length, () => {
 }
 
 .overview-icon.icon-purple {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
 }
 
 .overview-icon.icon-green {
-  background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+  background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%);
 }
 
 .overview-icon.icon-orange {
-  background: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+  background: linear-gradient(135deg, #d0c194 0%, #cba58e 100%);
 }
 
 .overview-info {
@@ -488,20 +491,20 @@ watch(() => store.pomodoroRecords.length, () => {
 .overview-value {
   font-size: 28px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
   line-height: 1;
 }
 
 .overview-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 /* 图表网格 */
 .charts-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
   gap: 20px;
   margin-bottom: 24px;
 }
@@ -513,7 +516,7 @@ watch(() => store.pomodoroRecords.length, () => {
 .chart-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -549,10 +552,10 @@ watch(() => store.pomodoroRecords.length, () => {
 }
 
 .calendar-day.level-0 { background: #ebedf0; }
-.calendar-day.level-1 { background: #9be9a8; }
-.calendar-day.level-2 { background: #40c463; }
-.calendar-day.level-3 { background: #30a14e; }
-.calendar-day.level-4 { background: #216e39; }
+.calendar-day.level-1 { background: #b5c9ae; }
+.calendar-day.level-2 { background: #96b18e; }
+.calendar-day.level-3 { background: #7a9a72; }
+.calendar-day.level-4 { background: #5f7d5a; }
 
 .calendar-legend {
   display: flex;
@@ -560,7 +563,7 @@ watch(() => store.pomodoroRecords.length, () => {
   justify-content: flex-end;
   gap: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .legend-level {
@@ -570,8 +573,8 @@ watch(() => store.pomodoroRecords.length, () => {
 }
 
 .legend-level.level-0 { background: #ebedf0; }
-.legend-level.level-1 { background: #9be9a8; }
-.legend-level.level-2 { background: #40c463; }
-.legend-level.level-3 { background: #30a14e; }
-.legend-level.level-4 { background: #216e39; }
+.legend-level.level-1 { background: #b5c9ae; }
+.legend-level.level-2 { background: #96b18e; }
+.legend-level.level-3 { background: #7a9a72; }
+.legend-level.level-4 { background: #5f7d5a; }
 </style>

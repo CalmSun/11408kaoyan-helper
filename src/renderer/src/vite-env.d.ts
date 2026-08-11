@@ -9,6 +9,8 @@ declare module '*.vue' {
 interface ElectronAPI {
   exportData: (data: string) => Promise<{ success: boolean; path?: string }>
   importData: () => Promise<{ success: boolean; data?: string }>
+  setAutoLaunch: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>
+  getAutoLaunch: () => Promise<{ enabled: boolean }>
 }
 
 interface Window {

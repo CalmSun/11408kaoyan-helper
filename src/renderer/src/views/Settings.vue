@@ -70,6 +70,20 @@
       </el-form>
     </div>
 
+    <!-- 通用设置 -->
+    <div class="card setting-section">
+      <h3 class="section-title">
+        <el-icon><Setting /></el-icon>
+        通用设置
+      </h3>
+      <el-form label-width="120px" style="max-width: 500px;">
+        <el-form-item label="开机自启动">
+          <el-switch v-model="autoLaunch" @change="toggleAutoLaunch" />
+          <span class="unit-desc">开机时自动启动考研助手</span>
+        </el-form-item>
+      </el-form>
+    </div>
+
     <!-- 数据管理 -->
     <div class="card setting-section">
       <h3 class="section-title">
@@ -191,7 +205,8 @@ import {
   Upload,
   Delete,
   InfoFilled,
-  User
+  User,
+  Setting
 } from '@element-plus/icons-vue'
 
 const store = useMainStore()
@@ -200,6 +215,36 @@ const router = useRouter()
 
 // 从 package.json 读取版本号（通过 Vite define 注入）
 const appVersion = __APP_VERSION__
+
+// 开机自启动
+const autoLaunch = ref(false)
+
+async function loadAutoLaunch() {
+  if ((window as any).electronAPI?.getAutoLaunch) {
+    try {
+      const res = await (window as any).electronAPI.getAutoLaunch()
+      autoLaunch.value = res.enabled
+    } catch (e) {
+      console.error('读取开机自启状态失败:', e)
+    }
+  }
+}
+
+async function toggleAutoLaunch(enabled: boolean) {
+  if ((window as any).electronAPI?.setAutoLaunch) {
+    try {
+      await (window as any).electronAPI.setAutoLaunch(enabled)
+      ElMessage.success(enabled ? '已开启开机自启动' : '已关闭开机自启动')
+    } catch (e) {
+      console.error('设置开机自启失败:', e)
+      autoLaunch.value = !enabled
+      ElMessage.error('设置失败，请重试')
+    }
+  } else {
+    autoLaunch.value = false
+    ElMessage.warning('浏览器模式下不支持开机自启动')
+  }
+}
 
 const examForm = reactive({
   name: store.examName,
@@ -385,6 +430,7 @@ function handleDeleteAccount() {
 }
 
 onMounted(() => {
+  loadAutoLaunch()
   // 番茄钟设置已通过 store 初始化，无需额外加载
 })
 </script>
@@ -398,13 +444,13 @@ onMounted(() => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin-bottom: 24px;
 }
 
@@ -415,31 +461,31 @@ onMounted(() => {
 .section-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0 0 20px 0;
   padding-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .section-desc {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: -10px 0 20px 0;
 }
 
 .unit {
   margin-left: 10px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .unit-desc {
   margin-left: 10px;
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 /* 数据管理 */
@@ -454,33 +500,33 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 12px;
   transition: all 0.2s ease;
 }
 
 .data-action-item:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .data-action-item.danger {
-  background: #fef0f0;
+  background: #f5eaea;
 }
 
 .data-action-item.danger:hover {
-  background: #fde2e2;
+  background: #ecdcdc;
 }
 
 .action-info h4 {
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0 0 6px 0;
 }
 
 .action-info p {
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
@@ -497,19 +543,19 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 10px;
 }
 
 .info-row .label {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   min-width: 80px;
 }
 
 .info-row .value {
   font-size: 14px;
-  color: #303133;
+  color: var(--mo-text-1);
   font-weight: 600;
 }
 
@@ -530,26 +576,26 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 10px;
 }
 
 .about-label {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .about-value {
   font-size: 14px;
-  color: #303133;
+  color: var(--mo-text-1);
   font-weight: 500;
 }
 
 .about-tip {
   font-size: 13px;
-  color: #e6a23c;
+  color: #c9a26a;
   padding: 12px 16px;
-  background: #fdf6ec;
+  background: #f3eee4;
   border-radius: 10px;
   margin: 0;
 }

@@ -232,7 +232,7 @@ function getSubjectStats(subject: SubjectType) {
 
 
 function getSubjectColor(subject: SubjectType) {
-  return store.SUBJECT_CONFIG[subject]?.color || '#667eea'
+  return store.SUBJECT_CONFIG[subject]?.color || '#8a9bb5'
 }
 
 function getSubjectName(subject: SubjectType) {
@@ -248,9 +248,9 @@ function getScoreRate(row: ExamScoreRecord) {
 }
 
 function getScoreColor(rate: number) {
-  if (rate >= 80) return '#67c23a'
-  if (rate >= 60) return '#e6a23c'
-  return '#f56c6c'
+  if (rate >= 80) return '#8fa876'
+  if (rate >= 60) return '#c9a26a'
+  return '#c08484'
 }
 
 function formatDate(dateStr: string) {
@@ -360,22 +360,22 @@ function initTrendChart() {
     legend: {
       data: subjectList.value.map(s => s.name),
       bottom: 0,
-      textStyle: { color: '#606266', fontSize: 11 }
+      textStyle: { color: '#7d8289', fontSize: 11 }
     },
     grid: { left: '3%', right: '4%', bottom: '14%', top: '8%', containLabel: true },
     xAxis: {
       type: 'category',
       data: years.map(y => `${y}`),
-      axisLine: { lineStyle: { color: '#e4e7ed' } },
-      axisLabel: { color: '#909399', rotate: 45 }
+      axisLine: { lineStyle: { color: '#d8dde2' } },
+      axisLabel: { color: '#9aa0a8', rotate: 45 }
     },
     yAxis: {
       type: 'value',
       name: '分数',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#f5f7fa' } },
-      axisLabel: { color: '#909399' }
+      splitLine: { lineStyle: { color: '#e2e6e9' } },
+      axisLabel: { color: '#9aa0a8' }
     },
     series: seriesData.map(s => ({ ...s, lineStyle: { width: 2 } })),
     color: subjectList.value.map(s => s.color)
@@ -420,13 +420,13 @@ onUnmounted(() => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
@@ -439,11 +439,14 @@ onUnmounted(() => {
 }
 
 .summary-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 18px 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  border-top: 4px solid #667eea;
+  border-top: 4px solid #8a9bb5;
 }
 
 .summary-header {
@@ -473,25 +476,28 @@ onUnmounted(() => {
   display: block;
   font-size: 22px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   font-family: 'DIN Alternate', sans-serif;
   line-height: 1.2;
 }
 
 .stat-txt {
   font-size: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .no-data {
   font-size: 13px;
-  color: #c0c4cc;
+  color: var(--mo-text-disabled);
   margin: 8px 0;
 }
 
 /* 图表卡片 */
 .card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
@@ -509,7 +515,7 @@ onUnmounted(() => {
 .card-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -525,12 +531,12 @@ onUnmounted(() => {
 .score-text {
   font-size: 16px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   font-family: 'DIN Alternate', sans-serif;
 }
 
 .full-score-text {
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 </style>

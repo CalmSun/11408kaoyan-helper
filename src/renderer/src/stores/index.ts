@@ -12,9 +12,9 @@ export type SubjectType =
 
 // 科目配置
 export const SUBJECT_CONFIG: Record<SubjectType, { name: string; shortName: string; color: string; tagType: string }> = {
-  politics: { name: '政治', shortName: '政治', color: '#f56c6c', tagType: 'danger' },
-  english: { name: '英语一', shortName: '英语', color: '#67c23a', tagType: 'success' },
-  math: { name: '数学一', shortName: '数学', color: '#e6a23c', tagType: 'warning' },
+  politics: { name: '政治', shortName: '政治', color: '#c08484', tagType: 'danger' },
+  english: { name: '英语一', shortName: '英语', color: '#8fa876', tagType: 'success' },
+  math: { name: '数学一', shortName: '数学', color: '#c9a26a', tagType: 'warning' },
   cs408: { name: '408 计算机专业基础', shortName: '408', color: '#667eea', tagType: 'primary' }
 }
 
@@ -267,13 +267,19 @@ export const useMainStore = defineStore('main', () => {
   // 今日完成计划数
   const todayPlanCompleted = computed(() => {
     const today = dayjs().format('YYYY-MM-DD')
-    return plans.value.filter(p => p.completed && p.createdAt.startsWith(today)).length
+    return plans.value.filter(p => {
+      if (p.recurring) return (p.completedDates || []).includes(today)
+      return p.completed && p.createdAt.startsWith(today)
+    }).length
   })
 
-  // 今日总计划数
+  // 今日总计划数（含循环计划）
   const todayPlanTotal = computed(() => {
     const today = dayjs().format('YYYY-MM-DD')
-    return plans.value.filter(p => p.createdAt.startsWith(today)).length
+    return plans.value.filter(p => {
+      if (p.recurring) return true
+      return p.createdAt.startsWith(today)
+    }).length
   })
 
   // 各科目学习时长（分钟）

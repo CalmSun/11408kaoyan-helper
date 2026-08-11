@@ -22,8 +22,8 @@
       <svg width="0" height="0">
         <defs>
           <linearGradient id="overallGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stop-color="#667eea" />
-            <stop offset="100%" stop-color="#764ba2" />
+            <stop offset="0%" stop-color="#8a9bb5" />
+            <stop offset="100%" stop-color="#9d8bab" />
           </linearGradient>
         </defs>
       </svg>
@@ -816,19 +816,22 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
 /* 总体进度 */
 .overall-progress-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 24px;
   margin-bottom: 20px;
@@ -845,14 +848,14 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
 .progress-header h3 {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0;
 }
 
 .progress-total {
   font-size: 28px;
   font-weight: 700;
-  color: #667eea;
+  color: #8a9bb5;
   font-family: 'DIN Alternate', sans-serif;
 }
 
@@ -865,11 +868,14 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
 }
 
 .subject-progress-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  border-top: 4px solid #667eea;
+  border-top: 4px solid #8a9bb5;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -889,7 +895,7 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
 .subject-header h4 {
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0;
 }
 
@@ -904,12 +910,15 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
   justify-content: space-between;
   margin-top: 12px;
   font-size: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 /* 大纲卡片 */
 .outline-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
@@ -920,22 +929,22 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
   gap: 10px;
   margin-bottom: 24px;
   padding-bottom: 20px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .outline-tab {
   padding: 10px 20px;
   border-radius: 10px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border: 1px solid transparent;
 }
 
 .outline-tab:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .outline-tab.active {
@@ -949,13 +958,13 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
   gap: 16px;
   margin-bottom: 24px;
   padding: 16px 20px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 10px;
 }
 
 .adjust-label {
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   flex-shrink: 0;
 }
 
@@ -976,18 +985,18 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   cursor: pointer;
   transition: background 0.2s ease;
 }
 
 .chapter-header:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .expand-icon {
   transition: transform 0.3s ease;
-  color: #909399;
+  color: var(--mo-text-3);
   flex-shrink: 0;
 }
 
@@ -999,17 +1008,17 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
   flex: 1;
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
 }
 
 .chapter-content {
   padding: 12px 16px 12px 40px;
-  background: #fafafa;
+  background: rgba(255, 255, 255, 0.35);
 }
 
 .section-item {
   padding: 10px 0;
-  border-bottom: 1px dashed #ebeef5;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.6);
 }
 
 .section-item:last-child {
@@ -1021,7 +1030,7 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   margin-bottom: 8px;
 }
 
@@ -1034,10 +1043,13 @@ const currentOutline = computed(() => outlineMap[currentSubject.value] || [])
 
 .point-tag {
   padding: 4px 10px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border: 1px solid #e4e7ed;
   border-radius: 6px;
   font-size: 12px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 </style>

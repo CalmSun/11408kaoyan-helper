@@ -74,7 +74,7 @@
 
     <!-- 空状态 -->
     <div class="empty-state" v-else>
-      <el-icon :size="64" color="#c0c4cc"><Cpu /></el-icon>
+      <el-icon :size="64" color="#b0b6bd"><Cpu /></el-icon>
       <p class="empty-text">没有找到相关算法</p>
     </div>
 
@@ -755,13 +755,13 @@ function handleAdd() {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
@@ -772,7 +772,10 @@ function handleAdd() {
   align-items: center;
   margin-bottom: 20px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
@@ -787,18 +790,18 @@ function handleAdd() {
   padding: 8px 16px;
   border-radius: 8px;
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #f5f7fa;
+  background: var(--mo-surface);
 }
 
 .tab-item:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .tab-item.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   color: #fff;
 }
 
@@ -810,7 +813,10 @@ function handleAdd() {
 }
 
 .algo-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
@@ -822,7 +828,7 @@ function handleAdd() {
 .algo-card:hover {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
   transform: translateY(-2px);
-  border-color: #667eea;
+  border-color: #8a9bb5;
 }
 
 .algo-header {
@@ -835,13 +841,13 @@ function handleAdd() {
 .algo-name {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0;
 }
 
 .algo-desc {
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
   line-height: 1.6;
   margin-bottom: 14px;
   display: -webkit-box;
@@ -855,7 +861,7 @@ function handleAdd() {
   gap: 20px;
   margin-bottom: 12px;
   padding: 10px 12px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 8px;
 }
 
@@ -867,13 +873,13 @@ function handleAdd() {
 
 .meta-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .meta-value {
   font-size: 13px;
   font-weight: 600;
-  color: #667eea;
+  color: #8a9bb5;
   font-family: 'Consolas', monospace;
 }
 
@@ -885,10 +891,10 @@ function handleAdd() {
 
 .tag {
   padding: 2px 8px;
-  background: #f0f2f5;
+  background: rgba(150, 158, 170, 0.10);
   border-radius: 4px;
   font-size: 11px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 /* 空状态 */
@@ -899,12 +905,15 @@ function handleAdd() {
   justify-content: center;
   padding: 80px 20px;
   gap: 16px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
 }
 
 .empty-text {
-  color: #909399;
+  color: var(--mo-text-3);
   font-size: 14px;
   margin: 0;
 }
@@ -920,16 +929,16 @@ function handleAdd() {
   gap: 16px;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .meta-text {
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .meta-text strong {
-  color: #667eea;
+  color: #8a9bb5;
   font-family: 'Consolas', monospace;
 }
 
@@ -947,20 +956,20 @@ function handleAdd() {
 .detail-section h4 {
   font-size: 14px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0 0 10px 0;
 }
 
 .detail-section p {
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   line-height: 1.7;
   margin: 0;
 }
 
 .code-block {
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: #3d4148;
+  color: #dcdde0;
   padding: 16px;
   border-radius: 10px;
   font-family: 'Consolas', 'Monaco', monospace;
@@ -981,14 +990,14 @@ function handleAdd() {
   flex-wrap: wrap;
   gap: 8px;
   padding-top: 16px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .detail-tags .tag {
   padding: 4px 12px;
-  background: #f0f2f5;
+  background: rgba(150, 158, 170, 0.10);
   border-radius: 6px;
   font-size: 12px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 </style>

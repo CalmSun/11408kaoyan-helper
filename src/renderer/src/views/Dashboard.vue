@@ -77,6 +77,19 @@
             查看全部 <el-icon><ArrowRight /></el-icon>
           </el-button>
         </div>
+        <!-- 今日计划完成进度 -->
+        <div class="plan-progress" v-if="todayPlans.length > 0">
+          <div class="plan-progress-header">
+            <span class="plan-progress-label">今日完成进度</span>
+            <span class="plan-progress-num">{{ store.todayPlanCompleted }}/{{ store.todayPlanTotal }}</span>
+          </div>
+          <el-progress
+            :percentage="planProgressPercent"
+            :show-text="false"
+            color="var(--mo-primary)"
+            :stroke-width="8"
+          />
+        </div>
         <div class="plan-list" v-if="todayPlans.length > 0">
           <div
             v-for="plan in todayPlans.slice(0, 5)"
@@ -97,7 +110,7 @@
           </div>
         </div>
         <div class="empty-state" v-else>
-          <el-icon :size="48" color="#c0c4cc"><Document /></el-icon>
+          <el-icon :size="48" color="#b0b6bd"><Document /></el-icon>
           <p>今天还没有计划，去添加一个吧~</p>
           <el-button type="primary" @click="goToPlan">添加计划</el-button>
         </div>
@@ -285,6 +298,12 @@ function formatUsageTime(minutes: number) {
   }
 }
 
+// 今日计划完成百分比（含循环计划）
+const planProgressPercent = computed(() => {
+  if (store.todayPlanTotal === 0) return 0
+  return Math.round((store.todayPlanCompleted / store.todayPlanTotal) * 100)
+})
+
 function togglePlan(id: string) {
   store.togglePlan(id)
 }
@@ -325,13 +344,13 @@ function goToFormulas() { router.push('/formulas') }
 .welcome-title {
   font-size: 28px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 6px;
 }
 
 .welcome-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .exam-badge {
@@ -339,10 +358,10 @@ function goToFormulas() { router.push('/formulas') }
   align-items: baseline;
   gap: 6px;
   padding: 16px 28px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   border-radius: 16px;
   color: #fff;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 8px 24px rgba(138, 155, 181, 0.3);
 }
 
 .badge-label {
@@ -365,7 +384,7 @@ function goToFormulas() { router.push('/formulas') }
 /* 数据卡片 */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 20px;
   margin-bottom: 24px;
 }
@@ -375,7 +394,10 @@ function goToFormulas() { router.push('/formulas') }
   align-items: center;
   gap: 16px;
   padding: 20px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -398,23 +420,23 @@ function goToFormulas() { router.push('/formulas') }
 }
 
 .stat-card-primary .stat-icon {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
 }
 
 .stat-card-success .stat-icon {
-  background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+  background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%);
 }
 
 .stat-card-warning .stat-icon {
-  background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%);
+  background: linear-gradient(135deg, #d3b294 0%, #b29cb8 100%);
 }
 
 .stat-card-danger .stat-icon {
-  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+  background: linear-gradient(135deg, #c98d94 0%, #d2c39a 100%);
 }
 
 .stat-card-info .stat-icon {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  background: linear-gradient(135deg, #8fa9bd 0%, #9cc0ba 100%);
 }
 
 .stat-info {
@@ -426,20 +448,20 @@ function goToFormulas() { router.push('/formulas') }
 .stat-value {
   font-size: 28px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   font-family: 'DIN Alternate', sans-serif;
   line-height: 1;
 }
 
 .stat-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 /* 内容网格 */
 .content-grid {
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 20px;
   margin-bottom: 24px;
 }
@@ -454,7 +476,7 @@ function goToFormulas() { router.push('/formulas') }
 .card-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -462,6 +484,32 @@ function goToFormulas() { router.push('/formulas') }
 }
 
 /* 计划列表 */
+.plan-progress {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: var(--mo-surface);
+  border-radius: var(--mo-radius-sm);
+}
+
+.plan-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.plan-progress-label {
+  font-size: 13px;
+  color: var(--mo-text-2);
+}
+
+.plan-progress-num {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mo-primary);
+  font-family: 'DIN Alternate', -apple-system, sans-serif;
+}
+
 .plan-list {
   display: flex;
   flex-direction: column;
@@ -473,24 +521,24 @@ function goToFormulas() { router.push('/formulas') }
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 10px;
   transition: all 0.2s ease;
 }
 
 .plan-item:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .plan-item.completed .plan-title {
   text-decoration: line-through;
-  color: #c0c4cc;
+  color: var(--mo-text-disabled);
 }
 
 .plan-title {
   flex: 1;
   font-size: 14px;
-  color: #303133;
+  color: var(--mo-text-1);
 }
 
 /* 各科学习时长 */
@@ -518,20 +566,20 @@ function goToFormulas() { router.push('/formulas') }
   border-radius: 50%;
 }
 
-.subject-dot.politics { background: #f56c6c; }
-.subject-dot.english { background: #67c23a; }
-.subject-dot.math { background: #e6a23c; }
+.subject-dot.politics { background: #c08484; }
+.subject-dot.english { background: #8fa876; }
+.subject-dot.math { background: #c9a26a; }
 .subject-dot.professional { background: #909399; }
 
 .subject-name {
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   flex: 1;
 }
 
 .subject-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 .study-summary {
@@ -539,13 +587,13 @@ function goToFormulas() { router.push('/formulas') }
   justify-content: space-between;
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .study-summary strong {
-  color: #667eea;
+  color: #8a9bb5;
   font-size: 16px;
   font-family: 'DIN Alternate', sans-serif;
 }
@@ -558,14 +606,14 @@ function goToFormulas() { router.push('/formulas') }
   justify-content: center;
   padding: 40px 20px;
   gap: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
   font-size: 14px;
 }
 
 /* 快捷入口 */
 .quick-grid {
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
   gap: 12px;
 }
 
@@ -579,11 +627,11 @@ function goToFormulas() { router.push('/formulas') }
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 12px;
-  color: #606266;
+  color: var(--mo-text-2);
 }
 
 .quick-item:hover {
-  background: #f5f7fa;
+  background: var(--mo-surface);
   transform: translateY(-2px);
 }
 
@@ -597,13 +645,13 @@ function goToFormulas() { router.push('/formulas') }
   color: #fff;
 }
 
-.outline-icon { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-.algo-icon { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
-.formula-icon { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
-.pomodoro-icon { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
-.exam-icon { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
-.flashcard-icon { background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); }
-.dict-icon { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); }
-.plan-icon { background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%); }
-.stat-icon { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+.outline-icon { background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%); }
+.algo-icon { background: linear-gradient(135deg, #b498bb 0%, #c98d94 100%); }
+.formula-icon { background: linear-gradient(135deg, #8fa9bd 0%, #9cc0ba 100%); }
+.pomodoro-icon { background: linear-gradient(135deg, #c98d94 0%, #d2c39a 100%); }
+.exam-icon { background: linear-gradient(135deg, #c98d94 0%, #d2c39a 100%); }
+.flashcard-icon { background: linear-gradient(135deg, #a9c4b2 0%, #a5bfc6 100%); }
+.dict-icon { background: linear-gradient(135deg, #a795b8 0%, #d1b6c4 100%); }
+.plan-icon { background: linear-gradient(135deg, #d3b294 0%, #b29cb8 100%); }
+.stat-icon { background: linear-gradient(135deg, #8fa9bd 0%, #9cc0ba 100%); }
 </style>

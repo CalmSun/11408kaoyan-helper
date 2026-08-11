@@ -79,7 +79,7 @@
 
     <!-- 空状态 -->
     <div class="empty-state" v-else>
-      <el-icon :size="64" color="#c0c4cc"><Operation /></el-icon>
+      <el-icon :size="64" color="#b0b6bd"><Operation /></el-icon>
       <p class="empty-text">没有找到相关公式</p>
     </div>
   </div>
@@ -743,7 +743,7 @@ const filteredFormulas = computed(() => {
 
 function getSubjectColor(subject: string) {
   const config = store.SUBJECT_CONFIG[subject as keyof typeof store.SUBJECT_CONFIG]
-  return config?.color || '#667eea'
+  return config?.color || '#8a9bb5'
 }
 
 function getSubjectName(subject: string) {
@@ -765,13 +765,13 @@ function getSubjectName(subject: string) {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0;
 }
 
@@ -782,7 +782,10 @@ function getSubjectName(subject: string) {
   align-items: center;
   margin-bottom: 20px;
   padding: 16px 20px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
 }
@@ -797,15 +800,15 @@ function getSubjectName(subject: string) {
   padding: 8px 16px;
   border-radius: 8px;
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border: 1px solid transparent;
 }
 
 .tab-item:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .tab-item.active {
@@ -820,7 +823,10 @@ function getSubjectName(subject: string) {
 }
 
 .formula-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
@@ -841,22 +847,22 @@ function getSubjectName(subject: string) {
 .formula-name {
   font-size: 17px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0;
 }
 
 .formula-category {
   font-size: 12px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin-bottom: 14px;
 }
 
 .formula-content {
-  background: #f8f9fa;
+  background: rgba(255, 255, 255, 0.40);
   border-radius: 10px;
   padding: 16px 20px;
   margin-bottom: 14px;
-  border-left: 3px solid #667eea;
+  border-left: 3px solid #8a9bb5;
 }
 
 .formula-content pre {
@@ -864,7 +870,7 @@ function getSubjectName(subject: string) {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
   line-height: 1.8;
-  color: #303133;
+  color: var(--mo-text-1);
   white-space: pre-wrap;
   word-wrap: break-word;
 }
@@ -876,28 +882,28 @@ function getSubjectName(subject: string) {
 .desc-label {
   font-size: 12px;
   font-weight: 600;
-  color: #67c23a;
+  color: #8fa876;
   margin-bottom: 6px;
 }
 
 .formula-description p {
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   line-height: 1.7;
   margin: 0;
 }
 
 .formula-example {
-  background: #f0f9ff;
+  background: #e9eef0;
   border-radius: 8px;
   padding: 12px 16px;
-  border-left: 3px solid #409eff;
+  border-left: 3px solid #8fa5b5;
 }
 
 .example-label {
   font-size: 12px;
   font-weight: 600;
-  color: #409eff;
+  color: #8fa5b5;
   margin-bottom: 6px;
 }
 
@@ -906,7 +912,7 @@ function getSubjectName(subject: string) {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
   line-height: 1.7;
-  color: #606266;
+  color: var(--mo-text-2);
   white-space: pre-wrap;
 }
 
@@ -918,12 +924,15 @@ function getSubjectName(subject: string) {
   justify-content: center;
   padding: 80px 20px;
   gap: 16px;
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
 }
 
 .empty-text {
-  color: #909399;
+  color: var(--mo-text-3);
   font-size: 14px;
   margin: 0;
 }

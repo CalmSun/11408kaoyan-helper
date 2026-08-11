@@ -39,7 +39,7 @@
               cy="150"
               r="135"
               fill="none"
-              stroke="#ebeef5"
+              stroke="rgba(255, 255, 255, 0.6)"
               stroke-width="14"
             />
             <circle
@@ -548,20 +548,23 @@ onUnmounted(() => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   margin-bottom: 4px;
   text-align: center;
 }
 
 .page-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin-bottom: 32px;
   text-align: center;
 }
 
 .pomodoro-container {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 32px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
@@ -580,20 +583,20 @@ onUnmounted(() => {
   padding: 10px 24px;
   border-radius: 25px;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   cursor: pointer;
   transition: all 0.3s ease;
-  background: #f5f7fa;
+  background: var(--mo-surface);
 }
 
 .mode-tab:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .mode-tab.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #8a9bb5 0%, #9d8bab 100%);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
 }
 
 /* 计时器 */
@@ -614,7 +617,7 @@ onUnmounted(() => {
 }
 
 .progress-ring-bg {
-  stroke: #f0f2f5;
+  stroke: rgba(150, 158, 170, 0.10);
 }
 
 .progress-ring-fill {
@@ -623,15 +626,15 @@ onUnmounted(() => {
 
 .progress-ring-fill.work {
   stroke: url(#workGradient);
-  stroke: #667eea;
+  stroke: #8a9bb5;
 }
 
 .progress-ring-fill.shortBreak {
-  stroke: #67c23a;
+  stroke: #8fa876;
 }
 
 .progress-ring-fill.longBreak {
-  stroke: #e6a23c;
+  stroke: #c9a26a;
 }
 
 .timer-center {
@@ -646,7 +649,7 @@ onUnmounted(() => {
   display: block;
   font-size: 56px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   font-family: 'DIN Alternate', sans-serif;
   line-height: 1;
   margin-bottom: 8px;
@@ -654,7 +657,7 @@ onUnmounted(() => {
 
 .timer-mode {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 /* 控制按钮 */
@@ -678,7 +681,7 @@ onUnmounted(() => {
 .select-label {
   display: block;
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   margin-bottom: 12px;
 }
 
@@ -693,15 +696,15 @@ onUnmounted(() => {
   padding: 8px 16px;
   border-radius: 20px;
   font-size: 13px;
-  color: #606266;
+  color: var(--mo-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border: 1px solid transparent;
 }
 
 .subject-btn:hover {
-  background: #ebeef5;
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .subject-btn.active {
@@ -713,7 +716,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-around;
   padding-top: 24px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 .stat-item {
@@ -724,14 +727,14 @@ onUnmounted(() => {
   display: block;
   font-size: 28px;
   font-weight: 700;
-  color: #667eea;
+  color: #8a9bb5;
   font-family: 'DIN Alternate', sans-serif;
   margin-bottom: 4px;
 }
 
 .stat-label {
   font-size: 13px;
-  color: #909399;
+  color: var(--mo-text-3);
 }
 
 /* 记录卡片 */
@@ -742,7 +745,7 @@ onUnmounted(() => {
 .card-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--mo-text-1);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -759,13 +762,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #f5f7fa;
+  background: var(--mo-surface);
   border-radius: 10px;
 }
 
 .record-time {
   font-size: 14px;
-  color: #606266;
+  color: var(--mo-text-2);
   font-family: 'DIN Alternate', sans-serif;
   min-width: 50px;
 }
@@ -773,7 +776,7 @@ onUnmounted(() => {
 .record-duration {
   flex: 1;
   font-size: 14px;
-  color: #303133;
+  color: var(--mo-text-1);
   font-weight: 500;
 }
 /* 提醒遮罩 */
@@ -783,7 +786,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(74, 79, 87, 0.42);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -791,7 +794,10 @@ onUnmounted(() => {
 }
 
 .alert-card {
-  background: #fff;
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 48px 40px;
   text-align: center;
@@ -815,13 +821,13 @@ onUnmounted(() => {
 .alert-title {
   font-size: 22px;
   font-weight: 700;
-  color: #303133;
+  color: var(--mo-text-1);
   margin: 0 0 8px 0;
 }
 
 .alert-subtitle {
   font-size: 14px;
-  color: #909399;
+  color: var(--mo-text-3);
   margin: 0 0 24px 0;
 }
 
@@ -836,7 +842,7 @@ onUnmounted(() => {
 
 @keyframes timerFlash {
   0% { opacity: 1; }
-  50% { opacity: 0.3; color: #f56c6c; }
+  50% { opacity: 0.3; color: #c08484; }
   100% { opacity: 1; }
 }
 

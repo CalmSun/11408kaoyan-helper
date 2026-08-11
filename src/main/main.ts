@@ -11,7 +11,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: '考研助手',
-    backgroundColor: '#f5f7fa',
+    backgroundColor: '#eceef0',
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
@@ -76,4 +76,19 @@ ipcMain.handle('import-data', async () => {
     return { success: true, data: content }
   }
   return { success: false }
+})
+
+// 开机自启动 - 设置
+ipcMain.handle('set-auto-launch', async (_event, enabled: boolean) => {
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    path: process.execPath
+  })
+  return { success: true, enabled }
+})
+
+// 开机自启动 - 查询状态
+ipcMain.handle('get-auto-launch', async () => {
+  const settings = app.getLoginItemSettings()
+  return { enabled: settings.openAtLogin }
 })
