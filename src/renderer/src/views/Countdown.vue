@@ -397,8 +397,8 @@ onUnmounted(() => {
   min-width: 60px;
   text-align: center;
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   padding: 8px 16px;
   border-radius: 12px;
@@ -431,8 +431,8 @@ onUnmounted(() => {
   gap: 14px;
   padding: 20px;
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));

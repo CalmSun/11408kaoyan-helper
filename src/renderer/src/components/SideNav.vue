@@ -228,8 +228,8 @@ function handleLogout() {
   width: 220px;
   height: 100%;
   background: var(--side-nav-bg);
-  backdrop-filter: blur(18px) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(18px) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border-right: 1px solid var(--side-nav-border);
   box-shadow: 2px 0 16px rgba(31, 64, 130, 0.06);
   display: flex;
@@ -310,8 +310,8 @@ html.dark .side-nav {
   width: 24px;
   height: 24px;
   background: var(--side-nav-collapse-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--side-nav-border);
   border-radius: 50%;
   display: flex;
@@ -320,7 +320,7 @@ html.dark .side-nav {
   cursor: pointer;
   color: var(--side-nav-text-2);
   z-index: 10;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
@@ -363,7 +363,7 @@ html.dark .side-nav {
   border-radius: 8px;
   color: var(--side-nav-text-2);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
   font-size: 14px;
   white-space: nowrap;
 }
@@ -416,7 +416,7 @@ html.dark .side-nav {
   border: 1px solid var(--glass-border);
   color: var(--side-nav-text-2);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
   font-size: 13px;
   white-space: nowrap;
 }

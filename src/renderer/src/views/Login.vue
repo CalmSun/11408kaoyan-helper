@@ -185,8 +185,8 @@ const continueAsGuest = () => {
   width: 100%;
   max-width: 420px;
   background: var(--glass-bg-strong);
-  backdrop-filter: blur(24px) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(24px) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter-pop);
+  -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 48px 40px;

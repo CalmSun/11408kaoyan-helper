@@ -652,11 +652,11 @@ function addToFlashcards(word: WordItem) {
   margin-bottom: 20px;
   padding: 16px 20px;
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
 }
 
 .category-tabs {
@@ -673,7 +673,7 @@ function addToFlashcards(word: WordItem) {
   font-size: 14px;
   color: var(--mo-text-2);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
   background: var(--mo-surface);
 }
 
@@ -707,15 +707,13 @@ function addToFlashcards(word: WordItem) {
 }
 
 .word-card {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  background: var(--glass-lite-bg);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 18px 20px;
   box-shadow: var(--glass-shadow);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .word-card:hover {
@@ -766,8 +764,8 @@ function addToFlashcards(word: WordItem) {
   padding: 80px 20px;
   gap: 16px;
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
 }

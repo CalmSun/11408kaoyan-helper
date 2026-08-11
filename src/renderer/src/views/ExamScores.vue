@@ -457,12 +457,12 @@ onUnmounted(() => {
 
 .summary-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 18px 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
   border-top: 3px solid rgba(59, 130, 246, 0.4);
 }
 
@@ -512,12 +512,12 @@ onUnmounted(() => {
 /* 图表卡片 */
 .card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
   margin-bottom: 20px;
 }
 

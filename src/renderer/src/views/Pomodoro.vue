@@ -562,12 +562,12 @@ onUnmounted(() => {
 
 .pomodoro-container {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 32px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--glass-shadow);
   margin-bottom: 24px;
 }
 
@@ -585,7 +585,7 @@ onUnmounted(() => {
   font-size: 14px;
   color: var(--mo-text-2);
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.3s ease;
   background: var(--mo-surface);
 }
 
@@ -698,7 +698,7 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--mo-text-2);
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
   background: var(--mo-surface);
   border: 1px solid transparent;
 }
@@ -795,8 +795,8 @@ onUnmounted(() => {
 
 .alert-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 48px 40px;

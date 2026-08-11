@@ -7,22 +7,11 @@
         <p class="welcome-subtitle">{{ todayStr }} · {{ weekDay }}</p>
       </div>
       <div class="welcome-right">
-        <LiquidGlass
-          class="exam-badge-glass"
-          :corner-radius="18"
-          :displacement-scale="36"
-          :blur-amount="0.08"
-          :saturation="150"
-          :aberration-intensity="1.5"
-          :elasticity="0.3"
-          padding="16px 28px"
-        >
-          <div class="exam-badge">
-            <span class="badge-label">距离考研还有</span>
-            <span class="badge-days">{{ store.daysUntilExam }}</span>
-            <span class="badge-unit">天</span>
-          </div>
-        </LiquidGlass>
+        <div class="exam-badge">
+          <span class="badge-label">距离考研还有</span>
+          <span class="badge-days">{{ store.daysUntilExam }}</span>
+          <span class="badge-unit">天</span>
+        </div>
       </div>
     </div>
 
@@ -235,7 +224,6 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMainStore, SubjectType } from '@/stores'
 import { todayLocal, toLocalDate } from '@/utils/date'
-import { LiquidGlass } from '@wxperia/liquid-glass-vue'
 import dayjs from 'dayjs'
 import {
   Timer,
@@ -370,8 +358,11 @@ function goToFormulas() { router.push('/formulas') }
   display: flex;
   align-items: baseline;
   gap: 6px;
+  padding: 16px 28px;
+  background: var(--mo-gradient);
+  border-radius: 16px;
   color: #fff;
-  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
 }
 
 .badge-label {
@@ -405,8 +396,8 @@ function goToFormulas() { router.push('/formulas') }
   gap: 16px;
   padding: 20px;
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
@@ -533,7 +524,7 @@ function goToFormulas() { router.push('/formulas') }
   padding: 12px 16px;
   background: var(--mo-surface);
   border-radius: 10px;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .plan-item:hover {
@@ -635,7 +626,7 @@ function goToFormulas() { router.push('/formulas') }
   padding: 16px 8px;
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
   font-size: 12px;
   color: var(--mo-text-2);
 }

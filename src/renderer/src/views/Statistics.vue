@@ -468,11 +468,11 @@ watch(isDark, () => {
   gap: 16px;
   padding: 20px;
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 

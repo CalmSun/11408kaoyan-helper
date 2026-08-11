@@ -522,7 +522,7 @@ onMounted(() => {
   padding: 20px;
   background: var(--mo-surface);
   border-radius: 12px;
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .data-action-item:hover {

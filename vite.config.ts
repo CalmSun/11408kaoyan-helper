@@ -26,8 +26,7 @@ export default defineConfig({
         manualChunks: {
           'vendor-vue': ['vue', 'vue-router', 'pinia'],
           'vendor-element-plus': ['element-plus', '@element-plus/icons-vue'],
-          'vendor-echarts': ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers'],
-          'vendor-liquid-glass': ['@wxperia/liquid-glass-vue']
+          'vendor-echarts': ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers']
         }
       }
     }

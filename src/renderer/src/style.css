@@ -1,7 +1,9 @@
 /* ═══════════════════════════════════════════
-   双主题 · 液态玻璃拟态 设计体系 v4
-   浅色：自定义背景图 + 白色磨砂玻璃
-   深色：深蓝夜色 + 深色半透明玻璃
+   双主题 · 玻璃拟态 设计体系 v5
+   - 统一玻璃封装：.glass / .glass-strong / .glass-lite 三级工具类
+   - 模糊强度统一由 --glass-blur 控制（本版本整体调低）
+   - 深色模式叠加噪点纹理，@supports 提供无滤镜降级
+   - Element Plus 浮层统一玻璃化
    ═══════════════════════════════════════════ */
 :root {
   /* 主题强调色 */
@@ -23,20 +25,28 @@
   --mo-bg-gradient: linear-gradient(160deg, #e8f0ff 0%, #f0f7ff 100%);
   --ring-track: rgba(255, 255, 255, 0.6);
 
-  /* 玻璃拟态卡片：白色半透明磨砂玻璃（液态玻璃参数） */
+  /* ── 玻璃拟态统一变量（模糊强度整体调低，减少合成开销） ── */
   --glass-bg: rgba(255, 255, 255, 0.66);
-  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-bg-strong: rgba(255, 255, 255, 0.86);
+  --glass-bg-fallback: #f3f6fc;          /* 无滤镜降级：近似不透明底色 */
+  --glass-bg-strong-fallback: #fbfcff;
   --glass-border: rgba(255, 255, 255, 0.62);
-  --glass-blur: 14px;
-  --glass-saturate: 1.35;
-  --glass-highlight: 0.55;
+  --glass-blur: 10px;                      /* v2.6.1：14px → 10px */
+  --glass-blur-pop: 12px;                  /* 浮层专用模糊 */
+  --glass-saturate: 1.3;
+  --glass-highlight: 0.5;
   --glass-shadow: 0 2px 12px rgba(31, 64, 130, 0.08), 0 8px 24px rgba(31, 64, 130, 0.05);
   --glass-shadow-hover: 0 4px 16px rgba(31, 64, 130, 0.12), 0 12px 32px rgba(31, 64, 130, 0.08);
+  /* 统一滤镜表达式：所有玻璃层只引用该变量，便于一处调参 */
+  --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
 
-  /* 中性表面（次级容器） */
+  /* 中性表面（列表项等高频元素：无滤镜，纯半透明色） */
   --mo-surface: rgba(255, 255, 255, 0.55);
   --mo-surface-hover: rgba(255, 255, 255, 0.74);
   --mo-border: rgba(59, 130, 246, 0.10);
+  /* 轻量玻璃面：长列表/网格卡片专用，不透明度更高以补偿无滤镜 */
+  --glass-lite-bg: rgba(255, 255, 255, 0.68);
 
   /* 文字 */
   --mo-text-1: #222831;
@@ -59,8 +69,8 @@
   --mo-radius-lg: 18px;
   --mo-radius-sm: 10px;
 
-  /* 过渡 */
-  --mo-transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  /* 过渡（限定属性，避免 all 触发不必要计算） */
+  --mo-transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
 }
 
 /* ═══════════════════════════════════════════
@@ -77,11 +87,13 @@ html.dark {
   --mo-bg-gradient: linear-gradient(160deg, #0b1220 0%, #111a2c 55%, #0d1424 100%);
   --ring-track: rgba(255, 255, 255, 0.12);
 
-  /* 深色玻璃 */
+  /* 深色玻璃（模糊与浅色一致，统一低开销） */
   --glass-bg: rgba(23, 30, 44, 0.60);
-  --glass-bg-strong: rgba(18, 24, 36, 0.85);
+  --glass-bg-strong: rgba(18, 24, 36, 0.88);
+  --glass-bg-fallback: #151c2b;
+  --glass-bg-strong-fallback: #141b2a;
   --glass-border: rgba(255, 255, 255, 0.09);
-  --glass-blur: 16px;
+  --glass-blur: 10px;
   --glass-saturate: 1.2;
   --glass-highlight: 0.07;
   --glass-shadow: 0 2px 12px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.25);
@@ -91,6 +103,7 @@ html.dark {
   --mo-surface: rgba(255, 255, 255, 0.06);
   --mo-surface-hover: rgba(255, 255, 255, 0.11);
   --mo-border: rgba(255, 255, 255, 0.08);
+  --glass-lite-bg: rgba(26, 34, 50, 0.8);
 
   /* 文字 */
   --mo-text-1: #e8ebf1;
@@ -107,6 +120,15 @@ html.dark {
   --side-nav-hover: rgba(96, 165, 250, 0.14);
   --side-nav-divider: rgba(255, 255, 255, 0.07);
   --side-nav-collapse-bg: rgba(30, 40, 58, 0.92);
+}
+
+/* 降级方案：backdrop-filter 不受支持时，玻璃层自动换用不透明底色 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-bg: var(--glass-bg-fallback);
+    --glass-bg-strong: var(--glass-bg-strong-fallback);
+    --glass-highlight: 0;
+  }
 }
 
 * {
@@ -128,9 +150,16 @@ html, body, #app {
   transition: color 0.3s ease;
 }
 
+/* 深色背景：渐变夜色 + 细噪点纹理（多层背景实现，零额外渲染层） */
 html.dark, html.dark body, html.dark #app {
-  background-image: var(--mo-bg-gradient);
   background-color: #0b1220;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
+    var(--mo-bg-gradient);
+  background-size: 160px 160px, cover;
+  background-repeat: repeat, no-repeat;
+  background-position: 0 0, center;
+  background-attachment: fixed, fixed;
 }
 
 /* 滚动条 */
@@ -207,23 +236,46 @@ html.dark .app-bg-decor::after {
 }
 
 /* ═══════════════════════════════════════════
-   液态玻璃通用卡片
-   （顶部高光 + 双层弥散阴影，模拟 Apple Liquid Glass 边缘折射）
+   玻璃拟态统一封装（工具类）
+   .glass       标准玻璃卡片（页面级容器）
+   .glass-strong 强化玻璃（浮层/弹窗/登录卡片）
+   .glass-lite  轻量玻璃面（列表项/网格卡片：无 backdrop-filter）
    ═══════════════════════════════════════════ */
+.glass,
 .card {
   background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius);
-  padding: 24px;
   box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
-  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.3s ease;
   contain: layout style;
+}
+
+.card {
+  padding: 24px;
 }
 
 .card:hover {
   box-shadow: var(--glass-shadow-hover), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
+}
+
+.glass-strong {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-filter-pop);
+  -webkit-backdrop-filter: var(--glass-filter-pop);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow-hover), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
+}
+
+/* 列表/网格高频元素：不使用滤镜，仅半透明底色 + 细边框，保障滚动性能 */
+.glass-lite {
+  background: var(--glass-lite-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--mo-radius);
+  box-shadow: 0 1px 6px rgba(31, 64, 130, 0.05);
+  transition: background-color 0.2s ease;
 }
 
 /* 页面标题 */
@@ -271,6 +323,22 @@ html.theme-anim *::after {
   transition: background-color 0.3s ease, background 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease !important;
 }
 
+/* 系统偏好减弱动效时，关闭装饰性动画 */
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    animation: none;
+  }
+  html.theme-anim *,
+  html.theme-anim *::before,
+  html.theme-anim *::after {
+    transition: none !important;
+  }
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ═══════════════════════════════════════════
    Element Plus 主题覆盖（浅色）
    ═══════════════════════════════════════════ */
@@ -302,7 +370,7 @@ html.theme-anim *::after {
 :root:not(.dark) .el-textarea__inner {
   background-color: rgba(255, 255, 255, 0.7) !important;
   box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12) inset !important;
-  transition: var(--mo-transition);
+  transition: box-shadow 0.25s ease, background-color 0.25s ease;
 }
 
 :root:not(.dark) .el-input__wrapper:hover,
@@ -336,7 +404,7 @@ html.dark .el-textarea__inner:focus {
 .el-button--primary {
   background: var(--mo-gradient);
   border: none;
-  transition: var(--mo-transition);
+  transition: background 0.25s ease, transform 0.2s ease, box-shadow 0.25s ease;
 }
 
 .el-button--primary:hover,
@@ -345,14 +413,61 @@ html.dark .el-textarea__inner:focus {
   transform: translateY(-1px);
 }
 
-/* 对话框液态玻璃 */
+/* ── Element Plus 浮层统一玻璃化 ─────────────── */
+
+/* 对话框 */
 .el-dialog {
   background: var(--glass-bg-strong) !important;
-  backdrop-filter: blur(20px) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturate));
+  backdrop-filter: var(--glass-filter-pop);
+  -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-lg) !important;
   box-shadow: var(--glass-shadow-hover) !important;
+}
+
+/* 消息确认框 */
+.el-message-box {
+  background: var(--glass-bg-strong) !important;
+  backdrop-filter: var(--glass-filter-pop);
+  -webkit-backdrop-filter: var(--glass-filter-pop);
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--mo-radius-lg) !important;
+  box-shadow: var(--glass-shadow-hover) !important;
+}
+
+/* 轻提示 */
+.el-message {
+  background: var(--glass-bg-strong) !important;
+  backdrop-filter: var(--glass-filter-pop);
+  -webkit-backdrop-filter: var(--glass-filter-pop);
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+/* 下拉/选择/日期等弹层（popper） */
+.el-popper.is-light {
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-filter-pop);
+  -webkit-backdrop-filter: var(--glass-filter-pop);
+  border-color: var(--glass-border);
+}
+
+/* popper 小箭头与面板同色 */
+.el-popper.is-light .el-popper__arrow::before {
+  background: var(--glass-bg-strong) !important;
+  border-color: var(--glass-border) !important;
+}
+
+/* 下拉菜单项悬停 */
+.el-select-dropdown__item.hover,
+.el-select-dropdown__item:hover {
+  background-color: var(--mo-surface-hover);
+}
+
+/* 日期选择面板 */
+.el-date-range-picker,
+.el-picker-panel {
+  background: var(--glass-bg-strong);
 }
 
 /* 表格玻璃拟态 */
@@ -368,16 +483,4 @@ html.dark .el-textarea__inner:focus {
 .el-checkbox__input.is-checked .el-checkbox__inner {
   background-color: var(--mo-primary);
   border-color: var(--mo-primary);
-}
-
-/* 下拉弹层玻璃化 */
-.el-popper.is-light {
-  background: var(--glass-bg-strong);
-  backdrop-filter: blur(18px) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(18px) saturate(var(--glass-saturate));
-  border-color: var(--glass-border);
-}
-
-html.dark .el-popper.is-light {
-  background: var(--glass-bg-strong);
 }
