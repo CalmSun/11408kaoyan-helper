@@ -67,7 +67,7 @@
     <!-- 下方两栏 -->
     <div class="content-grid">
       <!-- 今日计划 -->
-      <div class="card plan-card">
+      <GlassCard class="card plan-card">
         <div class="card-header">
           <h3 class="card-title">
             <el-icon><List /></el-icon>
@@ -114,10 +114,10 @@
           <p>今天还没有计划，去添加一个吧~</p>
           <el-button type="primary" @click="goToPlan">添加计划</el-button>
         </div>
-      </div>
+      </GlassCard>
 
       <!-- 各科目学习时长 -->
-      <div class="card study-hours-card">
+      <GlassCard class="card study-hours-card">
         <div class="card-header">
           <h3 class="card-title">
             <el-icon><Clock /></el-icon>
@@ -150,11 +150,11 @@
           <span>累计学习 <strong>{{ store.totalStudyHours }}</strong> 小时</span>
           <span>今日学习 <strong>{{ store.todayStudyMinutes }}</strong> 分钟</span>
         </div>
-      </div>
+      </GlassCard>
     </div>
 
     <!-- 快捷入口 -->
-    <div class="card quick-access">
+    <GlassCard class="card quick-access">
       <h3 class="card-title" style="margin-bottom: 20px;">
         <el-icon><Lightning /></el-icon>
         快捷入口
@@ -215,7 +215,7 @@
           <span>学习统计</span>
         </div>
       </div>
-    </div>
+    </GlassCard>
   </div>
 </template>
 

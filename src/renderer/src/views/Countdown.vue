@@ -102,7 +102,7 @@
     </div>
 
     <!-- 各科目复习建议 -->
-    <div class="card subject-tips">
+    <GlassCard class="card subject-tips">
       <h3 class="card-title" style="margin-bottom: 20px;">
         <el-icon><Guide /></el-icon>
         各科目复习建议
@@ -137,10 +137,10 @@
           <p class="tip-content">{{ getSubjectTip('cs408') }}</p>
         </div>
       </div>
-    </div>
+    </GlassCard>
 
     <!-- 设置考试日期 -->
-    <div class="card date-settings">
+    <GlassCard class="card date-settings">
       <h3 class="card-title" style="margin-bottom: 20px;">
         <el-icon><Setting /></el-icon>
         考试设置
@@ -164,7 +164,7 @@
           </el-form-item>
         </el-form>
       </div>
-    </div>
+    </GlassCard>
   </div>
 </template>
 

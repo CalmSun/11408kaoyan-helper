@@ -37,46 +37,46 @@
     <!-- 图表区域 -->
     <div class="charts-grid">
       <!-- 学习时长趋势 -->
-      <div class="card chart-card">
+      <GlassCard class="card chart-card">
         <h3 class="chart-title">
           <el-icon><TrendCharts /></el-icon>
           近7天学习时长
         </h3>
         <div ref="studyChartRef" class="chart-container"></div>
-      </div>
+      </GlassCard>
 
       <!-- 各科目分布 -->
-      <div class="card chart-card">
+      <GlassCard class="card chart-card">
         <h3 class="chart-title">
           <el-icon><PieChart /></el-icon>
           各科目学习占比
         </h3>
         <div ref="subjectChartRef" class="chart-container"></div>
-      </div>
+      </GlassCard>
     </div>
 
     <div class="charts-grid">
       <!-- 番茄数统计 -->
-      <div class="card chart-card">
+      <GlassCard class="card chart-card">
         <h3 class="chart-title">
           <el-icon><Histogram /></el-icon>
           每日番茄数
         </h3>
         <div ref="pomodoroChartRef" class="chart-container"></div>
-      </div>
+      </GlassCard>
 
       <!-- 各科目学习时长 -->
-      <div class="card chart-card">
+      <GlassCard class="card chart-card">
         <h3 class="chart-title">
           <el-icon><DataAnalysis /></el-icon>
           各科目学习时长
         </h3>
         <div ref="subjectHoursChartRef" class="chart-container"></div>
-      </div>
+      </GlassCard>
     </div>
 
     <!-- 学习日历 -->
-    <div class="card calendar-card">
+    <GlassCard class="card calendar-card">
       <h3 class="chart-title">
         <el-icon><Calendar /></el-icon>
         学习日历
@@ -100,7 +100,7 @@
         <div class="legend-level level-4"></div>
         <span>多</span>
       </div>
-    </div>
+    </GlassCard>
   </div>
 </template>
 

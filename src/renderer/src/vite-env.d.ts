@@ -11,6 +11,9 @@ interface ElectronAPI {
   importData: () => Promise<{ success: boolean; data?: string }>
   setAutoLaunch: (enabled: boolean) => Promise<{ success: boolean; enabled: boolean }>
   getAutoLaunch: () => Promise<{ enabled: boolean }>
+  setCustomBg: () => Promise<{ success: boolean }>
+  clearCustomBg: () => Promise<{ success: boolean }>
+  getCustomBg: () => Promise<{ enabled: boolean }>
 }
 
 interface Window {

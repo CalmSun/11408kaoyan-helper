@@ -56,3 +56,48 @@ export function initTheme(): void {
     applyTheme()
   })
 }
+
+const BG_CUSTOM_KEY = 'kaoyan_bg_custom'
+
+/** 应用自定义背景：向根元素注入 --mo-bg-custom 变量（CSS 中作为 --mo-bg-image 的首选值） */
+export function applyCustomBg(url: string | null): void {
+  const root = document.documentElement
+  if (url) {
+    root.style.setProperty('--mo-bg-custom', `url("${url}")`)
+  } else {
+    root.style.removeProperty('--mo-bg-custom')
+  }
+  try {
+    if (url) localStorage.setItem(BG_CUSTOM_KEY, url)
+    else localStorage.removeItem(BG_CUSTOM_KEY)
+  } catch {
+    // 忽略写入失败
+  }
+}
+
+/** 初始化自定义背景：优先读取本地记忆，并向主进程核实文件是否仍存在 */
+export async function initCustomBg(): Promise<void> {
+  let url: string | null = null
+  try {
+    url = localStorage.getItem(BG_CUSTOM_KEY)
+  } catch {
+    // 忽略读取失败
+  }
+  const api = (window as unknown as { electronAPI?: { getCustomBg?: () => Promise<{ enabled: boolean }> } }).electronAPI
+  if (api?.getCustomBg) {
+    try {
+      const res = await api.getCustomBg()
+      if (!res.enabled) {
+        // 主进程侧文件不存在：清除记忆并回退默认背景
+        applyCustomBg(null)
+        return
+      }
+    } catch {
+      // 查询失败时沿用本地记忆
+    }
+  }
+  if (url) applyCustomBg(url)
+}
+
+/** 自定义背景协议地址（主进程以 kaoyan-bg:// 协议提供文件） */
+export const CUSTOM_BG_URL = 'kaoyan-bg://background/custom-bg.jpg'

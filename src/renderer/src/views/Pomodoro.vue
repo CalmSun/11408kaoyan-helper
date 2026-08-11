@@ -139,7 +139,7 @@
     </div>
 
     <!-- 今日番茄记录 -->
-    <div class="card records-card" v-if="todayRecords.length > 0">
+    <GlassCard class="card records-card" v-if="todayRecords.length > 0">
       <h3 class="card-title" style="margin-bottom: 16px;">
         <el-icon><List /></el-icon>
         今日记录
@@ -162,7 +162,7 @@
           </el-tag>
         </div>
       </div>
-    </div>
+    </GlassCard>
   </div>
 </template>
 
@@ -423,6 +423,9 @@ function skipTimer() {
 
 .subject-btn.active {
   color: #fff;
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
 }
 
 /* 今日统计 */

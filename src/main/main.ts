@@ -1,6 +1,17 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
+import { pathToFileURL } from 'url'
+
+// 自定义背景图存储路径（userData 目录下固定文件名）
+function customBgPath(): string {
+  return path.join(app.getPath('userData'), 'custom-bg.jpg')
+}
+
+// 注册私有协议：kaoyan-bg:// 用于向渲染进程提供用户自定义背景图
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'kaoyan-bg', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+])
 
 let mainWindow: BrowserWindow | null = null
 
@@ -38,6 +49,15 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  // 自定义背景协议：存在自定义背景文件时才提供内容
+  protocol.handle('kaoyan-bg', (request) => {
+    const file = customBgPath()
+    if (!fs.existsSync(file)) {
+      return new Response('not found', { status: 404 })
+    }
+    return net.fetch(pathToFileURL(file).toString())
+  })
+
   createWindow()
 
   // 系统主题变化时同步窗口背景色
@@ -101,4 +121,41 @@ ipcMain.handle('set-auto-launch', async (_event, enabled: boolean) => {
 ipcMain.handle('get-auto-launch', async () => {
   const settings = app.getLoginItemSettings()
   return { enabled: settings.openAtLogin }
+})
+
+// 自定义背景 - 选择图片并应用（复制到 userData 固定文件）
+ipcMain.handle('set-custom-bg', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择浅色背景图片',
+    filters: [{ name: '图片文件', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+    properties: ['openFile']
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false }
+  }
+
+  try {
+    fs.copyFileSync(result.filePaths[0], customBgPath())
+    return { success: true }
+  } catch {
+    return { success: false }
+  }
+})
+
+// 自定义背景 - 恢复默认
+ipcMain.handle('clear-custom-bg', async () => {
+  try {
+    if (fs.existsSync(customBgPath())) {
+      fs.unlinkSync(customBgPath())
+    }
+    return { success: true }
+  } catch {
+    return { success: false }
+  }
+})
+
+// 自定义背景 - 查询是否启用
+ipcMain.handle('get-custom-bg', async () => {
+  return { enabled: fs.existsSync(customBgPath()) }
 })

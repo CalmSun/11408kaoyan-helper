@@ -32,11 +32,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { usePomodoroStore } from '@/stores/pomodoro'
-import { initTheme } from '@/utils/theme'
+import { initTheme, initCustomBg } from '@/utils/theme'
 import SideNav from '@/components/SideNav.vue'
 
-// 启动时应用已保存的主题（浅色/深色/跟随系统）
+// 启动时应用已保存的主题（浅色/深色/跟随系统）与自定义背景
 initTheme()
+initCustomBg()
 
 const route = useRoute()
 const store = useMainStore()

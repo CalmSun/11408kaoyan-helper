@@ -44,7 +44,7 @@
     </div>
 
     <!-- 总分趋势图 -->
-    <div class="card chart-card">
+    <GlassCard class="card chart-card">
       <div class="card-header">
         <h3 class="card-title">
           <el-icon><TrendCharts /></el-icon>
@@ -52,10 +52,10 @@
         </h3>
       </div>
       <div ref="trendChartRef" class="chart-container"></div>
-    </div>
+    </GlassCard>
 
     <!-- 记录列表 -->
-    <div class="card">
+    <GlassCard class="card">
       <div class="card-header">
         <h3 class="card-title">
           <el-icon><List /></el-icon>
@@ -115,7 +115,7 @@
           </template>
         </el-table-column>
       </el-table>
-    </div>
+    </GlassCard>
 
     <!-- 录入/编辑弹窗 -->
     <el-dialog v-model="showDialog" :title="isEditing ? '编辑分数' : '录入分数'" width="480px">

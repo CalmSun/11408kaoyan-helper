@@ -813,6 +813,9 @@ function getSubjectName(subject: string) {
 
 .tab-item.active {
   color: #fff;
+  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
 }
 
 /* 公式列表 */

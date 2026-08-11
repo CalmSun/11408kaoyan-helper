@@ -4,7 +4,7 @@
     <p class="page-subtitle">个性化你的考研助手</p>
 
     <!-- 考试设置 -->
-    <div class="card setting-section">
+    <GlassCard class="card setting-section">
       <h3 class="section-title">
         <el-icon><AlarmClock /></el-icon>
         考试设置
@@ -26,10 +26,10 @@
           <el-button type="primary" @click="saveExamSettings">保存设置</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </GlassCard>
 
     <!-- 番茄钟设置 -->
-    <div class="card setting-section">
+    <GlassCard class="card setting-section">
       <h3 class="section-title">
         <el-icon><Timer /></el-icon>
         番茄钟设置
@@ -68,10 +68,10 @@
           <el-button @click="requestNotificationPermission">测试通知权限</el-button>
         </el-form-item>
       </el-form>
-    </div>
+    </GlassCard>
 
     <!-- 通用设置 -->
-    <div class="card setting-section">
+    <GlassCard class="card setting-section">
       <h3 class="section-title">
         <el-icon><Setting /></el-icon>
         通用设置
@@ -85,15 +85,20 @@
           </el-radio-group>
           <span class="unit-desc">侧边栏底部也可一键切换深浅色</span>
         </el-form-item>
+        <el-form-item label="浅色背景">
+          <el-button type="primary" plain :loading="bgBusy" @click="chooseCustomBg">选择图片</el-button>
+          <el-button :disabled="!customBgOn || bgBusy" @click="resetCustomBg">恢复默认</el-button>
+          <span class="unit-desc">自定义浅色模式的全屏背景图（深色模式不受影响）</span>
+        </el-form-item>
         <el-form-item label="开机自启动">
           <el-switch v-model="autoLaunch" @change="toggleAutoLaunch" />
           <span class="unit-desc">开机时自动启动考研助手</span>
         </el-form-item>
       </el-form>
-    </div>
+    </GlassCard>
 
     <!-- 数据管理 -->
-    <div class="card setting-section">
+    <GlassCard class="card setting-section">
       <h3 class="section-title">
         <el-icon><FolderOpened /></el-icon>
         数据管理
@@ -132,10 +137,10 @@
           </el-button>
         </div>
       </div>
-    </div>
+    </GlassCard>
 
     <!-- 账号管理 -->
-    <div class="card setting-section">
+    <GlassCard class="card setting-section">
       <h3 class="section-title">
         <el-icon><User /></el-icon>
         账号管理
@@ -165,10 +170,10 @@
           删除账号
         </el-button>
       </div>
-    </div>
+    </GlassCard>
 
     <!-- 关于 -->
-    <div class="card setting-section">
+    <GlassCard class="card setting-section">
       <h3 class="section-title">
         <el-icon><InfoFilled /></el-icon>
         关于
@@ -194,7 +199,7 @@
       <p class="about-tip">
         💡 提示：所有数据都保存在本地，请定期导出备份，防止数据丢失。
       </p>
-    </div>
+    </GlassCard>
   </div>
 </template>
 
@@ -204,7 +209,7 @@ import { useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
 import { exportAllData, importAllData, clearAllStorage } from '@/utils/storage'
-import { themeMode, setThemeMode, type ThemeMode } from '@/utils/theme'
+import { themeMode, setThemeMode, applyCustomBg, initCustomBg, CUSTOM_BG_URL, type ThemeMode } from '@/utils/theme'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlarmClock,
@@ -235,6 +240,60 @@ function handleThemeChange(mode: ThemeMode) {
   window.setTimeout(() => root.classList.remove('theme-anim'), 350)
   ElMessage.success(mode === 'system' ? '已切换为跟随系统主题' : mode === 'dark' ? '已切换为深色模式' : '已切换为浅色模式')
 }
+
+// 自定义浅色背景
+const customBgOn = ref(false)
+const bgBusy = ref(false)
+
+async function refreshCustomBgState() {
+  const api = window.electronAPI
+  if (api?.getCustomBg) {
+    try {
+      customBgOn.value = (await api.getCustomBg()).enabled
+    } catch {
+      customBgOn.value = false
+    }
+  }
+}
+
+async function chooseCustomBg() {
+  const api = window.electronAPI
+  if (!api?.setCustomBg) {
+    ElMessage.warning('当前环境不支持自定义背景')
+    return
+  }
+  bgBusy.value = true
+  try {
+    const res = await api.setCustomBg()
+    if (res.success) {
+      customBgOn.value = true
+      // 追加时间戳避免浏览器缓存旧图
+      applyCustomBg(`${CUSTOM_BG_URL}?t=${Date.now()}`)
+      ElMessage.success('已应用自定义背景')
+    }
+  } finally {
+    bgBusy.value = false
+  }
+}
+
+async function resetCustomBg() {
+  const api = window.electronAPI
+  if (!api?.clearCustomBg) return
+  bgBusy.value = true
+  try {
+    await api.clearCustomBg()
+    customBgOn.value = false
+    applyCustomBg(null)
+    ElMessage.success('已恢复默认背景')
+  } finally {
+    bgBusy.value = false
+  }
+}
+
+onMounted(() => {
+  refreshCustomBgState()
+  initCustomBg()
+})
 
 // 开机自启动
 const autoLaunch = ref(false)
