@@ -949,7 +949,7 @@ watch(currentSubject, () => {
 }
 
 .outline-tab:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .outline-tab.active {
@@ -996,7 +996,7 @@ watch(currentSubject, () => {
 }
 
 .chapter-header:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .expand-icon {
@@ -1018,12 +1018,12 @@ watch(currentSubject, () => {
 
 .chapter-content {
   padding: 12px 16px 12px 40px;
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--mo-surface);
 }
 
 .section-item {
   padding: 10px 0;
-  border-bottom: 1px dashed rgba(255, 255, 255, 0.6);
+  border-bottom: 1px dashed var(--glass-border);
 }
 
 .section-item:last-child {
@@ -1048,8 +1048,8 @@ watch(currentSubject, () => {
 
 .point-tag {
   padding: 4px 10px;
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(180, 185, 195, 0.3);
+  background: var(--mo-surface);
+  border: 1px solid var(--mo-border);
   border-radius: 6px;
   font-size: 12px;
   color: var(--mo-text-2);

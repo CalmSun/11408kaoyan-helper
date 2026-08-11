@@ -808,7 +808,7 @@ function getSubjectName(subject: string) {
 }
 
 .tab-item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .tab-item.active {
@@ -824,17 +824,17 @@ function getSubjectName(subject: string) {
 
 .formula-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
   transition: all 0.2s ease;
 }
 
 .formula-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--glass-shadow-hover);
 }
 
 .formula-header {
@@ -858,11 +858,11 @@ function getSubjectName(subject: string) {
 }
 
 .formula-content {
-  background: rgba(255, 255, 255, 0.40);
+  background: var(--mo-surface);
   border-radius: 10px;
   padding: 16px 20px;
   margin-bottom: 14px;
-  border-left: 3px solid #3b82f6;
+  border-left: 3px solid var(--mo-primary);
 }
 
 .formula-content pre {
@@ -894,10 +894,10 @@ function getSubjectName(subject: string) {
 }
 
 .formula-example {
-  background: #e9eef0;
+  background: var(--mo-surface);
   border-radius: 8px;
   padding: 12px 16px;
-  border-left: 3px solid #8fa5b5;
+  border-left: 3px solid var(--mo-info);
 }
 
 .example-label {

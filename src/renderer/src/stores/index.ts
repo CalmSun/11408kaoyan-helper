@@ -1,7 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { getStorage, setStorage } from '@/utils/storage'
+import { todayLocal, toLocalDate } from '@/utils/date'
 import dayjs from 'dayjs'
+
+/** 判断计划是否创建于指定本地日期（统一本地日期比较，避免 UTC 时区错位） */
+function isPlanCreatedOnDate(iso: string, date: string): boolean {
+  return toLocalDate(iso) === date
+}
 
 // 考研科目类型 - 11408
 export type SubjectType = 
@@ -252,7 +258,7 @@ export const useMainStore = defineStore('main', () => {
 
   // 今日学习时长（分钟）
   const todayStudyMinutes = computed(() => {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     return pomodoroRecords.value
       .filter(r => r.date === today)
       .reduce((sum, r) => sum + r.duration, 0)
@@ -260,25 +266,25 @@ export const useMainStore = defineStore('main', () => {
 
   // 今日番茄数
   const todayPomodoroCount = computed(() => {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     return pomodoroRecords.value.filter(r => r.date === today).length
   })
 
   // 今日完成计划数
   const todayPlanCompleted = computed(() => {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     return plans.value.filter(p => {
       if (p.recurring) return (p.completedDates || []).includes(today)
-      return p.completed && p.createdAt.startsWith(today)
+      return p.completed && isPlanCreatedOnDate(p.createdAt, today)
     }).length
   })
 
   // 今日总计划数（含循环计划）
   const todayPlanTotal = computed(() => {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     return plans.value.filter(p => {
       if (p.recurring) return true
-      return p.createdAt.startsWith(today)
+      return isPlanCreatedOnDate(p.createdAt, today)
     }).length
   })
 
@@ -347,7 +353,7 @@ export const useMainStore = defineStore('main', () => {
     const plan = plans.value.find(p => p.id === id)
     if (!plan) return
 
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
 
     if (plan.recurring) {
       // 循环计划：在 completedDates 数组中添加/移除今天日期
@@ -376,7 +382,7 @@ export const useMainStore = defineStore('main', () => {
   function addPomodoroRecord(duration: number, subject?: SubjectType) {
     const record: PomodoroRecord = {
       id: Date.now().toString(),
-      date: dayjs().format('YYYY-MM-DD'),
+      date: todayLocal(),
       duration,
       subject,
       completedAt: new Date().toISOString()
@@ -417,7 +423,7 @@ export const useMainStore = defineStore('main', () => {
 
   // 更新每日学习记录
   function updateDailyRecord() {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     const todayRecord = dailyRecords.value.find(r => r.date === today)
     
     const todayPomodoros = pomodoroRecords.value.filter(r => r.date === today)

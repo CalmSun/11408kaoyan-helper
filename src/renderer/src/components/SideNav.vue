@@ -2,7 +2,7 @@
   <div class="side-nav" :class="{ collapsed: isCollapsed }">
     <div class="nav-header">
       <div class="logo">
-        <el-icon :size="28" color="#3b82f6"><Reading /></el-icon>
+        <el-icon :size="28" class="logo-icon"><Reading /></el-icon>
         <span v-show="!isCollapsed" class="logo-text">11408考研助手</span>
       </div>
       <div v-show="!isCollapsed" class="exam-countdown-mini">
@@ -13,7 +13,7 @@
 
     <div class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'">
       <el-icon :size="16">
-        <component :is="isCollapsed ? 'DArrowRight' : 'DArrowLeft'" />
+        <component :is="isCollapsed ? DArrowRight : DArrowLeft" />
       </el-icon>
     </div>
     
@@ -87,36 +87,49 @@
       </div>
     </div>
     
-    <div v-show="!isCollapsed" class="nav-footer">
-      <!-- 用户信息 -->
-      <div class="user-section">
-        <div class="user-info" @click="goToSettings" :title="userStore.displayName">
-          <el-icon :size="18" color="#3b82f6"><UserFilled /></el-icon>
-          <span class="user-name">{{ userStore.displayName }}</span>
+    <div class="nav-footer">
+      <!-- 主题切换（折叠状态下也显示图标按钮） -->
+      <div class="theme-section" :title="themeTip">
+        <div class="theme-toggle" @click="handleToggleTheme">
+          <el-icon :size="16">
+            <component :is="dark ? Sunny : Moon" />
+          </el-icon>
+          <span v-show="!isCollapsed" class="theme-text">{{ dark ? '浅色模式' : '深色模式' }}</span>
         </div>
-        <el-button
-          type="danger"
-          link
-          size="small"
-          @click.stop="handleLogout"
-          v-if="userStore.isLoggedIn"
-        >
-          退出
-        </el-button>
       </div>
-      <div class="study-tip">
-        <el-icon :size="16" color="#60a5fa"><Warning /></el-icon>
-        <span>一战成硕！</span>
-      </div>
+
+      <!-- 用户信息 -->
+      <template v-if="!isCollapsed">
+        <div class="user-section">
+          <div class="user-info" @click="goToSettings" :title="userStore.displayName">
+            <el-icon :size="18" class="user-icon"><UserFilled /></el-icon>
+            <span class="user-name">{{ userStore.displayName }}</span>
+          </div>
+          <el-button
+            type="danger"
+            link
+            size="small"
+            @click.stop="handleLogout"
+            v-if="userStore.isLoggedIn"
+          >
+            退出
+          </el-button>
+        </div>
+        <div class="study-tip">
+          <el-icon :size="16" class="study-tip-icon"><Warning /></el-icon>
+          <span>一战成硕！</span>
+        </div>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
+import { isDark, toggleTheme } from '@/utils/theme'
 import {
   HomeFilled,
   AlarmClock,
@@ -133,7 +146,9 @@ import {
   Operation,
   DArrowLeft,
   DArrowRight,
-  UserFilled
+  UserFilled,
+  Sunny,
+  Moon
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -142,6 +157,18 @@ const store = useMainStore()
 const userStore = useUserStore()
 
 const isCollapsed = ref(false)
+
+// 主题状态（来自全局主题模块，跟随系统主题自动更新）
+const dark = isDark
+const themeTip = computed(() => (dark.value ? '切换到浅色模式' : '切换到深色模式'))
+
+function handleToggleTheme() {
+  // 切换时启用全局过渡动画，视觉更柔和
+  const root = document.documentElement
+  root.classList.add('theme-anim')
+  toggleTheme()
+  window.setTimeout(() => root.classList.remove('theme-anim'), 350)
+}
 
 const emit = defineEmits<{
   (e: 'collapse-change', collapsed: boolean): void
@@ -200,13 +227,20 @@ function handleLogout() {
   z-index: 1;
   width: 220px;
   height: 100%;
-  background: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
+  background: var(--side-nav-bg);
+  backdrop-filter: blur(18px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(18px) saturate(var(--glass-saturate));
+  border-right: 1px solid var(--side-nav-border);
+  box-shadow: 2px 0 16px rgba(31, 64, 130, 0.06);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
   overflow: hidden;
+}
+
+html.dark .side-nav {
+  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3);
 }
 
 .side-nav.collapsed {
@@ -215,7 +249,7 @@ function handleLogout() {
 
 .nav-header {
   padding: 24px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--side-nav-divider);
 }
 
 .side-nav.collapsed .nav-header {
@@ -234,10 +268,14 @@ function handleLogout() {
   margin-bottom: 0;
 }
 
+.logo-icon {
+  color: var(--mo-primary);
+}
+
 .logo-text {
   font-size: 16px;
   font-weight: 600;
-  color: #fff;
+  color: var(--side-nav-text-1);
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
@@ -247,21 +285,21 @@ function handleLogout() {
   align-items: baseline;
   gap: 4px;
   padding: 12px 16px;
-  background: rgba(138, 155, 181, 0.15);
+  background: var(--mo-surface);
   border-radius: 10px;
-  border: 1px solid rgba(138, 155, 181, 0.3);
+  border: 1px solid var(--glass-border);
 }
 
 .countdown-number {
   font-size: 28px;
   font-weight: 700;
-  color: #60a5fa;
+  color: var(--mo-primary);
   font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
 }
 
 .countdown-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--side-nav-text-2);
 }
 
 /* 折叠按钮 */
@@ -271,17 +309,19 @@ function handleLogout() {
   right: -12px;
   width: 24px;
   height: 24px;
-  background: #16213e;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--side-nav-collapse-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--side-nav-border);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--side-nav-text-2);
   z-index: 10;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .collapse-btn:hover {
@@ -307,7 +347,7 @@ function handleLogout() {
 
 .nav-group-title {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--side-nav-text-3);
   padding: 8px 16px 4px;
   text-transform: uppercase;
   letter-spacing: 1px;
@@ -321,7 +361,7 @@ function handleLogout() {
   padding: 10px 16px;
   margin-bottom: 2px;
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--side-nav-text-2);
   cursor: pointer;
   transition: all 0.2s ease;
   font-size: 14px;
@@ -334,14 +374,14 @@ function handleLogout() {
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
+  background: var(--side-nav-hover);
+  color: var(--side-nav-text-1);
 }
 
 .nav-item.active {
   background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
 }
 
 .nav-text {
@@ -350,7 +390,49 @@ function handleLogout() {
 
 .nav-footer {
   padding: 16px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--side-nav-divider);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.side-nav.collapsed .nav-footer {
+  padding: 12px 8px;
+  align-items: center;
+}
+
+/* 主题切换 */
+.theme-section {
+  width: 100%;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  background: var(--mo-surface);
+  border: 1px solid var(--glass-border);
+  color: var(--side-nav-text-2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.side-nav.collapsed .theme-toggle {
+  justify-content: center;
+  padding: 9px;
+}
+
+.theme-toggle:hover {
+  background: var(--side-nav-hover);
+  color: var(--mo-primary);
+}
+
+.theme-text {
+  flex: 1;
 }
 
 /* 用户信息 */
@@ -358,9 +440,8 @@ function handleLogout() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--side-nav-divider);
 }
 
 .user-info {
@@ -375,12 +456,16 @@ function handleLogout() {
 }
 
 .user-info:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--side-nav-hover);
+}
+
+.user-icon {
+  color: var(--mo-primary);
 }
 
 .user-name {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--side-nav-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -392,6 +477,10 @@ function handleLogout() {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--side-nav-text-3);
+}
+
+.study-tip-icon {
+  color: var(--mo-primary-light);
 }
 </style>

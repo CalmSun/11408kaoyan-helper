@@ -1,0 +1,7 @@
+# 统一源码行尾为 LF，避免跨平台换行符差异产生噪音 diff
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.icns binary

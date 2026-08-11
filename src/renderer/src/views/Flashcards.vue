@@ -441,7 +441,7 @@ function markCorrect() {
 }
 
 .tab-item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .tab-item.active {
@@ -492,12 +492,11 @@ function markCorrect() {
 
 .card-back {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 2px solid var(--glass-border);
   color: var(--mo-text-1);
   transform: rotateY(180deg);
-  border: 2px solid rgba(255, 255, 255, 0.6);
 }
 
 .card-category {

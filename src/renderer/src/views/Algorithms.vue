@@ -797,7 +797,7 @@ function handleAdd() {
 }
 
 .tab-item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .tab-item.active {
@@ -814,12 +814,12 @@ function handleAdd() {
 
 .algo-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
   cursor: pointer;
   transition: all 0.2s ease;
   border: 1px solid transparent;

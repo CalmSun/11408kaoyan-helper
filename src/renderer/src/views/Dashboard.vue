@@ -7,11 +7,22 @@
         <p class="welcome-subtitle">{{ todayStr }} · {{ weekDay }}</p>
       </div>
       <div class="welcome-right">
-        <div class="exam-badge">
-          <span class="badge-label">距离考研还有</span>
-          <span class="badge-days">{{ store.daysUntilExam }}</span>
-          <span class="badge-unit">天</span>
-        </div>
+        <LiquidGlass
+          class="exam-badge-glass"
+          :corner-radius="18"
+          :displacement-scale="36"
+          :blur-amount="0.08"
+          :saturation="150"
+          :aberration-intensity="1.5"
+          :elasticity="0.3"
+          padding="16px 28px"
+        >
+          <div class="exam-badge">
+            <span class="badge-label">距离考研还有</span>
+            <span class="badge-days">{{ store.daysUntilExam }}</span>
+            <span class="badge-unit">天</span>
+          </div>
+        </LiquidGlass>
       </div>
     </div>
 
@@ -223,6 +234,8 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMainStore, SubjectType } from '@/stores'
+import { todayLocal, toLocalDate } from '@/utils/date'
+import { LiquidGlass } from '@wxperia/liquid-glass-vue'
 import dayjs from 'dayjs'
 import {
   Timer,
@@ -263,11 +276,11 @@ const weekDay = computed(() => {
 })
 
 const todayPlans = computed(() => {
-  const today = dayjs().format('YYYY-MM-DD')
-  // 显示循环计划 + 今天创建的计划
+  const today = todayLocal()
+  // 显示循环计划 + 今天（本地日期）创建的计划
   return store.plans.filter(p => {
     if (p.recurring) return true
-    return p.createdAt.startsWith(today)
+    return toLocalDate(p.createdAt) === today
   })
 })
 
@@ -310,7 +323,7 @@ function togglePlan(id: string) {
 
 function isPlanCompletedToday(plan: any): boolean {
   if (plan.recurring) {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     return plan.completedDates?.includes(today) || false
   }
   return plan.completed
@@ -357,11 +370,8 @@ function goToFormulas() { router.push('/formulas') }
   display: flex;
   align-items: baseline;
   gap: 6px;
-  padding: 16px 28px;
-  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
-  border-radius: 16px;
   color: #fff;
-  box-shadow: 0 8px 24px rgba(138, 155, 181, 0.3);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
 }
 
 .badge-label {
@@ -395,17 +405,17 @@ function goToFormulas() { router.push('/formulas') }
   gap: 16px;
   padding: 20px;
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: var(--glass-shadow), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--glass-shadow-hover), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
 }
 
 .stat-icon {
@@ -527,7 +537,7 @@ function goToFormulas() { router.push('/formulas') }
 }
 
 .plan-item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .plan-item.completed .plan-title {
@@ -587,13 +597,13 @@ function goToFormulas() { router.push('/formulas') }
   justify-content: space-between;
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-top: 1px solid var(--glass-border);
   font-size: 13px;
   color: var(--mo-text-2);
 }
 
 .study-summary strong {
-  color: #3b82f6;
+  color: var(--mo-primary);
   font-size: 16px;
   font-family: 'DIN Alternate', sans-serif;
 }

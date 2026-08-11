@@ -177,20 +177,21 @@ const continueAsGuest = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+  background: transparent;
   padding: 20px;
 }
 
 .login-card {
   width: 100%;
   max-width: 420px;
-  background: rgba(255, 255, 255, 0.62);
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
-  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(24px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(24px) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 48px 40px;
-  box-shadow: 0 20px 60px rgba(100, 110, 130, 0.25);
+  box-shadow: var(--glass-shadow-hover), inset 0 1px 0 rgba(255, 255, 255, var(--glass-highlight));
+  transition: background 0.3s ease;
 }
 
 .login-header {

@@ -164,10 +164,17 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useMainStore, ExamScoreRecord, SubjectType, SUBJECT_FULL_SCORE } from '@/stores'
+import { isDark } from '@/utils/theme'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import dayjs from 'dayjs'
 import { Plus, TrendCharts, List, Edit, Delete } from '@element-plus/icons-vue'
+
+// 按需注册所需的图表与组件，减小打包体积
+echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const store = useMainStore()
 
@@ -355,27 +362,32 @@ function initTrendChart() {
     })
   }))
 
+  const axisLine = isDark.value ? 'rgba(255, 255, 255, 0.18)' : '#d8dde2'
+  const axisLabel = isDark.value ? '#8b95a5' : '#9aa0a8'
+  const splitLine = isDark.value ? 'rgba(255, 255, 255, 0.08)' : '#e2e6e9'
+  const legendText = isDark.value ? '#a9b2c1' : '#7d8289'
+
   const option = {
     tooltip: { trigger: 'axis' },
     legend: {
       data: subjectList.value.map(s => s.name),
       bottom: 0,
-      textStyle: { color: '#7d8289', fontSize: 11 }
+      textStyle: { color: legendText, fontSize: 11 }
     },
     grid: { left: '3%', right: '4%', bottom: '14%', top: '8%', containLabel: true },
     xAxis: {
       type: 'category',
       data: years.map(y => `${y}`),
-      axisLine: { lineStyle: { color: '#d8dde2' } },
-      axisLabel: { color: '#9aa0a8', rotate: 45 }
+      axisLine: { lineStyle: { color: axisLine } },
+      axisLabel: { color: axisLabel, rotate: 45 }
     },
     yAxis: {
       type: 'value',
       name: '分数',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#e2e6e9' } },
-      axisLabel: { color: '#9aa0a8' }
+      splitLine: { lineStyle: { color: splitLine } },
+      axisLabel: { color: axisLabel }
     },
     series: seriesData.map(s => ({ ...s, lineStyle: { width: 2 } })),
     color: subjectList.value.map(s => s.color)
@@ -389,6 +401,11 @@ function handleResize() {
 }
 
 watch(() => store.examScores.length, () => {
+  nextTick(() => initTrendChart())
+})
+
+// 主题切换时刷新图表配色
+watch(isDark, () => {
   nextTick(() => initTrendChart())
 })
 

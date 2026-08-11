@@ -107,7 +107,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useMainStore } from '@/stores'
-import * as echarts from 'echarts'
+import { isDark } from '@/utils/theme'
+import * as echarts from 'echarts/core'
+import { LineChart, BarChart, PieChart as PieChartView } from 'echarts/charts'
+import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import type { EChartsOption } from 'echarts'
 import dayjs from 'dayjs'
 import {
   Timer,
@@ -119,6 +124,9 @@ import {
   DataAnalysis,
   Calendar
 } from '@element-plus/icons-vue'
+
+// 按需注册所需的图表与组件，减小打包体积
+echarts.use([LineChart, BarChart, PieChartView, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
 
 const store = useMainStore()
 
@@ -222,7 +230,16 @@ const calendarDays = computed(() => {
 
 // --- 图表初始化与更新（使用 setOption 复用实例，避免内存泄漏）---
 
-function getStudyOption(): echarts.EChartsOption {
+// 图表主题配色：随深浅主题切换，保证坐标轴与网格线可读
+const chartColors = computed(() => ({
+  axisLine: isDark.value ? 'rgba(255, 255, 255, 0.18)' : '#d8dde2',
+  axisLabel: isDark.value ? '#8b95a5' : '#9aa0a8',
+  splitLine: isDark.value ? 'rgba(255, 255, 255, 0.08)' : '#e2e6e9',
+  legendText: isDark.value ? '#a9b2c1' : '#7d8289',
+  pieBorder: isDark.value ? '#171e2c' : '#fff'
+}))
+
+function getStudyOption(): EChartsOption {
   return {
     tooltip: {
       trigger: 'axis',
@@ -232,16 +249,16 @@ function getStudyOption(): echarts.EChartsOption {
     xAxis: {
       type: 'category',
       data: last7Days.value.map(d => dayjs(d).format('MM-DD')),
-      axisLine: { lineStyle: { color: '#d8dde2' } },
-      axisLabel: { color: '#9aa0a8' }
+      axisLine: { lineStyle: { color: chartColors.value.axisLine } },
+      axisLabel: { color: chartColors.value.axisLabel }
     },
     yAxis: {
       type: 'value',
       name: '分钟',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#e2e6e9' } },
-      axisLabel: { color: '#9aa0a8' }
+      splitLine: { lineStyle: { color: chartColors.value.splitLine } },
+      axisLabel: { color: chartColors.value.axisLabel }
     },
     series: [{
       data: studyMinutesByDay.value,
@@ -267,21 +284,21 @@ function getStudyOption(): echarts.EChartsOption {
   }
 }
 
-function getSubjectOption(): echarts.EChartsOption {
+function getSubjectOption(): EChartsOption {
   return {
     tooltip: { trigger: 'item', formatter: '{b}: {c} 小时 ({d}%)' },
     legend: {
       orient: 'vertical',
       right: '5%',
       top: 'center',
-      textStyle: { color: '#7d8289' }
+      textStyle: { color: chartColors.value.legendText }
     },
     series: [{
       type: 'pie',
       radius: ['45%', '70%'],
       center: ['35%', '50%'],
       avoidLabelOverlap: false,
-      itemStyle: { borderRadius: 8, borderColor: '#fff', borderWidth: 2 },
+      itemStyle: { borderRadius: 8, borderColor: chartColors.value.pieBorder, borderWidth: 2 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       labelLine: { show: false },
@@ -291,23 +308,23 @@ function getSubjectOption(): echarts.EChartsOption {
   }
 }
 
-function getPomodoroOption(): echarts.EChartsOption {
+function getPomodoroOption(): EChartsOption {
   return {
     tooltip: { trigger: 'axis', formatter: '{b}<br/>番茄数: {c} 个' },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
       type: 'category',
       data: last7Days.value.map(d => dayjs(d).format('MM-DD')),
-      axisLine: { lineStyle: { color: '#d8dde2' } },
-      axisLabel: { color: '#9aa0a8' }
+      axisLine: { lineStyle: { color: chartColors.value.axisLine } },
+      axisLabel: { color: chartColors.value.axisLabel }
     },
     yAxis: {
       type: 'value',
       name: '个',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#e2e6e9' } },
-      axisLabel: { color: '#9aa0a8' }
+      splitLine: { lineStyle: { color: chartColors.value.splitLine } },
+      axisLabel: { color: chartColors.value.axisLabel }
     },
     series: [{
       data: pomodoroCountByDay.value,
@@ -324,23 +341,23 @@ function getPomodoroOption(): echarts.EChartsOption {
   }
 }
 
-function getSubjectHoursOption(): echarts.EChartsOption {
+function getSubjectHoursOption(): EChartsOption {
   return {
     tooltip: { trigger: 'axis', formatter: '{b}<br/>学习时长: {c} 小时' },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
       type: 'category',
       data: subjectHoursData.value.map(d => d.name),
-      axisLine: { lineStyle: { color: '#d8dde2' } },
-      axisLabel: { color: '#9aa0a8', rotate: 30 }
+      axisLine: { lineStyle: { color: chartColors.value.axisLine } },
+      axisLabel: { color: chartColors.value.axisLabel, rotate: 30 }
     },
     yAxis: {
       type: 'value',
       name: '小时',
       axisLine: { show: false },
       axisTick: { show: false },
-      splitLine: { lineStyle: { color: '#e2e6e9' } },
-      axisLabel: { color: '#9aa0a8' }
+      splitLine: { lineStyle: { color: chartColors.value.splitLine } },
+      axisLabel: { color: chartColors.value.axisLabel }
     },
     series: [{
       data: subjectHoursData.value.map(d => d.value),
@@ -362,7 +379,7 @@ function updateChart(
   refEl: HTMLElement | undefined,
   instance: echarts.ECharts | null,
   setInstance: (c: echarts.ECharts) => void,
-  option: echarts.EChartsOption
+  option: EChartsOption
 ) {
   if (!refEl) return
   if (!instance) {
@@ -409,6 +426,11 @@ onUnmounted(() => {
 
 // 监听数据变化，使用 setOption 更新而非重新 init
 watch(() => store.pomodoroRecords.length, () => {
+  updateAllCharts()
+})
+
+// 主题切换时刷新图表配色
+watch(isDark, () => {
   updateAllCharts()
 })
 </script>

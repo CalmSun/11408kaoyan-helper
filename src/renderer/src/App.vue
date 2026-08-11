@@ -17,7 +17,11 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMainStore } from '@/stores'
+import { initTheme } from '@/utils/theme'
 import SideNav from '@/components/SideNav.vue'
+
+// 启动时应用已保存的主题（浅色/深色/跟随系统）
+initTheme()
 
 const route = useRoute()
 const store = useMainStore()

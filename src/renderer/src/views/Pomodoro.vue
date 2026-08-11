@@ -590,13 +590,13 @@ onUnmounted(() => {
 }
 
 .mode-tab:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .mode-tab.active {
   background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   color: #fff;
-  box-shadow: 0 4px 12px rgba(138, 155, 181, 0.4);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
 }
 
 /* 计时器 */
@@ -704,7 +704,7 @@ onUnmounted(() => {
 }
 
 .subject-btn:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .subject-btn.active {
@@ -716,7 +716,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-around;
   padding-top: 24px;
-  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-top: 1px solid var(--glass-border);
 }
 
 .stat-item {

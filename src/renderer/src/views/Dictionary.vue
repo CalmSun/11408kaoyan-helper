@@ -557,7 +557,7 @@ async function searchOnline(word: string): Promise<WordItem | null> {
     phonetic,
     meaning,
     level: '在线查询',
-    example: example ? { en: example.example, cn: cnMeaning } : undefined
+    example: example ? { en: example.example ?? '', cn: cnMeaning } : undefined
   }
 }
 
@@ -678,7 +678,7 @@ function addToFlashcards(word: WordItem) {
 }
 
 .cat-item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .cat-item.active {
@@ -708,18 +708,18 @@ function addToFlashcards(word: WordItem) {
 
 .word-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 18px 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .word-card:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--glass-shadow-hover);
   transform: translateY(-2px);
 }
 
@@ -766,8 +766,8 @@ function addToFlashcards(word: WordItem) {
   padding: 80px 20px;
   gap: 16px;
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
 }
@@ -793,12 +793,12 @@ function addToFlashcards(word: WordItem) {
   align-items: center;
   gap: 10px;
   padding: 16px 20px;
-  background: #e8ebef;
-  border: 1px solid #d5dbe2;
+  background: rgba(59, 130, 246, 0.10);
+  border: 1px solid rgba(59, 130, 246, 0.25);
   border-radius: 12px;
   margin-bottom: 16px;
   font-size: 14px;
-  color: #3b82f6;
+  color: var(--mo-primary);
 }
 
 /* 单词详情 */

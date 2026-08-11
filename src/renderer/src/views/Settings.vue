@@ -77,6 +77,14 @@
         通用设置
       </h3>
       <el-form label-width="120px" style="max-width: 500px;">
+        <el-form-item label="外观主题">
+          <el-radio-group v-model="currentThemeMode" @change="handleThemeChange">
+            <el-radio-button value="light">浅色</el-radio-button>
+            <el-radio-button value="dark">深色</el-radio-button>
+            <el-radio-button value="system">跟随系统</el-radio-button>
+          </el-radio-group>
+          <span class="unit-desc">侧边栏底部也可一键切换深浅色</span>
+        </el-form-item>
         <el-form-item label="开机自启动">
           <el-switch v-model="autoLaunch" @change="toggleAutoLaunch" />
           <span class="unit-desc">开机时自动启动考研助手</span>
@@ -196,6 +204,7 @@ import { useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
 import { exportAllData, importAllData, clearAllStorage } from '@/utils/storage'
+import { themeMode, setThemeMode, type ThemeMode } from '@/utils/theme'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlarmClock,
@@ -215,6 +224,17 @@ const router = useRouter()
 
 // 从 package.json 读取版本号（通过 Vite define 注入）
 const appVersion = __APP_VERSION__
+
+// 外观主题
+const currentThemeMode = ref<ThemeMode>(themeMode.value)
+
+function handleThemeChange(mode: ThemeMode) {
+  const root = document.documentElement
+  root.classList.add('theme-anim')
+  setThemeMode(mode)
+  window.setTimeout(() => root.classList.remove('theme-anim'), 350)
+  ElMessage.success(mode === 'system' ? '已切换为跟随系统主题' : mode === 'dark' ? '已切换为深色模式' : '已切换为浅色模式')
+}
 
 // 开机自启动
 const autoLaunch = ref(false)
@@ -467,7 +487,7 @@ onMounted(() => {
   gap: 8px;
   margin: 0 0 20px 0;
   padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.6);
+  border-bottom: 1px solid var(--glass-border);
 }
 
 .section-desc {
@@ -506,15 +526,15 @@ onMounted(() => {
 }
 
 .data-action-item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .data-action-item.danger {
-  background: #f5eaea;
+  background: rgba(239, 68, 68, 0.08);
 }
 
 .data-action-item.danger:hover {
-  background: #ecdcdc;
+  background: rgba(239, 68, 68, 0.14);
 }
 
 .action-info h4 {
@@ -593,9 +613,9 @@ onMounted(() => {
 
 .about-tip {
   font-size: 13px;
-  color: #f59e0b;
+  color: var(--mo-warning);
   padding: 12px 16px;
-  background: #f3eee4;
+  background: rgba(245, 158, 11, 0.12);
   border-radius: 10px;
   margin: 0;
 }

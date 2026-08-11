@@ -1,8 +1,13 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 
 let mainWindow: BrowserWindow | null = null
+
+// 窗口背景色跟随系统深浅主题（避免加载瞬间白屏闪烁与深色主题冲突）
+function getWindowBgColor(): string {
+  return nativeTheme.shouldUseDarkColors ? '#0b1220' : '#e8f0ff'
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -11,7 +16,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 640,
     title: '考研助手',
-    backgroundColor: '#e8f0ff',
+    backgroundColor: getWindowBgColor(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
@@ -34,6 +39,11 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow()
+
+  // 系统主题变化时同步窗口背景色
+  nativeTheme.on('updated', () => {
+    mainWindow?.setBackgroundColor(getWindowBgColor())
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

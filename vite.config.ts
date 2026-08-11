@@ -19,7 +19,18 @@ export default defineConfig({
   root: resolve(__dirname, 'src/renderer'),
   build: {
     outDir: resolve(__dirname, 'dist/renderer'),
-    emptyOutDir: true
+    emptyOutDir: true,
+    // 分包策略：将第三方依赖拆分为独立 chunk，提升缓存命中率与加载性能
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'vue-router', 'pinia'],
+          'vendor-element-plus': ['element-plus', '@element-plus/icons-vue'],
+          'vendor-echarts': ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers'],
+          'vendor-liquid-glass': ['@wxperia/liquid-glass-vue']
+        }
+      }
+    }
   },
   server: {
     port: 5173,

@@ -156,7 +156,7 @@
         <div v-if="historyDays.length > 0" class="history-days">
           <div v-for="day in historyDays" :key="day.date" class="history-day">
             <div class="day-header">
-              <span class="day-date">{{ day.date }}</span>
+              <span class="day-date">{{ formatDayLabel(day.date) }}</span>
               <span class="day-stats">
                 完成 {{ day.completed }}/{{ day.total }}
               </span>
@@ -171,6 +171,9 @@
                 <el-icon v-if="plan.completed" color="#34d399"><Check /></el-icon>
                 <el-icon v-else color="#b0b6bd"><Close /></el-icon>
                 <span>{{ plan.title }}</span>
+                <span class="history-plan-time" v-if="plan.completed && plan.completedAt">
+                  {{ formatTime(plan.completedAt) }}
+                </span>
               </div>
             </div>
           </div>
@@ -184,8 +187,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed } from 'vue'
 import { useMainStore, SubjectType, PlanItem } from '@/stores'
+import { todayLocal, toLocalDate } from '@/utils/date'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import {
@@ -209,16 +213,16 @@ const showHistory = ref(false)
 const todayStr = computed(() => dayjs().format('YYYY年MM月DD日'))
 
 const todayPlans = computed(() => {
-  const today = dayjs().format('YYYY-MM-DD')
-  // 显示循环计划 + 今天创建的计划
+  const today = todayLocal()
+  // 显示循环计划 + 今天（本地日期）创建的计划
   return store.plans.filter(p => {
     if (p.recurring) return true
-    return p.createdAt.startsWith(today)
+    return toLocalDate(p.createdAt) === today
   })
 })
 
 const completedCount = computed(() => {
-  const today = dayjs().format('YYYY-MM-DD')
+  const today = todayLocal()
   return todayPlans.value.filter(p => {
     if (p.recurring) {
       return p.completedDates?.includes(today) || false
@@ -232,32 +236,42 @@ const progressPercent = computed(() => {
   return Math.round((completedCount.value / totalCount.value) * 100)
 })
 
-// 历史记录（按日期分组）
+// 历史记录（按本地日期分组，仅统计非循环的一次性计划）
 const historyDays = computed(() => {
-  const today = dayjs().format('YYYY-MM-DD')
-  const historyPlans = store.plans.filter(p => !p.createdAt.startsWith(today))
-  
+  const today = todayLocal()
+  // 修复点1：循环计划是每日重复的常驻项，不属于历史，排除后避免重复统计
+  // 修复点2：createdAt 为 UTC 时间戳，改用本地日期分组，修复凌晨 0-8 点日期错位
+  const historyPlans = store.plans.filter(
+    p => !p.recurring && toLocalDate(p.createdAt) !== today
+  )
+
   const dayMap = new Map<string, PlanItem[]>()
   historyPlans.forEach(plan => {
-    const date = plan.createdAt.slice(0, 10)
+    const date = toLocalDate(plan.createdAt)
     if (!dayMap.has(date)) {
       dayMap.set(date, [])
     }
     dayMap.get(date)!.push(plan)
   })
-  
+
   const days = Array.from(dayMap.entries()).map(([date, plans]) => ({
     date,
     plans,
     completed: plans.filter(p => p.completed).length,
     total: plans.length
   }))
-  
+
   return days.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7)
 })
 
 function formatTime(dateStr: string) {
   return dayjs(dateStr).format('HH:mm')
+}
+
+function formatDayLabel(date: string) {
+  const d = dayjs(date)
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${date} ${weekDays[d.day()]}`
 }
 
 function handleAdd() {
@@ -278,7 +292,7 @@ function handleAdd() {
 
 function isPlanCompletedToday(plan: PlanItem): boolean {
   if (plan.recurring) {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     return plan.completedDates?.includes(today) || false
   }
   return plan.completed
@@ -307,9 +321,9 @@ function clearCompleted() {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
-    const today = dayjs().format('YYYY-MM-DD')
+    const today = todayLocal()
     const completedIds = store.plans
-      .filter(p => p.completed && p.createdAt.startsWith(today))
+      .filter(p => !p.recurring && p.completed && toLocalDate(p.createdAt) === today)
       .map(p => p.id)
     completedIds.forEach(id => store.deletePlan(id))
     ElMessage.success('已清除')
@@ -343,13 +357,13 @@ function clearCompleted() {
 /* 进度卡片 */
 .progress-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
 }
 
 .progress-info {
@@ -363,15 +377,15 @@ function clearCompleted() {
 .progress-percent {
   font-size: 20px;
   font-weight: 700;
-  color: #60a5fa;
+  color: var(--mo-primary-light);
   font-family: 'DIN Alternate', sans-serif;
 }
 
 /* 添加计划 */
 .add-plan-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px;
@@ -414,13 +428,13 @@ function clearCompleted() {
 /* 计划列表 */
 .plan-list-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 20px 24px;
   margin-bottom: 16px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
 }
 
 .list-header {
@@ -458,11 +472,11 @@ function clearCompleted() {
   padding: 14px 16px;
   background: var(--mo-surface);
   border-radius: 10px;
-  transition: all 0.2s ease;
+  transition: background 0.2s ease, opacity 0.2s ease;
 }
 
 .plan-item:hover {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--mo-surface-hover);
 }
 
 .plan-item.completed {
@@ -510,11 +524,11 @@ function clearCompleted() {
 /* 历史记录 */
 .history-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(14px) saturate(1.3);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--glass-shadow);
   overflow: hidden;
 }
 
@@ -552,7 +566,7 @@ function clearCompleted() {
 
 .history-content {
   padding: 0 24px 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.6);
+  border-top: 1px solid var(--glass-border);
 }
 
 .history-days {
@@ -601,5 +615,12 @@ function clearCompleted() {
 .history-plan-item.completed {
   color: #34d399;
   text-decoration: line-through;
+}
+
+.history-plan-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--mo-text-3);
+  font-family: 'DIN Alternate', sans-serif;
 }
 </style>
