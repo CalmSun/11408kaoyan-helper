@@ -63,6 +63,10 @@
           <el-switch v-model="pomodoroForm.enableTitleFlash" />
           <span class="unit-desc">切换其他标签页时，浏览器标题闪烁提醒</span>
         </el-form-item>
+        <el-form-item label="强制全屏">
+          <el-switch v-model="pomodoroForm.forceFullscreen" />
+          <span class="unit-desc">番茄钟运行时进入全屏，隐藏系统任务栏减少干扰（全局生效）</span>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="savePomodoroSettings">保存设置</el-button>
           <el-button @click="requestNotificationPermission">测试通知权限</el-button>
@@ -488,7 +492,8 @@ const pomodoroForm = reactive({
   longBreakInterval: store.pomodoroSettings.longBreakInterval,
   enableNotification: store.pomodoroSettings.enableNotification,
   enableSound: store.pomodoroSettings.enableSound,
-  enableTitleFlash: store.pomodoroSettings.enableTitleFlash
+  enableTitleFlash: store.pomodoroSettings.enableTitleFlash,
+  forceFullscreen: store.pomodoroSettings.forceFullscreen
 })
 
 function saveExamSettings() {
@@ -508,7 +513,8 @@ function savePomodoroSettings() {
     longBreakInterval: pomodoroForm.longBreakInterval,
     enableNotification: pomodoroForm.enableNotification,
     enableSound: pomodoroForm.enableSound,
-    enableTitleFlash: pomodoroForm.enableTitleFlash
+    enableTitleFlash: pomodoroForm.enableTitleFlash,
+    forceFullscreen: pomodoroForm.forceFullscreen
   })
   ElMessage.success('设置已保存')
 }

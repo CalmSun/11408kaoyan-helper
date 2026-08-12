@@ -34,7 +34,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { usePomodoroStore } from '@/stores/pomodoro'
@@ -52,6 +52,22 @@ const pmd = usePomodoroStore()
 const isSidebarCollapsed = ref(false)
 
 const isLoginPage = computed(() => route.path === '/login')
+
+// v2.7.1：强制全屏改为全局设置（设置-番茄钟设置），在根组件统一监听执行：
+// 开启后番茄钟运行时进入全屏隐藏系统任务栏，暂停/结束/关闭时自动退出，
+// 切换页面不再影响全屏状态
+const forceFullscreenActive = computed(
+  () => store.pomodoroSettings.forceFullscreen && pmd.isRunning
+)
+
+watch(forceFullscreenActive, (on) => {
+  window.electronAPI?.setFullscreen(on)
+}, { immediate: true })
+
+// 关闭强制全屏开关时确保退出全屏
+watch(() => store.pomodoroSettings.forceFullscreen, (enabled) => {
+  if (!enabled) window.electronAPI?.setFullscreen(false)
+})
 
 function handleCollapseChange(collapsed: boolean) {
   isSidebarCollapsed.value = collapsed

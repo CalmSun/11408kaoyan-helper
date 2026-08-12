@@ -6,10 +6,14 @@ interface MusicTrack {
   url: string // 本地文件的 object URL
 }
 
+/** 可识别的音频扩展名 */
+const AUDIO_EXTS = ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'wma', 'opus']
+
 /**
- * 全局本地音乐播放器（v2.7.0）
+ * 全局本地音乐播放器（v2.7.0 引入，v2.7.1 增强）
  * - 支持多选本地音频文件（mp3/flac/wav/ogg/m4a 等）构建播放列表
- * - 播放/暂停/上一首/下一首/音量/自动续播
+ * - v2.7.1：支持选择音乐文件夹（Electron 环境递归读取目录内全部音频）
+ * - 播放/暂停/上一首/下一首/指定播放/音量/自动续播/移除曲目
  * - 仅播放本地文件，不联网、不上传
  */
 export const useMusicStore = defineStore('music', () => {
@@ -47,6 +51,20 @@ export const useMusicStore = defineStore('music', () => {
     applyVolume()
   }
 
+  /** 判断文件名是否为音频 */
+  function isAudioName(name: string): boolean {
+    const ext = name.split('.').pop()?.toLowerCase() || ''
+    return AUDIO_EXTS.includes(ext)
+  }
+
+  /** 替换播放列表（释放旧 object URL） */
+  function setPlaylist(tracks: MusicTrack[]) {
+    playlist.value.forEach(t => URL.revokeObjectURL(t.url))
+    playlist.value = tracks
+    currentIndex.value = 0
+    loadCurrent()
+  }
+
   /** 打开本地文件选择器（多选音频） */
   function pickFiles(): Promise<number> {
     return new Promise((resolve) => {
@@ -60,15 +78,33 @@ export const useMusicStore = defineStore('music', () => {
           resolve(0)
           return
         }
-        // 释放旧的 object URL
-        playlist.value.forEach(t => URL.revokeObjectURL(t.url))
-        playlist.value = files.map(f => ({ name: f.name, url: URL.createObjectURL(f) }))
-        currentIndex.value = 0
-        loadCurrent()
+        setPlaylist(files.map(f => ({ name: f.name, url: URL.createObjectURL(f) })))
         resolve(files.length)
       }
       input.click()
     })
+  }
+
+  /**
+   * 选择音乐文件夹并加载其中全部音频（v2.7.1）
+   * 依赖 Electron 主进程目录选择 IPC；浏览器环境返回 0，调用方应降级为文件多选
+   */
+  async function pickFolder(): Promise<number> {
+    const api = window.electronAPI
+    if (!api?.pickMusicFolder) return 0
+    let files: { name: string; data: ArrayBuffer }[] = []
+    try {
+      const res = await api.pickMusicFolder()
+      if (!res.success || !res.files?.length) return 0
+      files = res.files
+    } catch {
+      return 0
+    }
+    setPlaylist(files.map(f => ({
+      name: f.name,
+      url: URL.createObjectURL(new Blob([f.data]))
+    })))
+    return files.length
   }
 
   function loadCurrent() {
@@ -98,6 +134,14 @@ export const useMusicStore = defineStore('music', () => {
     else play()
   }
 
+  /** 跳转到指定曲目播放（v2.7.1：播放列表选择） */
+  function playIndex(index: number) {
+    if (index < 0 || index >= playlist.value.length) return
+    currentIndex.value = index
+    loadCurrent()
+    play()
+  }
+
   function next() {
     if (playlist.value.length === 0) return
     currentIndex.value = (currentIndex.value + 1) % playlist.value.length
@@ -112,6 +156,36 @@ export const useMusicStore = defineStore('music', () => {
     if (isPlaying.value) play()
   }
 
+  /** 移除指定曲目（v2.7.1） */
+  function removeTrack(index: number) {
+    if (index < 0 || index >= playlist.value.length) return
+    URL.revokeObjectURL(playlist.value[index].url)
+    playlist.value.splice(index, 1)
+    if (playlist.value.length === 0) {
+      pause()
+      audio.removeAttribute('src')
+      currentIndex.value = 0
+      return
+    }
+    if (index < currentIndex.value) {
+      currentIndex.value--
+    } else if (index === currentIndex.value) {
+      if (currentIndex.value >= playlist.value.length) currentIndex.value = 0
+      const wasPlaying = isPlaying.value
+      loadCurrent()
+      if (wasPlaying) play()
+    }
+  }
+
+  /** 清空播放列表 */
+  function clearPlaylist() {
+    pause()
+    playlist.value.forEach(t => URL.revokeObjectURL(t.url))
+    playlist.value = []
+    currentIndex.value = 0
+    audio.removeAttribute('src')
+  }
+
   return {
     playlist,
     currentIndex,
@@ -119,12 +193,17 @@ export const useMusicStore = defineStore('music', () => {
     volume,
     currentTrack,
     hasMusic,
+    isAudioName,
     pickFiles,
+    pickFolder,
     play,
     pause,
     toggle,
+    playIndex,
     next,
     prev,
+    removeTrack,
+    clearPlaylist,
     setVolume
   }
 })

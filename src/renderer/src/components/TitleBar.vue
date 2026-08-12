@@ -7,37 +7,159 @@
     </div>
 
     <div class="titlebar-right">
-      <!-- 天气展示（v2.7.0） -->
-      <div v-if="weather && !transparent" class="titlebar-weather" :title="weatherTip">
-        <span class="weather-icon">{{ weather.icon }}</span>
-        <span class="weather-temp">{{ weather.tempC }}°C</span>
-        <span class="weather-cond">{{ weather.condition }}</span>
-      </div>
+      <!-- 天气组件（v2.7.1：点击查看详情 + 地点选择） -->
+      <el-popover
+        v-if="!transparent"
+        placement="bottom-end"
+        :width="300"
+        trigger="click"
+        popper-class="titlebar-popover"
+      >
+        <template #reference>
+          <div class="titlebar-weather" :title="weatherTip">
+            <template v-if="weather">
+              <span class="weather-icon">{{ weather.icon }}</span>
+              <span class="weather-temp">{{ weather.tempC }}°C</span>
+              <span class="weather-cond">{{ weather.condition }}</span>
+            </template>
+            <template v-else>
+              <span class="weather-icon">📍</span>
+              <span class="weather-cond">{{ weatherLoading ? '天气加载中…' : '选择天气地点' }}</span>
+            </template>
+          </div>
+        </template>
+        <!-- 天气详情面板 -->
+        <div class="weather-panel">
+          <div class="wp-head">
+            <span class="wp-city">{{ weather?.city || (weatherLocation || '自动定位') }}</span>
+            <span class="wp-time" v-if="weather?.obsTime">{{ weather.obsTime }}</span>
+          </div>
+          <div class="wp-main">
+            <span class="wp-icon">{{ weather?.icon || '🌤️' }}</span>
+            <div class="wp-main-right">
+              <div class="wp-temp">{{ weather?.tempC ?? '--' }}°C <span class="wp-cond">{{ weather?.condition || '暂无数据' }}</span></div>
+              <div class="wp-sub">体感 {{ weather?.feelsLikeC ?? '--' }}°C</div>
+            </div>
+          </div>
+          <div class="wp-grid">
+            <div class="wp-cell"><span class="wp-cell-label">湿度</span><span class="wp-cell-value">{{ weather?.humidity ?? '--' }}%</span></div>
+            <div class="wp-cell"><span class="wp-cell-label">风速</span><span class="wp-cell-value">{{ weather?.wind ?? '--' }}km/h</span></div>
+            <div class="wp-cell"><span class="wp-cell-label">体感温度</span><span class="wp-cell-value">{{ weather?.feelsLikeC ?? '--' }}°C</span></div>
+          </div>
+          <div class="wp-loc">
+            <div class="wp-loc-title">选择地点</div>
+            <div class="wp-city-chips">
+              <button
+                class="wp-chip"
+                :class="{ active: weatherLocation === '' }"
+                @click="selectCity('')"
+              >自动定位</button>
+              <button
+                v-for="c in CITY_PRESETS"
+                :key="c"
+                class="wp-chip"
+                :class="{ active: weatherLocation === c }"
+                @click="selectCity(c)"
+              >{{ c }}</button>
+            </div>
+            <div class="wp-custom">
+              <input
+                v-model="customCity"
+                class="wp-input"
+                placeholder="输入城市名，如：洛阳"
+                @keyup.enter="applyCustomCity"
+              />
+              <button class="wp-search-btn" @click="applyCustomCity">查询</button>
+            </div>
+          </div>
+          <div class="wp-actions">
+            <button class="wp-refresh-btn" :disabled="weatherLoading" @click="refreshWeather">
+              {{ weatherLoading ? '刷新中…' : '刷新天气' }}
+            </button>
+          </div>
+        </div>
+      </el-popover>
 
       <span v-if="!transparent" class="titlebar-countdown">距考研 {{ store.daysUntilExam }} 天</span>
       <span class="titlebar-date">{{ todayStr }}</span>
 
-      <!-- 全局音乐迷你控制（v2.7.0） -->
-      <div class="music-mini" v-if="music.hasMusic">
-        <span class="music-name" :title="music.currentTrack?.name">{{ music.currentTrack?.name }}</span>
-        <button class="mini-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
-          <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
-          <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
+      <!-- 全局音乐组件（v2.7.1：选择文件夹/文件、播放、暂停、下一首、列表选择） -->
+      <div class="music-widget" v-if="!transparent">
+        <button class="mini-btn" title="选择音乐文件夹" @click="handlePickFolder">
+          <el-icon :size="13"><Folder /></el-icon>
         </button>
-        <button class="mini-btn" title="下一首" @click="music.next()">
-          <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
+
+        <template v-if="music.hasMusic">
+          <span class="music-name" :title="music.currentTrack?.name">{{ music.currentTrack?.name }}</span>
+          <button class="mini-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
+            <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
+            <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
+          </button>
+          <button class="mini-btn" title="下一首" @click="music.next()">
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
+          </button>
+          <input
+            class="mini-volume"
+            type="range" min="0" max="100"
+            :value="Math.round(music.volume * 100)"
+            @input="onVolumeInput"
+            title="音量"
+          />
+          <!-- 播放列表面板 -->
+          <el-popover
+            placement="bottom-end"
+            :width="300"
+            trigger="click"
+            popper-class="titlebar-popover"
+          >
+            <template #reference>
+              <button class="mini-btn" :class="{ on: music.isPlaying }" title="播放列表">
+                <el-icon :size="13"><List /></el-icon>
+              </button>
+            </template>
+            <div class="music-panel">
+              <div class="mp-head">
+                <span class="mp-title">播放列表</span>
+                <span class="mp-count">{{ music.playlist.length }} 首</span>
+              </div>
+              <div class="mp-controls">
+                <button class="mp-ctrl-btn" title="上一首" @click="music.prev()">
+                  <svg width="10" height="10" viewBox="0 0 10 10"><path d="M9 1 L4 5 L9 9 Z" fill="currentColor"/><rect x="1" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
+                </button>
+                <button class="mp-ctrl-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
+                  <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
+                  <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
+                </button>
+                <button class="mp-ctrl-btn" title="下一首" @click="music.next()">
+                  <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
+                </button>
+              </div>
+              <div class="mp-list">
+                <div
+                  v-for="(track, i) in music.playlist"
+                  :key="i"
+                  class="mp-item"
+                  :class="{ active: i === music.currentIndex }"
+                  @click="music.playIndex(i)"
+                >
+                  <span class="mp-item-index">{{ i + 1 }}</span>
+                  <span class="mp-item-name" :title="track.name">{{ track.name }}</span>
+                  <span class="mp-item-playing" v-if="i === music.currentIndex && music.isPlaying">♪</span>
+                  <button class="mp-item-del" title="移除" @click.stop="music.removeTrack(i)">×</button>
+                </div>
+              </div>
+              <div class="mp-actions">
+                <button class="mp-action-btn" @click="handlePickFolder">选择文件夹</button>
+                <button class="mp-action-btn" @click="handlePickFiles">选择文件</button>
+                <button class="mp-action-btn danger" @click="music.clearPlaylist()">清空</button>
+              </div>
+            </div>
+          </el-popover>
+        </template>
+        <button v-else class="mini-btn music-open" title="选择音乐文件" @click="handlePickFiles">
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M9 1 L9 8.2 A2.3 2.3 0 1 1 8 6.3 L8 3 L4 4 L4 9.2 A2.3 2.3 0 1 1 3 7.3 L3 2.5 Z" fill="currentColor"/></svg>
         </button>
-        <input
-          class="mini-volume"
-          type="range" min="0" max="100"
-          :value="Math.round(music.volume * 100)"
-          @input="onVolumeInput"
-          title="音量"
-        />
       </div>
-      <button v-else-if="!transparent" class="mini-btn music-open" title="播放本地音乐" @click="openMusicPicker">
-        <svg width="12" height="12" viewBox="0 0 12 12"><path d="M9 1 L9 8.2 A2.3 2.3 0 1 1 8 6.3 L8 3 L4 4 L4 9.2 A2.3 2.3 0 1 1 3 7.3 L3 2.5 Z" fill="currentColor"/></svg>
-      </button>
 
       <!-- 护眼模式（v2.7.0） -->
       <button class="mini-btn eyecare-btn" :class="{ on: eyeCareOn }" :title="eyeCareOn ? '关闭护眼模式' : '开启护眼模式'" @click="toggleEye">
@@ -79,8 +201,17 @@ import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
 import { useMusicStore } from '@/stores/music'
 import { isDark, toggleTheme, eyeCare, toggleEyeCare } from '@/utils/theme'
-import { weather, initWeather } from '@/utils/weather'
-import { Reading, Sunny, Moon, UserFilled } from '@element-plus/icons-vue'
+import {
+  weather,
+  weatherLoading,
+  weatherLocation,
+  initWeather,
+  fetchWeather,
+  setLocation,
+  CITY_PRESETS
+} from '@/utils/weather'
+import { ElMessage } from 'element-plus'
+import { Reading, Sunny, Moon, UserFilled, Folder, List } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 interface Props {
@@ -117,8 +248,55 @@ const pageTitle = computed(() => pageTitleMap[route.path] ?? '')
 const todayStr = computed(() => dayjs().format('YYYY年MM月DD日 ddd'))
 
 const weatherTip = computed(() =>
-  weather.value ? `${weather.value.condition} · 湿度 ${weather.value.humidity}% · 风速 ${weather.value.wind}km/h` : ''
+  weather.value
+    ? `${weather.value.condition} · 湿度 ${weather.value.humidity}% · 风速 ${weather.value.wind}km/h（点击查看详情）`
+    : '点击查看天气 / 选择地点'
 )
+
+// ── 天气：地点选择 / 刷新（v2.7.1） ──
+const customCity = ref('')
+
+async function selectCity(city: string) {
+  await setLocation(city)
+  ElMessage.success(city ? `已切换到「${city}」的天气` : '已恢复自动定位')
+}
+
+async function applyCustomCity() {
+  const city = customCity.value.trim()
+  if (!city) {
+    ElMessage.warning('请输入城市名')
+    return
+  }
+  await setLocation(city)
+  ElMessage.success(`已切换到「${city}」的天气`)
+  customCity.value = ''
+}
+
+async function refreshWeather() {
+  await fetchWeather({ force: true })
+  ElMessage.success('天气已刷新')
+}
+
+// ── 音乐：选择文件夹 / 文件（v2.7.1） ──
+async function handlePickFolder() {
+  const count = await music.pickFolder()
+  if (count > 0) {
+    music.play()
+    ElMessage.success(`已加载文件夹中的 ${count} 首音乐`)
+  } else if (!window.electronAPI?.pickMusicFolder) {
+    // 浏览器环境不支持文件夹选择，降级为多选文件
+    ElMessage.warning('当前环境不支持选择文件夹，请改用选择文件')
+    await handlePickFiles()
+  }
+}
+
+async function handlePickFiles() {
+  const count = await music.pickFiles()
+  if (count > 0) {
+    music.play()
+    ElMessage.success(`已加载 ${count} 首音乐`)
+  }
+}
 
 function minimize() {
   window.electronAPI?.windowMinimize()
@@ -146,13 +324,6 @@ function toggleEye() {
 
 function goToSettings() {
   router.push('/settings')
-}
-
-async function openMusicPicker() {
-  const count = await music.pickFiles()
-  if (count > 0) {
-    music.play()
-  }
 }
 
 function onVolumeInput(e: Event) {
@@ -222,7 +393,7 @@ onMounted(() => {
   color: var(--mo-text-3);
 }
 
-/* 天气展示 */
+/* 天气展示（可点击查看详情，v2.7.1） */
 .titlebar-weather {
   display: flex;
   align-items: center;
@@ -233,6 +404,13 @@ onMounted(() => {
   border: 1px solid var(--glass-border);
   color: var(--mo-text-2);
   font-size: 12px;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.titlebar-weather:hover {
+  background: var(--mo-surface-hover);
 }
 
 .weather-icon {
@@ -246,6 +424,173 @@ onMounted(() => {
 
 .weather-cond {
   color: var(--mo-text-3);
+}
+
+/* 天气详情面板（v2.7.1） */
+.weather-panel {
+  font-size: 13px;
+  color: var(--mo-text-1);
+}
+
+.wp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.wp-city {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.wp-time {
+  font-size: 11px;
+  color: var(--mo-text-3);
+}
+
+.wp-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.wp-icon {
+  font-size: 36px;
+  line-height: 1;
+}
+
+.wp-temp {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: 'DIN Alternate', sans-serif;
+}
+
+.wp-cond {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--mo-text-2);
+}
+
+.wp-sub {
+  font-size: 12px;
+  color: var(--mo-text-3);
+}
+
+.wp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.wp-cell {
+  background: var(--mo-surface);
+  border-radius: 8px;
+  padding: 8px 6px;
+  text-align: center;
+}
+
+.wp-cell-label {
+  display: block;
+  font-size: 11px;
+  color: var(--mo-text-3);
+  margin-bottom: 3px;
+}
+
+.wp-cell-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mo-text-1);
+}
+
+.wp-loc {
+  border-top: 1px solid var(--glass-border);
+  padding-top: 10px;
+}
+
+.wp-loc-title {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  margin-bottom: 8px;
+}
+
+.wp-city-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.wp-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--mo-surface);
+  color: var(--mo-text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.wp-chip:hover {
+  background: var(--mo-surface-hover);
+  color: var(--mo-primary);
+}
+
+.wp-chip.active {
+  background: var(--mo-primary);
+  border-color: var(--mo-primary);
+  color: #fff;
+}
+
+.wp-custom {
+  display: flex;
+  gap: 6px;
+}
+
+.wp-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: var(--mo-surface);
+  color: var(--mo-text-1);
+  font-size: 12px;
+  outline: none;
+}
+
+.wp-input:focus {
+  border-color: var(--mo-primary);
+}
+
+.wp-search-btn,
+.wp-refresh-btn {
+  padding: 5px 14px;
+  border-radius: 8px;
+  border: none;
+  background: var(--mo-primary);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.wp-search-btn:hover,
+.wp-refresh-btn:hover {
+  opacity: 0.85;
+}
+
+.wp-refresh-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.wp-actions {
+  margin-top: 10px;
+  text-align: right;
 }
 
 /* 迷你按钮（音乐/护眼/主题） */
@@ -277,24 +622,12 @@ onMounted(() => {
   color: #fff;
 }
 
-/* 音乐迷你控制 */
-.music-mini {
+/* 音乐组件容器（v2.7.1） */
+.music-widget {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 8px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--mo-surface);
-  border: 1px solid var(--glass-border);
   -webkit-app-region: no-drag;
-}
-
-.music-mini .mini-btn {
-  border: none;
-  background: transparent;
-  width: 22px;
-  height: 22px;
 }
 
 .music-name {
@@ -314,6 +647,157 @@ onMounted(() => {
 .music-open {
   width: 28px;
   height: 28px;
+}
+
+/* 播放列表面板（v2.7.1） */
+.music-panel {
+  font-size: 13px;
+  color: var(--mo-text-1);
+}
+
+.mp-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+
+.mp-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mp-count {
+  font-size: 12px;
+  color: var(--mo-text-3);
+}
+
+.mp-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mp-ctrl-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: var(--mo-surface);
+  color: var(--mo-text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mp-ctrl-btn:hover {
+  background: var(--mo-surface-hover);
+  color: var(--mo-primary);
+}
+
+.mp-list {
+  max-height: 260px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.mp-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.mp-item:hover {
+  background: var(--mo-surface-hover);
+}
+
+.mp-item.active {
+  background: var(--mo-surface-hover);
+  color: var(--mo-primary);
+}
+
+.mp-item-index {
+  width: 18px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--mo-text-3);
+  text-align: right;
+}
+
+.mp-item.active .mp-item-index {
+  color: var(--mo-primary);
+}
+
+.mp-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.mp-item-playing {
+  color: var(--mo-primary);
+  font-size: 12px;
+}
+
+.mp-item-del {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--mo-text-3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.mp-item:hover .mp-item-del {
+  opacity: 1;
+}
+
+.mp-item-del:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--mo-danger);
+}
+
+.mp-actions {
+  display: flex;
+  gap: 6px;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 8px;
+}
+
+.mp-action-btn {
+  flex: 1;
+  padding: 5px 0;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: var(--mo-surface);
+  color: var(--mo-text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.mp-action-btn:hover {
+  background: var(--mo-surface-hover);
+  color: var(--mo-primary);
+}
+
+.mp-action-btn.danger:hover {
+  color: var(--mo-danger);
 }
 
 /* 用户栏（顶栏） */

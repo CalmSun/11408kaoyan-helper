@@ -26,6 +26,8 @@ interface ElectronAPI {
   // 全屏与学习报告导出（v2.7.0）
   setFullscreen: (on: boolean) => void
   exportReportPdf: (html: string) => Promise<{ success: boolean; path?: string; message?: string }>
+  // 音乐文件夹选择（v2.7.1）
+  pickMusicFolder: () => Promise<{ success: boolean; files?: { name: string; data: ArrayBuffer }[] }>
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => void
 }
 

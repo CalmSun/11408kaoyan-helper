@@ -121,42 +121,6 @@
         </div>
       </div>
 
-      <!-- 专注环境（v2.7.0：白噪音 / 本地音乐 / 强制全屏） -->
-      <div class="ambient-panel">
-        <div class="ambient-row">
-          <span class="ambient-label">白噪音</span>
-          <div class="ambient-options">
-            <button
-              v-for="n in noiseOptions"
-              :key="n.id"
-              class="ambient-btn"
-              :class="{ active: activeNoise === n.id }"
-              @click="toggleNoise(n.id)"
-            >
-              {{ n.label }}
-            </button>
-          </div>
-        </div>
-        <div class="ambient-row">
-          <span class="ambient-label">本地音乐</span>
-          <div class="ambient-options">
-            <button class="ambient-btn" @click="openMusic">
-              {{ music.hasMusic ? (music.currentTrack?.name || '已加载') : '选择音乐' }}
-            </button>
-            <button class="ambient-btn" :class="{ active: music.isPlaying }" @click="music.toggle()" v-if="music.hasMusic">
-              {{ music.isPlaying ? '暂停' : '播放' }}
-            </button>
-          </div>
-        </div>
-        <div class="ambient-row">
-          <span class="ambient-label">强制全屏</span>
-          <div class="ambient-options">
-            <el-switch v-model="forceFullscreen" @change="onForceFullscreenChange" />
-            <span class="ambient-tip">专注开始时进入全屏，隐藏系统任务栏减少干扰</span>
-          </div>
-        </div>
-      </div>
-
       <!-- 今日统计 -->
       <div class="today-stats">
         <div class="stat-item">
@@ -203,10 +167,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { useMainStore, type SubjectType } from '@/stores'
 import { usePomodoroStore } from '@/stores/pomodoro'
-import { useMusicStore } from '@/stores/music'
 import dayjs from 'dayjs'
 import {
   VideoPlay,
@@ -218,8 +181,9 @@ import {
 
 const store = useMainStore()
 // 计时状态已提升至全局 store：切换页面不会中断计时、不会重置进度
+// v2.7.1：白噪音与页面内音乐入口已移除（音乐统一由顶栏组件控制）；
+// 强制全屏开关移至「设置-番茄钟设置」，由 App.vue 全局监听执行
 const pmd = usePomodoroStore()
-const music = useMusicStore()
 
 const currentMode = computed(() => pmd.currentMode)
 const isRunning = computed(() => pmd.isRunning)
@@ -232,113 +196,6 @@ const modeLabel = computed(() => pmd.modeLabel)
 const selectedSubject = computed({
   get: () => pmd.selectedSubject,
   set: (v) => { pmd.selectedSubject = v }
-})
-
-// ── 白噪音（Web Audio 程序化生成，不依赖外部文件） ──
-type NoiseId = 'rain' | 'wind' | 'sea'
-const noiseOptions: { id: NoiseId; label: string }[] = [
-  { id: 'rain', label: '雨声' },
-  { id: 'wind', label: '风声' },
-  { id: 'sea', label: '海浪' }
-]
-const activeNoise = ref<NoiseId | null>(null)
-
-let noiseCtx: AudioContext | null = null
-let noiseNodes: { source: AudioBufferSourceNode; gain: GainNode; filter?: BiquadFilterNode }[] = []
-
-// 生成白噪音缓冲（带低通/带通滤波模拟不同音色）
-function buildNoiseBuffer(ctx: AudioContext, id: NoiseId): AudioBuffer {
-  const seconds = 4
-  const rate = ctx.sampleRate
-  const buffer = ctx.createBuffer(1, seconds * rate, rate)
-  const data = buffer.getChannelData(0)
-  let last = 0
-  for (let i = 0; i < data.length; i++) {
-    const white = Math.random() * 2 - 1
-    // 简单一阶低通（棕噪声近似），再按类型调制
-    last = (last + 0.02 * white) / 1.02
-    let v = last * 3.5
-    if (id === 'rain') v = white * 0.3 + last
-    if (id === 'sea') {
-      const t = i / rate
-      v = (white * 0.15 + last * 2) * (0.6 + 0.4 * Math.sin(2 * Math.PI * 0.12 * t))
-    }
-    if (id === 'wind') {
-      const t = i / rate
-      v = last * 2.5 * (0.5 + 0.5 * Math.sin(2 * Math.PI * 0.07 * t + Math.sin(t)))
-    }
-    data[i] = v
-  }
-  return buffer
-}
-
-function stopNoise() {
-  noiseNodes.forEach(n => {
-    try { n.source.stop() } catch { /* 已停止 */ }
-  })
-  noiseNodes = []
-  if (noiseCtx) {
-    noiseCtx.close().catch(() => {})
-    noiseCtx = null
-  }
-}
-
-function startNoise(id: NoiseId) {
-  stopNoise()
-  noiseCtx = new AudioContext()
-  const ctx = noiseCtx
-  const buffer = buildNoiseBuffer(ctx, id)
-  const source = ctx.createBufferSource()
-  source.buffer = buffer
-  source.loop = true
-  const gain = ctx.createGain()
-  gain.gain.value = 0.35
-  const filter = ctx.createBiquadFilter()
-  filter.type = id === 'rain' ? 'highpass' : 'lowpass'
-  filter.frequency.value = id === 'rain' ? 400 : 800
-  source.connect(filter)
-  filter.connect(gain)
-  gain.connect(ctx.destination)
-  source.start()
-  noiseNodes.push({ source, gain, filter })
-}
-
-function toggleNoise(id: NoiseId) {
-  if (activeNoise.value === id) {
-    activeNoise.value = null
-    stopNoise()
-  } else {
-    activeNoise.value = id
-    startNoise(id)
-  }
-}
-
-// ── 本地音乐 ──
-async function openMusic() {
-  const count = await music.pickFiles()
-  if (count > 0) music.play()
-}
-
-// ── 强制全屏 ──
-const forceFullscreen = ref(false)
-
-function onForceFullscreenChange(on: boolean) {
-  window.electronAPI?.setFullscreen(on)
-}
-
-// 专注开始时若开启强制全屏则进入全屏；结束时退出
-watch(isRunning, (running) => {
-  if (forceFullscreen.value) {
-    window.electronAPI?.setFullscreen(running)
-  }
-})
-
-onUnmounted(() => {
-  stopNoise()
-  // 离开番茄钟页退出全屏（若强制全屏开启）
-  if (forceFullscreen.value) {
-    window.electronAPI?.setFullscreen(false)
-  }
 })
 
 // 最后5秒数字闪烁（视觉提醒）
@@ -571,67 +428,6 @@ function skipTimer() {
   background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
   font-weight: 600;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
-}
-
-/* 专注环境（v2.7.0） */
-.ambient-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid var(--glass-border);
-}
-
-.ambient-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.ambient-label {
-  width: 64px;
-  flex-shrink: 0;
-  font-size: 13px;
-  color: var(--mo-text-2);
-}
-
-.ambient-options {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.ambient-btn {
-  padding: 6px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-border);
-  background: var(--mo-surface);
-  color: var(--mo-text-2);
-  font-size: 12px;
-  cursor: pointer;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-}
-
-.ambient-btn:hover {
-  background: var(--mo-surface-hover);
-  color: var(--mo-primary);
-}
-
-.ambient-btn.active {
-  background: var(--mo-gradient);
-  border-color: transparent;
-  color: #fff;
-}
-
-.ambient-tip {
-  font-size: 12px;
-  color: var(--mo-text-3);
 }
 
 /* 今日统计 */

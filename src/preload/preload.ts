@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 全屏与报告导出（v2.7.0）
   setFullscreen: (on: boolean) => ipcRenderer.send('window:set-fullscreen', on),
   exportReportPdf: (html: string) => ipcRenderer.invoke('report:export-pdf', html),
+  // 音乐文件夹选择（v2.7.1）
+  pickMusicFolder: () => ipcRenderer.invoke('music:pick-folder'),
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => {
     const channels = ['update:available', 'update:not-available', 'update:progress', 'update:downloaded', 'update:error']
     channels.forEach(ch => {

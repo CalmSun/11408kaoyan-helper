@@ -261,8 +261,14 @@ export const useMainStore = defineStore('main', () => {
     longBreakInterval: 4,
     enableNotification: true,  // 启用通知
     enableSound: true,          // 启用声音
-    enableTitleFlash: true      // 启用页面标题闪烁
+    enableTitleFlash: true,     // 启用页面标题闪烁
+    forceFullscreen: false      // 强制全屏（v2.7.1：专注时隐藏系统任务栏，全局设置）
   }))
+
+  // 旧版本数据补齐新字段，避免 undefined
+  if (pomodoroSettings.value.forceFullscreen === undefined) {
+    pomodoroSettings.value.forceFullscreen = false
+  }
 
   // 计算倒计时天数
   const daysUntilExam = computed(() => {
@@ -546,6 +552,8 @@ export const useMainStore = defineStore('main', () => {
   watch(dailyRecords, saveDailyRecords, { deep: true })
   watch(subjectProgress, saveSubjectProgress, { deep: true })
   watch(planSnapshots, savePlanSnapshots, { deep: true })
+  // v2.7.1 修复：番茄钟设置（含强制全屏）此前未持久化，重启后丢失
+  watch(pomodoroSettings, savePomodoroSettings, { deep: true })
 
   // 启动时补记一次当日快照（覆盖已有计划的初始状态）
   recordPlanSnapshot()

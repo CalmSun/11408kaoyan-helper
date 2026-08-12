@@ -222,10 +222,60 @@ ipcMain.on('window:close-to-tray', () => {
   }
 })
 
-// 强制全屏（v2.7.0：番茄钟专注模式隐藏系统任务栏）
+// 强制全屏（v2.7.0 引入；v2.7.1 改为设置页全局开关，番茄钟运行时隐藏系统任务栏）
 ipcMain.on('window:set-fullscreen', (_e, on: boolean) => {
   if (!mainWindow) return
   mainWindow.setFullScreen(!!on)
+})
+
+// ── 音乐文件夹选择（v2.7.1：递归读取目录内音频文件） ──
+
+const MUSIC_EXTS = ['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.wma', '.opus']
+const MUSIC_MAX_FILES = 500 // 防止超大目录一次性读入内存
+
+ipcMain.handle('music:pick-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择音乐文件夹',
+    properties: ['openDirectory']
+  })
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, files: [] }
+  }
+
+  const root = result.filePaths[0]
+  const files: { name: string; data: ArrayBuffer }[] = []
+
+  function walk(dir: string) {
+    if (files.length >= MUSIC_MAX_FILES) return
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (files.length >= MUSIC_MAX_FILES) return
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.isFile() && MUSIC_EXTS.includes(path.extname(entry.name).toLowerCase())) {
+        try {
+          const buf = fs.readFileSync(full)
+          const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
+          files.push({ name: path.relative(root, full), data })
+        } catch {
+          // 单个文件读取失败跳过，不影响其余文件
+        }
+      }
+    }
+  }
+
+  walk(root)
+  // 按相对路径排序，播放列表顺序稳定
+  files.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+
+  return { success: true, files }
 })
 
 // 学习报告 PDF 导出（v2.7.0：隐藏窗口渲染 HTML 后 printToPDF）
