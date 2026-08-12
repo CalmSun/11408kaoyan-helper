@@ -23,6 +23,9 @@ interface ElectronAPI {
   downloadUpdate: () => Promise<{ success: boolean; message?: string }>
   installUpdate: () => Promise<{ success: boolean }>
   openGithub: () => Promise<{ success: boolean }>
+  // 全屏与学习报告导出（v2.7.0）
+  setFullscreen: (on: boolean) => void
+  exportReportPdf: (html: string) => Promise<{ success: boolean; path?: string; message?: string }>
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => void
 }
 

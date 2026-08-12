@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installUpdate: () => ipcRenderer.invoke('updater:install'),
   openGithub: () => ipcRenderer.invoke('open-github'),
+  // 全屏与报告导出（v2.7.0）
+  setFullscreen: (on: boolean) => ipcRenderer.send('window:set-fullscreen', on),
+  exportReportPdf: (html: string) => ipcRenderer.invoke('report:export-pdf', html),
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => {
     const channels = ['update:available', 'update:not-available', 'update:progress', 'update:downloaded', 'update:error']
     channels.forEach(ch => {

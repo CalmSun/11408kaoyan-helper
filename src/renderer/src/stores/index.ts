@@ -286,6 +286,16 @@ export const useMainStore = defineStore('main', () => {
     return pomodoroRecords.value.filter(r => r.date === today).length
   })
 
+  // 今日学习时长（小时，保留1位小数，v2.7.0 与累计学习统一）
+  const todayStudyHours = computed(() => {
+    return (todayStudyMinutes.value / 60).toFixed(1)
+  })
+
+  // 应用使用时长（小时，保留1位小数，v2.7.0 与累计学习统一）
+  const appUsageHours = computed(() => {
+    return (appUsageMinutes.value / 60).toFixed(1)
+  })
+
   // 今日完成计划数
   const todayPlanCompleted = computed(() => {
     const today = todayLocal()
@@ -557,12 +567,14 @@ export const useMainStore = defineStore('main', () => {
     // 计算属性
     daysUntilExam,
     todayStudyMinutes,
+    todayStudyHours,
     todayPomodoroCount,
     todayPlanCompleted,
     todayPlanTotal,
     subjectStudyMinutes,
     totalStudyHours,
     appUsageMinutes,
+    appUsageHours,
     // 方法
     addPlan,
     togglePlan,

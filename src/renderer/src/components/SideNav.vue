@@ -30,38 +30,11 @@
       </div>
 
       <div class="nav-footer">
-        <!-- 主题切换（折叠状态下也显示图标按钮） -->
-        <div class="theme-section" :title="themeTip">
-          <div class="theme-toggle" @click="handleToggleTheme">
-            <el-icon :size="16">
-              <component :is="dark ? Sunny : Moon" />
-            </el-icon>
-            <span v-show="!isCollapsed" class="theme-text">{{ dark ? '浅色模式' : '深色模式' }}</span>
-          </div>
+        <!-- 主题切换与用户栏已移入顶栏（v2.7.0），侧栏仅保留提示 -->
+        <div class="study-tip">
+          <el-icon :size="16" class="study-tip-icon"><Warning /></el-icon>
+          <span>一战成硕！</span>
         </div>
-
-        <!-- 用户信息 -->
-        <template v-if="!isCollapsed">
-          <div class="user-section">
-            <div class="user-info" @click="goToSettings" :title="userStore.displayName">
-              <el-icon :size="18" class="user-icon"><UserFilled /></el-icon>
-              <span class="user-name">{{ userStore.displayName }}</span>
-            </div>
-            <el-button
-              type="danger"
-              link
-              size="small"
-              @click.stop="handleLogout"
-              v-if="userStore.isLoggedIn"
-            >
-              退出
-            </el-button>
-          </div>
-          <div class="study-tip">
-            <el-icon :size="16" class="study-tip-icon"><Warning /></el-icon>
-            <span>一战成硕！</span>
-          </div>
-        </template>
       </div>
     </div>
 
@@ -80,11 +53,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
-import { useUserStore } from '@/stores/user'
-import { isDark, toggleTheme } from '@/utils/theme'
 import {
   HomeFilled,
   AlarmClock,
@@ -100,30 +71,14 @@ import {
   Cpu,
   Operation,
   DArrowLeft,
-  DArrowRight,
-  UserFilled,
-  Sunny,
-  Moon
+  DArrowRight
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const store = useMainStore()
-const userStore = useUserStore()
 
 const isCollapsed = ref(false)
-
-// 主题状态（来自全局主题模块，跟随系统主题自动更新）
-const dark = isDark
-const themeTip = computed(() => (dark.value ? '切换到浅色模式' : '切换到深色模式'))
-
-function handleToggleTheme() {
-  // 切换时启用全局过渡动画，视觉更柔和
-  const root = document.documentElement
-  root.classList.add('theme-anim')
-  toggleTheme()
-  window.setTimeout(() => root.classList.remove('theme-anim'), 350)
-}
 
 const emit = defineEmits<{
   (e: 'collapse-change', collapsed: boolean): void
@@ -156,15 +111,6 @@ function navigateTo(path: string) {
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value
   emit('collapse-change', isCollapsed.value)
-}
-
-function goToSettings() {
-  router.push('/settings')
-}
-
-function handleLogout() {
-  userStore.logout()
-  router.push('/login')
 }
 </script>
 

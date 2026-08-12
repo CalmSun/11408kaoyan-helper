@@ -51,10 +51,43 @@ export function toggleTheme(): void {
 /** 初始化：应用已保存的主题，并监听系统主题变化 */
 export function initTheme(): void {
   applyTheme()
+  applyEyeCare()
   mediaQuery.addEventListener('change', (e) => {
     systemDark.value = e.matches
     applyTheme()
   })
+}
+
+const EYECARE_KEY = 'kaoyan_eyecare'
+
+export const eyeCare = ref<boolean>(loadEyeCare())
+
+function loadEyeCare(): boolean {
+  try {
+    return localStorage.getItem(EYECARE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 应用护眼模式：向根元素注入 .eyecare 类（暖色滤光，降低蓝光） */
+export function applyEyeCare(): void {
+  document.documentElement.classList.toggle('eyecare', eyeCare.value)
+}
+
+/** 切换护眼模式并持久化 */
+export function setEyeCare(on: boolean): void {
+  eyeCare.value = on
+  try {
+    localStorage.setItem(EYECARE_KEY, on ? '1' : '0')
+  } catch {
+    // 忽略写入失败
+  }
+  applyEyeCare()
+}
+
+export function toggleEyeCare(): void {
+  setEyeCare(!eyeCare.value)
 }
 
 const BG_CUSTOM_KEY = 'kaoyan_bg_custom'

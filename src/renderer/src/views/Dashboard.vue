@@ -22,8 +22,8 @@
           <el-icon :size="28"><Timer /></el-icon>
         </div>
         <div class="stat-info">
-          <span class="stat-value">{{ store.todayStudyMinutes }}</span>
-          <span class="stat-label">今日学习（分钟）</span>
+          <span class="stat-value">{{ store.todayStudyHours }}</span>
+          <span class="stat-label">今日学习（小时）</span>
         </div>
       </div>
       <div class="stat-card stat-card-success">
@@ -58,8 +58,8 @@
           <el-icon :size="28"><Monitor /></el-icon>
         </div>
         <div class="stat-info">
-          <span class="stat-value">{{ formatUsageTime(store.appUsageMinutes) }}</span>
-          <span class="stat-label">应用使用时长</span>
+          <span class="stat-value">{{ store.appUsageHours }}</span>
+          <span class="stat-label">应用使用（小时）</span>
         </div>
       </div>
     </div>
@@ -148,7 +148,14 @@
         </div>
         <div class="study-summary">
           <span>累计学习 <strong>{{ store.totalStudyHours }}</strong> 小时</span>
-          <span>今日学习 <strong>{{ store.todayStudyMinutes }}</strong> 分钟</span>
+          <span>今日学习 <strong>{{ store.todayStudyHours }}</strong> 小时</span>
+        </div>
+        <!-- 天气展示（v2.7.0）：卡片最下方 -->
+        <div class="weather-footer" v-if="weather">
+          <span class="weather-footer-icon">{{ weather.icon }}</span>
+          <span class="weather-footer-temp">{{ weather.tempC }}°C</span>
+          <span class="weather-footer-cond">{{ weather.condition }}</span>
+          <span class="weather-footer-extra">湿度 {{ weather.humidity }}% · 风速 {{ weather.wind }}km/h</span>
         </div>
       </GlassCard>
     </div>
@@ -224,6 +231,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMainStore, SubjectType } from '@/stores'
 import { todayLocal, toLocalDate } from '@/utils/date'
+import { weather } from '@/utils/weather'
 import dayjs from 'dayjs'
 import {
   Timer,
@@ -282,21 +290,6 @@ function getStudyPercentage(subject: SubjectType) {
 // 分钟转小时显示
 function formatHours(minutes: number) {
   return (minutes / 60).toFixed(1)
-}
-
-// 应用使用时长格式化
-function formatUsageTime(minutes: number) {
-  if (minutes < 60) {
-    return `${minutes} 分钟`
-  } else if (minutes < 1440) {
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
-  } else {
-    const days = Math.floor(minutes / 1440)
-    const hours = Math.floor((minutes % 1440) / 60)
-    return hours > 0 ? `${days}d ${hours}h` : `${days}d`
-  }
 }
 
 // 今日计划完成百分比（含循环计划）
@@ -597,6 +590,39 @@ function goToFormulas() { router.push('/formulas') }
   color: var(--mo-primary);
   font-size: 16px;
   font-family: 'DIN Alternate', sans-serif;
+}
+
+/* 天气行（卡片最下方，v2.7.0） */
+.weather-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--glass-border);
+  font-size: 13px;
+  color: var(--mo-text-2);
+}
+
+.weather-footer-icon {
+  font-size: 16px;
+}
+
+.weather-footer-temp {
+  font-weight: 700;
+  color: var(--mo-text-1);
+  font-family: 'DIN Alternate', sans-serif;
+  font-size: 15px;
+}
+
+.weather-footer-cond {
+  color: var(--mo-text-2);
+}
+
+.weather-footer-extra {
+  margin-left: auto;
+  color: var(--mo-text-3);
+  font-size: 12px;
 }
 
 /* 空状态 */

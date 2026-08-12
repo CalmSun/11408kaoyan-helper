@@ -3,6 +3,15 @@
     <h1 class="page-title">数据统计</h1>
     <p class="page-subtitle">记录你的每一份努力</p>
 
+    <!-- 导出学习报告（v2.7.0） -->
+    <div class="report-bar">
+      <el-button type="primary" :loading="exportingReport" @click="exportReport">
+        <el-icon><Download /></el-icon>
+        导出 PDF 学习报告
+      </el-button>
+      <span class="report-tip">包含学习总览、各科进度、专注时长分布</span>
+    </div>
+
     <!-- 总览数据 -->
     <div class="overview-grid">
       <div class="overview-card">
@@ -122,8 +131,10 @@ import {
   PieChart,
   Histogram,
   DataAnalysis,
-  Calendar
+  Calendar,
+  Download
 } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
 // 按需注册所需的图表与组件，减小打包体积
 echarts.use([LineChart, BarChart, PieChartView, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
@@ -433,6 +444,92 @@ watch(() => store.pomodoroRecords.length, () => {
 watch(isDark, () => {
   updateAllCharts()
 })
+
+// ── 导出 PDF 学习报告（v2.7.0） ──
+const exportingReport = ref(false)
+
+function chartImg(chart: echarts.ECharts | null): string {
+  if (!chart) return ''
+  try {
+    return chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' })
+  } catch {
+    return ''
+  }
+}
+
+function buildReportHtml(): string {
+  const today = dayjs().format('YYYY年MM月DD日')
+  const studyImg = chartImg(studyChart)
+  const subjectImg = chartImg(subjectChart)
+  const pomodoroImg = chartImg(pomodoroChart)
+  const hoursImg = chartImg(subjectHoursChart)
+
+  // 各科进度表
+  const subjectRows = Object.entries(store.SUBJECT_CONFIG).map(([key, cfg]) => {
+    const minutes = store.subjectStudyMinutes[key as keyof typeof store.subjectStudyMinutes]
+    const hours = (minutes / 60).toFixed(1)
+    const total = Object.values(store.subjectStudyMinutes).reduce((a, b) => a + b, 0) || 1
+    const pct = Math.round((minutes / total) * 100)
+    return `<tr><td>${cfg.name}</td><td>${hours} 小时</td><td>${pct}%</td></tr>`
+  }).join('')
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>学习报告</title>
+<style>
+  body { font-family: "Microsoft YaHei","PingFang SC",sans-serif; color:#222; margin:40px; }
+  h1 { font-size:24px; margin-bottom:4px; }
+  .sub { color:#888; font-size:12px; margin-bottom:24px; }
+  h2 { font-size:16px; border-left:4px solid #3b82f6; padding-left:8px; margin:26px 0 12px; }
+  .cards { display:flex; gap:14px; }
+  .card { flex:1; border:1px solid #e5e7eb; border-radius:10px; padding:14px; }
+  .card .v { font-size:22px; font-weight:700; color:#3b82f6; }
+  .card .l { font-size:12px; color:#888; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { border:1px solid #e5e7eb; padding:8px 10px; text-align:left; }
+  th { background:#f3f6fc; }
+  img { width:100%; border:1px solid #e5e7eb; border-radius:8px; margin-top:8px; }
+</style></head><body>
+<h1>11408考研助手 · 学习报告</h1>
+<div class="sub">生成日期：${today}</div>
+
+<h2>一、学习总览</h2>
+<div class="cards">
+  <div class="card"><div class="v">${totalStudyHours}</div><div class="l">总学习时长（小时）</div></div>
+  <div class="card"><div class="v">${totalPomodoroCount}</div><div class="l">总番茄数</div></div>
+  <div class="card"><div class="v">${store.flashcards.length}</div><div class="l">背诵卡片数</div></div>
+</div>
+
+<h2>二、各科进度</h2>
+<table><tr><th>科目</th><th>学习时长</th><th>占比</th></tr>${subjectRows}</table>
+${subjectImg ? `<img src="${subjectImg}"/>` : ''}
+${hoursImg ? `<img src="${hoursImg}"/>` : ''}
+
+<h2>三、专注时长分布</h2>
+${studyImg ? `<img src="${studyImg}"/>` : ''}
+${pomodoroImg ? `<img src="${pomodoroImg}"/>` : ''}
+</body></html>`
+}
+
+async function exportReport() {
+  const api = window.electronAPI
+  if (!api?.exportReportPdf) {
+    ElMessage.warning('当前环境（浏览器）不支持导出 PDF，请在桌面应用中使用')
+    return
+  }
+  exportingReport.value = true
+  try {
+    const html = buildReportHtml()
+    const res = await api.exportReportPdf(html)
+    if (res.success) {
+      ElMessage.success('学习报告已导出')
+    } else {
+      ElMessage.error('导出失败，请稍后重试')
+    }
+  } catch {
+    ElMessage.error('导出失败，请稍后重试')
+  } finally {
+    exportingReport.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -452,6 +549,19 @@ watch(isDark, () => {
   font-size: 14px;
   color: var(--mo-text-3);
   margin-bottom: 24px;
+}
+
+/* 导出报告条（v2.7.0） */
+.report-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.report-tip {
+  font-size: 12px;
+  color: var(--mo-text-3);
 }
 
 /* 总览卡片 */

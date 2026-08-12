@@ -173,6 +173,11 @@ if (!gotTheLock) {
       mainWindow?.webContents.send('update:error', { message: String(err?.message || err) })
     })
 
+    // 启动时自动检测新版本（v2.7.0：延迟静默执行，失败不打扰用户）
+    setTimeout(() => {
+      autoUpdater.checkForUpdates().catch(() => { /* 开发环境/网络失败静默 */ })
+    }, 5000)
+
     app.on('activate', () => {
       if (mainWindow) {
         mainWindow.show()
@@ -214,6 +219,42 @@ ipcMain.on('window:close-to-tray', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.hide()
     showTrayHint()
+  }
+})
+
+// 强制全屏（v2.7.0：番茄钟专注模式隐藏系统任务栏）
+ipcMain.on('window:set-fullscreen', (_e, on: boolean) => {
+  if (!mainWindow) return
+  mainWindow.setFullScreen(!!on)
+})
+
+// 学习报告 PDF 导出（v2.7.0：隐藏窗口渲染 HTML 后 printToPDF）
+ipcMain.handle('report:export-pdf', async (_event, html: string) => {
+  const result = await dialog.showSaveDialog({
+    title: '导出学习报告',
+    defaultPath: `学习报告_${new Date().toISOString().slice(0, 10)}.pdf`,
+    filters: [{ name: 'PDF 文件', extensions: ['pdf'] }]
+  })
+
+  if (result.canceled || !result.filePath) {
+    return { success: false }
+  }
+
+  const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true } })
+  try {
+    await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+    // 等待图表渲染完成
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    const pdf = await win.webContents.printToPDF({
+      printBackground: true,
+      pageSize: 'A4'
+    })
+    fs.writeFileSync(result.filePath, pdf)
+    return { success: true, path: result.filePath }
+  } catch (err) {
+    return { success: false, message: String((err as Error)?.message || err) }
+  } finally {
+    win.destroy()
   }
 })
 
