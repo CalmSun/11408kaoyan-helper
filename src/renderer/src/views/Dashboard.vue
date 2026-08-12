@@ -400,13 +400,13 @@ function goToFormulas() { router.push('/formulas') }
   -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  box-shadow: var(--glass-shadow-card);
+  box-shadow: var(--glass-shadow);
   transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.3s ease;
 }
 
 .stat-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--glass-shadow-card-hover);
+  box-shadow: var(--glass-shadow-hover);
 }
 
 .stat-icon {

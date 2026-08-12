@@ -190,7 +190,7 @@ const continueAsGuest = () => {
   border: 1px solid var(--glass-border);
   border-radius: 20px;
   padding: 48px 40px;
-  box-shadow: var(--glass-shadow-card-hover);
+  box-shadow: var(--glass-shadow-hover);
   transition: background 0.3s ease;
 }
 

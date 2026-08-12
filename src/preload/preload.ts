@@ -11,5 +11,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 窗口控制（v2.6.6：自建顶栏按钮）
   windowMinimize: () => ipcRenderer.send('window:minimize'),
   windowToggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
-  windowCloseToTray: () => ipcRenderer.send('window:close-to-tray')
+  windowCloseToTray: () => ipcRenderer.send('window:close-to-tray'),
+  // 应用更新（v2.6.7）
+  checkUpdate: () => ipcRenderer.invoke('updater:check'),
+  downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+  installUpdate: () => ipcRenderer.invoke('updater:install'),
+  openGithub: () => ipcRenderer.invoke('open-github'),
+  onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => {
+    const channels = ['update:available', 'update:not-available', 'update:progress', 'update:downloaded', 'update:error']
+    channels.forEach(ch => {
+      ipcRenderer.on(ch, (_e, payload) => cb(ch, payload))
+    })
+  }
 })

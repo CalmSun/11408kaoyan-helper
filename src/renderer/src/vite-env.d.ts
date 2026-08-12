@@ -18,6 +18,12 @@ interface ElectronAPI {
   windowMinimize: () => void
   windowToggleMaximize: () => void
   windowCloseToTray: () => void
+  // 应用更新（v2.6.7）
+  checkUpdate: () => Promise<{ success: boolean; version?: string | null; message?: string }>
+  downloadUpdate: () => Promise<{ success: boolean; message?: string }>
+  installUpdate: () => Promise<{ success: boolean }>
+  openGithub: () => Promise<{ success: boolean }>
+  onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => void
 }
 
 interface Window {

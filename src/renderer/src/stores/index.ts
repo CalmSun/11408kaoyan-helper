@@ -62,6 +62,19 @@ export interface DailyStudyRecord {
   planTotal: number
 }
 
+// 每日计划快照：某一天全部计划（含循环与普通）的实际完成状态
+export interface DailyPlanSnapshotItem {
+  title: string
+  subject?: SubjectType
+  completed: boolean
+  completedAt?: string
+}
+
+export interface DailyPlanSnapshot {
+  date: string // YYYY-MM-DD（本地日期）
+  items: DailyPlanSnapshotItem[]
+}
+
 // 11408 知识大纲节点
 export interface OutlineNode {
   id: string
@@ -215,6 +228,9 @@ export const useMainStore = defineStore('main', () => {
   // 每日学习记录
   const dailyRecords = ref<DailyStudyRecord[]>(getStorage('dailyRecords', [] as DailyStudyRecord[]))
 
+  // 每日计划快照（按本地日期记录当天全部计划的实际完成情况，含循环与普通计划）
+  const planSnapshots = ref<DailyPlanSnapshot[]>(getStorage('planSnapshots', [] as DailyPlanSnapshot[]))
+
   // 11408 复习进度
   const subjectProgress = ref<Record<SubjectType, number>>(getStorage('subjectProgress', {
     politics: 0,
@@ -346,6 +362,7 @@ export const useMainStore = defineStore('main', () => {
       completedDates: []
     }
     plans.value.unshift(newPlan)
+    recordPlanSnapshot()
   }
 
   // 切换计划完成状态
@@ -371,11 +388,55 @@ export const useMainStore = defineStore('main', () => {
       plan.completed = !plan.completed
       plan.completedAt = plan.completed ? new Date().toISOString() : undefined
     }
+    recordPlanSnapshot()
   }
 
   // 删除计划
   function deletePlan(id: string) {
     plans.value = plans.value.filter(p => p.id !== id)
+    recordPlanSnapshot()
+  }
+
+  // 记录当日计划快照：将今天全部计划（循环+普通）的实际完成状态固化为历史
+  // 口径与"今日计划"列表一致：循环计划 + 今天创建的普通计划
+  function recordPlanSnapshot() {
+    const today = todayLocal()
+    const items: DailyPlanSnapshotItem[] = plans.value
+      .filter(p => p.recurring || toLocalDate(p.createdAt) === today)
+      .map(p => {
+        if (p.recurring) {
+          // 循环计划：取该计划在当天的完成状态（不记录时间，避免歧义）
+          return {
+            title: p.title,
+            subject: p.subject,
+            completed: (p.completedDates || []).includes(today),
+            completedAt: undefined as string | undefined
+          }
+        }
+        // 普通计划：记录最终完成状态与完成时间
+        return {
+          title: p.title,
+          subject: p.subject,
+          completed: p.completed,
+          completedAt: p.completedAt
+        }
+      })
+
+    if (items.length === 0) return
+
+    const existing = planSnapshots.value.find(s => s.date === today)
+    if (existing) {
+      existing.items = items
+    } else {
+      planSnapshots.value.push({ date: today, items })
+    }
+    // 仅保留最近 60 天快照，控制存储体积
+    if (planSnapshots.value.length > 60) {
+      planSnapshots.value = planSnapshots.value
+        .slice()
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 60)
+    }
   }
 
   // 添加番茄钟记录
@@ -465,6 +526,7 @@ export const useMainStore = defineStore('main', () => {
   function saveDailyRecords() { setStorage('dailyRecords', dailyRecords.value) }
   function saveSubjectProgress() { setStorage('subjectProgress', subjectProgress.value) }
   function savePomodoroSettings() { setStorage('pomodoroSettings', pomodoroSettings.value) }
+  function savePlanSnapshots() { setStorage('planSnapshots', planSnapshots.value) }
 
   // 监听变化自动保存
   watch(plans, savePlans, { deep: true })
@@ -473,6 +535,10 @@ export const useMainStore = defineStore('main', () => {
   watch(examScores, saveExamScores, { deep: true })
   watch(dailyRecords, saveDailyRecords, { deep: true })
   watch(subjectProgress, saveSubjectProgress, { deep: true })
+  watch(planSnapshots, savePlanSnapshots, { deep: true })
+
+  // 启动时补记一次当日快照（覆盖已有计划的初始状态）
+  recordPlanSnapshot()
 
   return {
     // 状态
@@ -483,6 +549,7 @@ export const useMainStore = defineStore('main', () => {
     pomodoroRecords,
     examScores,
     dailyRecords,
+    planSnapshots,
     pomodoroSettings,
     subjectProgress,
     // 常量
@@ -510,6 +577,7 @@ export const useMainStore = defineStore('main', () => {
     addExamScore,
     updateExamScore,
     deleteExamScore,
-    recordAppUsage
+    recordAppUsage,
+    recordPlanSnapshot
   }
 })

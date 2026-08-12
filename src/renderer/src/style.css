@@ -47,16 +47,9 @@
   /* 多层弥散外阴影：近距小阴影 + 中距 + 远距大范围柔光 */
   --glass-shadow: 0 1px 3px rgba(31, 64, 130, 0.10), 0 8px 22px rgba(31, 64, 130, 0.10), 0 24px 60px rgba(31, 64, 130, 0.12);
   --glass-shadow-hover: 0 2px 6px rgba(31, 64, 130, 0.12), 0 12px 30px rgba(31, 64, 130, 0.13), 0 32px 72px rgba(31, 64, 130, 0.15);
-  /* 复合阴影：多层弥散 + 左上入光内高光 + 顶部高光线 + 底部边缘折光 */
-  --glass-shadow-card: var(--glass-shadow), inset 1px 1px 0 rgba(255, 255, 255, var(--glass-highlight)), inset 0 10px 24px rgba(255, 255, 255, calc(var(--glass-highlight) * 0.28)), inset 0 -1px 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.35));
-  --glass-shadow-card-hover: var(--glass-shadow-hover), inset 1px 1px 0 rgba(255, 255, 255, var(--glass-highlight)), inset 0 10px 24px rgba(255, 255, 255, calc(var(--glass-highlight) * 0.28)), inset 0 -1px 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.35));
   /* 统一滤镜表达式：所有玻璃层只引用该变量，便于一处调参 */
   --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
-  /* 背景磨砂：只模糊卡片后方页面（装饰层承载 backdrop-filter），
-     卡片本身不再需要重模糊，卡片内文字因此保持清晰锐利 */
-  --bg-blur: 26px;
-  --bg-blur-filter: blur(var(--bg-blur)) saturate(1.05);
 
   /* 中性表面（列表项等高频元素：无滤镜，纯半透明色） */
   --mo-surface: rgba(255, 255, 255, 0.55);
@@ -81,10 +74,10 @@
   --side-nav-divider: rgba(59, 130, 246, 0.12);
   --side-nav-collapse-bg: rgba(255, 255, 255, 0.85);
 
-  /* 圆角（v7 加大，对齐截图厚重玻璃形态） */
-  --mo-radius: 20px;
-  --mo-radius-lg: 26px;
-  --mo-radius-sm: 12px;
+  /* 圆角（v2.6.7：统一回 14px，与知识大纲/模板库卡片一致） */
+  --mo-radius: 14px;
+  --mo-radius-lg: 20px;
+  --mo-radius-sm: 10px;
 
   /* 自定义顶栏（无边框窗口） */
   --titlebar-bg: rgba(255, 255, 255, 0.55);
@@ -224,9 +217,9 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 }
 
 /* ═══════════════════════════════════════════
-   背景磨砂层 + 弥散光斑（深色下为幽蓝微光）
-   磨砂层用 backdrop-filter 只模糊卡片后方的页面背景；
-   光斑用 filter: blur 做装饰（非卡片模糊，不影响文字清晰度）
+   背景装饰层（弥散光斑；深色下为幽蓝微光）
+   注意：不做全屏磨砂。模糊只发生在每张卡片自身的 backdrop-filter 上，
+   即"只模糊卡片显示区域后方的页面"，整体背景保持清晰。
    ═══════════════════════════════════════════ */
 .app-bg-decor {
   position: fixed;
@@ -237,14 +230,6 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-}
-
-/* 磨砂层：backdrop-filter 模糊 body 背景图，实现"只模糊卡片后方页面" */
-.app-bg-decor .bg-frost {
-  position: absolute;
-  inset: 0;
-  backdrop-filter: var(--bg-blur-filter);
-  -webkit-backdrop-filter: var(--bg-blur-filter);
 }
 
 .app-bg-decor::before,
@@ -295,12 +280,8 @@ html.dark .app-bg-decor::after {
   -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius);
-  box-shadow: var(--glass-shadow-card);
-  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  contain: layout style;
-  /* GPU 层提升：卡片提前合成独立图层，避免路由切换/滚动时滤镜重采样闪动 */
-  transform: translateZ(0);
-  will-change: transform;
+  box-shadow: var(--glass-shadow);
+  transition: box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .card,
@@ -310,7 +291,7 @@ html.dark .app-bg-decor::after {
 
 .card:hover,
 .glass-card--card:hover {
-  box-shadow: var(--glass-shadow-card-hover);
+  box-shadow: var(--glass-shadow-hover);
 }
 
 .glass-strong,
@@ -320,7 +301,7 @@ html.dark .app-bg-decor::after {
   -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius);
-  box-shadow: var(--glass-shadow-card);
+  box-shadow: var(--glass-shadow);
 }
 
 /* 列表/网格/嵌套高频元素：不使用滤镜，仅半透明底色 + 细边框，保障滚动性能 */
@@ -477,7 +458,7 @@ html.dark .el-textarea__inner:focus {
   -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-lg) !important;
-  box-shadow: var(--glass-shadow-card) !important;
+  box-shadow: var(--glass-shadow) !important;
 }
 
 /* 消息确认框 */
@@ -487,7 +468,7 @@ html.dark .el-textarea__inner:focus {
   -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border) !important;
   border-radius: var(--mo-radius-lg) !important;
-  box-shadow: var(--glass-shadow-card) !important;
+  box-shadow: var(--glass-shadow) !important;
 }
 
 /* 轻提示 */

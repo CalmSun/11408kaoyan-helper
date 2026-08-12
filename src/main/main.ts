@@ -1,7 +1,11 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage, shell } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import * as path from 'path'
 import * as fs from 'fs'
 import { pathToFileURL } from 'url'
+
+// GitHub 项目地址（设置页展示 + 更新来源说明）
+export const GITHUB_REPO_URL = 'https://github.com/CalmSun/11408kaoyan-helper'
 
 // 自定义背景图存储路径（userData 目录下固定文件名）
 function customBgPath(): string {
@@ -149,6 +153,26 @@ if (!gotTheLock) {
       mainWindow?.setBackgroundColor(getWindowBgColor())
     })
 
+    // 应用内自动更新：不自动下载，由用户在设置页手动触发
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = true
+
+    autoUpdater.on('update-available', (info) => {
+      mainWindow?.webContents.send('update:available', { version: info.version })
+    })
+    autoUpdater.on('update-not-available', () => {
+      mainWindow?.webContents.send('update:not-available')
+    })
+    autoUpdater.on('download-progress', (p) => {
+      mainWindow?.webContents.send('update:progress', { percent: Math.round(p.percent) })
+    })
+    autoUpdater.on('update-downloaded', () => {
+      mainWindow?.webContents.send('update:downloaded')
+    })
+    autoUpdater.on('error', (err) => {
+      mainWindow?.webContents.send('update:error', { message: String(err?.message || err) })
+    })
+
     app.on('activate', () => {
       if (mainWindow) {
         mainWindow.show()
@@ -273,4 +297,37 @@ ipcMain.handle('clear-custom-bg', async () => {
 // 自定义背景 - 查询是否启用
 ipcMain.handle('get-custom-bg', async () => {
   return { enabled: fs.existsSync(customBgPath()) }
+})
+
+// ── 应用更新（v2.6.7：设置页检测更新/更新应用） ──
+
+ipcMain.handle('updater:check', async () => {
+  try {
+    // 开发环境无打包产物，electron-updater 会抛错，这里捕获并返回提示
+    const result = await autoUpdater.checkForUpdates()
+    return { success: true, version: result?.updateInfo?.version || null }
+  } catch (err) {
+    return { success: false, message: String((err as Error)?.message || err) }
+  }
+})
+
+ipcMain.handle('updater:download', async () => {
+  try {
+    await autoUpdater.downloadUpdate()
+    return { success: true }
+  } catch (err) {
+    return { success: false, message: String((err as Error)?.message || err) }
+  }
+})
+
+ipcMain.handle('updater:install', async () => {
+  // 退出并安装已下载的更新
+  autoUpdater.quitAndInstall()
+  return { success: true }
+})
+
+// 打开 GitHub 项目地址
+ipcMain.handle('open-github', async () => {
+  await shell.openExternal(GITHUB_REPO_URL)
+  return { success: true }
 })

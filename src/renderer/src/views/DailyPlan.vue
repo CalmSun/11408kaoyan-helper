@@ -163,8 +163,8 @@
             </div>
             <div class="day-plans">
               <div
-                v-for="plan in day.plans"
-                :key="plan.id"
+                v-for="(plan, idx) in day.plans"
+                :key="idx"
                 class="history-plan-item"
                 :class="{ completed: plan.completed }"
               >
@@ -236,32 +236,20 @@ const progressPercent = computed(() => {
   return Math.round((completedCount.value / totalCount.value) * 100)
 })
 
-// 历史记录（按本地日期分组，仅统计非循环的一次性计划）
+// 历史记录（按本地日期读取每日计划快照，含循环与普通计划的真实完成情况）
 const historyDays = computed(() => {
   const today = todayLocal()
-  // 修复点1：循环计划是每日重复的常驻项，不属于历史，排除后避免重复统计
-  // 修复点2：createdAt 为 UTC 时间戳，改用本地日期分组，修复凌晨 0-8 点日期错位
-  const historyPlans = store.plans.filter(
-    p => !p.recurring && toLocalDate(p.createdAt) !== today
-  )
-
-  const dayMap = new Map<string, PlanItem[]>()
-  historyPlans.forEach(plan => {
-    const date = toLocalDate(plan.createdAt)
-    if (!dayMap.has(date)) {
-      dayMap.set(date, [])
-    }
-    dayMap.get(date)!.push(plan)
-  })
-
-  const days = Array.from(dayMap.entries()).map(([date, plans]) => ({
-    date,
-    plans,
-    completed: plans.filter(p => p.completed).length,
-    total: plans.length
-  }))
-
-  return days.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7)
+  // 仅展示今天之前的历史日；快照在每次新增/勾选/删除计划时实时固化
+  return store.planSnapshots
+    .filter(s => s.date < today && s.items.length > 0)
+    .map(s => ({
+      date: s.date,
+      plans: s.items,
+      completed: s.items.filter(i => i.completed).length,
+      total: s.items.length
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 7)
 })
 
 function formatTime(dateStr: string) {

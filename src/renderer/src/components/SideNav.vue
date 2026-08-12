@@ -189,7 +189,7 @@ function handleLogout() {
   -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-lg);
-  box-shadow: var(--glass-shadow-card);
+  box-shadow: var(--glass-shadow);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;

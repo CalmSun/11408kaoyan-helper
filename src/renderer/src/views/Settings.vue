@@ -172,6 +172,60 @@
       </div>
     </GlassCard>
 
+    <!-- 项目与更新 -->
+    <GlassCard class="card setting-section">
+      <h3 class="section-title">
+        <el-icon><Link /></el-icon>
+        项目与更新
+      </h3>
+      <div class="about-info">
+        <div class="about-item">
+          <span class="about-label">项目地址</span>
+          <el-link type="primary" :underline="false" @click="openGithub">
+            github.com/CalmSun/11408kaoyan-helper
+          </el-link>
+        </div>
+        <div class="about-item">
+          <span class="about-label">当前版本</span>
+          <span class="about-value">v{{ appVersion }}</span>
+        </div>
+        <div class="about-item" v-if="latestVersion">
+          <span class="about-label">最新版本</span>
+          <span class="about-value">v{{ latestVersion }}</span>
+        </div>
+        <div class="about-item" v-if="downloadProgress >= 0">
+          <span class="about-label">下载进度</span>
+          <span class="about-value">{{ downloadProgress }}%</span>
+        </div>
+      </div>
+      <div class="update-actions">
+        <el-button type="primary" :loading="checkingUpdate" @click="handleCheckUpdate">
+          <el-icon><RefreshRight /></el-icon>
+          检测更新
+        </el-button>
+        <el-button
+          type="success"
+          v-if="updateAvailable"
+          :loading="downloadingUpdate"
+          @click="handleDownloadUpdate"
+        >
+          <el-icon><Download /></el-icon>
+          下载更新
+        </el-button>
+        <el-button type="warning" v-if="updateDownloaded" @click="handleInstallUpdate">
+          <el-icon><Upload /></el-icon>
+          安装并重启
+        </el-button>
+        <el-button @click="openGithub">
+          <el-icon><Link /></el-icon>
+          打开项目主页
+        </el-button>
+      </div>
+      <p class="about-tip">
+        💡 提示：检测到新版本后可一键下载并安装；安装时应用会自动重启。开发环境下无法在线更新。
+      </p>
+    </GlassCard>
+
     <!-- 关于 -->
     <GlassCard class="card setting-section">
       <h3 class="section-title">
@@ -220,7 +274,9 @@ import {
   Delete,
   InfoFilled,
   User,
-  Setting
+  Setting,
+  Link,
+  RefreshRight
 } from '@element-plus/icons-vue'
 
 const store = useMainStore()
@@ -240,6 +296,101 @@ function handleThemeChange(mode: ThemeMode) {
   window.setTimeout(() => root.classList.remove('theme-anim'), 350)
   ElMessage.success(mode === 'system' ? '已切换为跟随系统主题' : mode === 'dark' ? '已切换为深色模式' : '已切换为浅色模式')
 }
+
+// ── 项目与更新（v2.6.7） ──
+const GITHUB_PROJECT_URL = 'https://github.com/CalmSun/11408kaoyan-helper'
+const checkingUpdate = ref(false)
+const downloadingUpdate = ref(false)
+const updateAvailable = ref(false)
+const updateDownloaded = ref(false)
+const latestVersion = ref<string | null>(null)
+const downloadProgress = ref(-1)
+
+function openGithub() {
+  const api = window.electronAPI
+  if (api?.openGithub) {
+    api.openGithub()
+  } else {
+    window.open(GITHUB_PROJECT_URL, '_blank')
+  }
+}
+
+async function handleCheckUpdate() {
+  const api = window.electronAPI
+  if (!api?.checkUpdate) {
+    ElMessage.warning('当前环境（浏览器）不支持在线更新，请访问项目主页获取最新版本')
+    return
+  }
+  checkingUpdate.value = true
+  updateAvailable.value = false
+  updateDownloaded.value = false
+  latestVersion.value = null
+  downloadProgress.value = -1
+  try {
+    const res = await api.checkUpdate()
+    if (!res.success) {
+      ElMessage.warning('检测更新失败（开发环境或网络原因），可访问项目主页手动更新')
+    }
+  } catch {
+    ElMessage.warning('检测更新失败，请稍后重试')
+  } finally {
+    checkingUpdate.value = false
+  }
+}
+
+async function handleDownloadUpdate() {
+  const api = window.electronAPI
+  if (!api?.downloadUpdate) return
+  downloadingUpdate.value = true
+  downloadProgress.value = 0
+  try {
+    const res = await api.downloadUpdate()
+    if (!res.success) {
+      ElMessage.error('下载更新失败，请稍后重试')
+      downloadProgress.value = -1
+    }
+  } catch {
+    ElMessage.error('下载更新失败，请稍后重试')
+    downloadProgress.value = -1
+  } finally {
+    downloadingUpdate.value = false
+  }
+}
+
+function handleInstallUpdate() {
+  window.electronAPI?.installUpdate()
+}
+
+// 注册更新事件（主进程推送）
+window.electronAPI?.onUpdateEvent((channel, payload) => {
+  switch (channel) {
+    case 'update:available': {
+      updateAvailable.value = true
+      const v = (payload as { version?: string })?.version
+      latestVersion.value = v || null
+      ElMessage.success(v ? `发现新版本 v${v}，点击下载更新` : '发现新版本，点击下载更新')
+      break
+    }
+    case 'update:not-available':
+      updateAvailable.value = false
+      ElMessage.success('当前已是最新版本')
+      break
+    case 'update:progress':
+      downloadProgress.value = (payload as { percent?: number })?.percent ?? downloadProgress.value
+      break
+    case 'update:downloaded':
+      updateDownloaded.value = true
+      downloadingUpdate.value = false
+      downloadProgress.value = 100
+      ElMessage.success('更新已下载完成，点击"安装并重启"立即安装')
+      break
+    case 'update:error':
+      downloadingUpdate.value = false
+      downloadProgress.value = -1
+      ElMessage.error('更新失败，可访问项目主页手动更新')
+      break
+  }
+})
 
 // 自定义浅色背景
 const customBgOn = ref(false)
@@ -668,6 +819,13 @@ onMounted(() => {
   font-size: 14px;
   color: var(--mo-text-1);
   font-weight: 500;
+}
+
+.update-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
 }
 
 .about-tip {

@@ -3,8 +3,8 @@
     <!-- 自定义窗口顶栏（无边框窗口，含自建窗口控制按钮，整条可拖拽移动窗口） -->
     <TitleBar :transparent="isLoginPage" />
 
-    <!-- 背景磨砂层 + 弥散光斑：backdrop-filter 只模糊卡片后方页面 -->
-    <div class="app-bg-decor"><div class="bg-frost"></div></div>
+    <!-- 背景装饰层：弥散光斑（不模糊整体背景；模糊只发生在卡片自身 backdrop-filter 上） -->
+    <div class="app-bg-decor"></div>
 
     <div class="app-body">
       <SideNav v-if="!isLoginPage" @collapse-change="handleCollapseChange" />

@@ -402,7 +402,7 @@ onUnmounted(() => {
   border: 1px solid var(--glass-border);
   padding: 8px 16px;
   border-radius: 12px;
-  box-shadow: var(--glass-shadow-card);
+  box-shadow: var(--glass-shadow);
 }
 
 .time-label {
@@ -435,7 +435,7 @@ onUnmounted(() => {
   -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
-  box-shadow: var(--glass-shadow-card);
+  box-shadow: var(--glass-shadow);
   transition: background 0.3s ease;
 }
 
