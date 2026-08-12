@@ -187,49 +187,61 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
     return audioContext
   }
 
-  // 播放提示音（声音区分：上升/下降旋律）
-  function playNotificationSound(type: 'work' | 'break' = 'work') {
-    const ctx = ensureAudioContext()
+  /**
+   * 播放单个铃音（v2.8.1 音效优化）：
+   * 基频 + 2 倍泛音叠加，指数衰减包络，音色接近音乐盒/铃声，柔和不刺耳
+   */
+  function playBellNote(ctx: AudioContext, freq: number, startAt: number, duration: number, peakVol: number) {
+    // 基音
+    const osc1 = ctx.createOscillator()
+    const gain1 = ctx.createGain()
+    osc1.type = 'sine'
+    osc1.frequency.value = freq
+    osc1.connect(gain1)
+    gain1.connect(ctx.destination)
+    gain1.gain.setValueAtTime(0.001, startAt)
+    gain1.gain.exponentialRampToValueAtTime(peakVol, startAt + 0.015)
+    gain1.gain.exponentialRampToValueAtTime(0.001, startAt + duration)
+    osc1.start(startAt)
+    osc1.stop(startAt + duration)
 
-    const now = ctx.currentTime
-    // 上升旋律（工作完成）: 800→1000→1200  下降旋律（休息结束）: 1200→1000→800
-    const freqs = type === 'work' ? [800, 1000, 1200] : [1200, 1000, 800]
-
-    for (let round = 0; round < 2; round++) {
-      const baseTime = round === 0 ? now : now + 2.5
-      freqs.forEach((freq, i) => {
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.connect(gain)
-        gain.connect(ctx.destination)
-        osc.frequency.value = freq
-        osc.type = 'sine'
-        const t = baseTime + i * 0.3
-        const vol = 0.8 + (i * 0.05) // 逐音增强
-        gain.gain.setValueAtTime(0.01, t)
-        gain.gain.exponentialRampToValueAtTime(vol, t + 0.05)
-        gain.gain.setValueAtTime(vol, t + (i === 2 ? 0.9 : 0.6))
-        gain.gain.exponentialRampToValueAtTime(0.01, t + (i === 2 ? 1.0 : 0.7))
-        osc.start(t)
-        osc.stop(t + (i === 2 ? 1.0 : 0.7))
-      })
-    }
+    // 2 倍泛音（音量约为基音 1/3，增加铃铛质感）
+    const osc2 = ctx.createOscillator()
+    const gain2 = ctx.createGain()
+    osc2.type = 'sine'
+    osc2.frequency.value = freq * 2
+    osc2.connect(gain2)
+    gain2.connect(ctx.destination)
+    gain2.gain.setValueAtTime(0.001, startAt)
+    gain2.gain.exponentialRampToValueAtTime(peakVol * 0.3, startAt + 0.012)
+    gain2.gain.exponentialRampToValueAtTime(0.001, startAt + duration * 0.6)
+    osc2.start(startAt)
+    osc2.stop(startAt + duration)
   }
 
-  // 倒计时预警短促提示音
+  // 播放提示音（v2.8.1：铃音音色；工作完成上行琶音 C-E-G，休息结束下行 G-E-C）
+  function playNotificationSound(type: 'work' | 'break' = 'work') {
+    const ctx = ensureAudioContext()
+    const now = ctx.currentTime
+
+    // C5-E5-G5（523.25 / 659.25 / 783.99）：上行=完成鼓励，下行=休息结束回归
+    const seq = type === 'work'
+      ? [523.25, 659.25, 783.99, 1046.5]
+      : [783.99, 659.25, 523.25, 392.0]
+
+    seq.forEach((freq, i) => {
+      const isLast = i === seq.length - 1
+      // 尾音前稍作停顿并拉长，形成"叮叮叮——"的节奏感
+      const t = now + i * 0.22 + (isLast ? 0.06 : 0)
+      playBellNote(ctx, freq, t, isLast ? 1.6 : 0.5, isLast ? 0.38 : 0.26)
+    })
+  }
+
+  // 倒计时预警短促提示音（v2.8.1：更轻柔的滴答声）
   function playCountdownBeep() {
     const ctx = ensureAudioContext()
     const now = ctx.currentTime
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = 500
-    osc.type = 'sine'
-    gain.gain.setValueAtTime(0.5, now)
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1)
-    osc.start(now)
-    osc.stop(now + 0.1)
+    playBellNote(ctx, 880, now, 0.18, 0.15)
   }
 
   // 显示桌面通知

@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { getGlobalStorage, setGlobalStorage } from '@/utils/storage'
 
 export interface WeatherInfo {
   tempC: string
@@ -68,24 +69,15 @@ function codeToIcon(code: string): string {
 }
 
 function readCache(): WeatherInfo | null {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as { ts: number; cityId: string; data: WeatherInfo }
-    if (parsed.cityId !== weatherCity.value.id) return null
-    if (Date.now() - parsed.ts < CACHE_TTL) return parsed.data
-  } catch {
-    // 忽略
-  }
+  const parsed = getGlobalStorage<{ ts: number; cityId: string; data: WeatherInfo } | null>(CACHE_KEY, null)
+  if (!parsed) return null
+  if (parsed.cityId !== weatherCity.value.id) return null
+  if (Date.now() - parsed.ts < CACHE_TTL) return parsed.data
   return null
 }
 
 function writeCache(data: WeatherInfo): void {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), cityId: weatherCity.value.id, data }))
-  } catch {
-    // 忽略
-  }
+  setGlobalStorage(CACHE_KEY, { ts: Date.now(), cityId: weatherCity.value.id, data })
 }
 
 /** 解析中国天气网实况数据为统一结构 */
@@ -167,11 +159,7 @@ async function fetchWeatherFallback(): Promise<void> {
 /** 设置查询城市并强制刷新（v2.8.0） */
 export async function setCity(city: WeatherCity): Promise<void> {
   weatherCity.value = city
-  try {
-    localStorage.setItem(CITY_KEY, JSON.stringify(city))
-  } catch {
-    // 忽略
-  }
+  setGlobalStorage(CITY_KEY, city)
   await fetchWeather({ force: true })
 }
 
@@ -187,18 +175,20 @@ export async function searchCities(name: string): Promise<{ id: string; name: st
   }
 }
 
-/** 初始化：恢复已选城市，读缓存并后台刷新 */
+/** 初始化：恢复已选城市，读缓存并后台刷新，每小时自动刷新一次（v2.8.1） */
+let autoRefreshTimer: number | null = null
+
 export function initWeather(): void {
-  try {
-    const raw = localStorage.getItem(CITY_KEY)
-    if (raw) {
-      const c = JSON.parse(raw) as WeatherCity
-      if (c && c.id && c.name) weatherCity.value = c
-    }
-  } catch {
-    // 忽略
-  }
+  const c = getGlobalStorage<WeatherCity | null>(CITY_KEY, null)
+  if (c && c.id && c.name) weatherCity.value = c
   const cached = readCache()
   if (cached) weather.value = cached
   fetchWeather()
+
+  // 每小时自动刷新（幂等：重复初始化不叠加定时器）
+  if (autoRefreshTimer === null) {
+    autoRefreshTimer = window.setInterval(() => {
+      fetchWeather({ force: true })
+    }, 60 * 60 * 1000)
+  }
 }

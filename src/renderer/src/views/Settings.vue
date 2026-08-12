@@ -159,7 +159,7 @@
         <div class="datadir-row">
           <span class="datadir-label">自动备份</span>
           <el-switch :model-value="syncEnabled" @change="onToggleSync" />
-          <span class="unit-desc">每 5 分钟自动同步数据快照到该目录<span v-if="lastSyncAt">（最近同步：{{ lastSyncAt }}）</span></span>
+          <span class="unit-desc">每 30 分钟自动同步数据快照到该目录<span v-if="lastSyncAt">（最近同步：{{ lastSyncAt }}）</span></span>
         </div>
       </div>
       <div class="datadir-actions">

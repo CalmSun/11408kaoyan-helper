@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { getStorage, setStorage } from '@/utils/storage'
 
 interface MusicTrack {
   name: string
@@ -24,6 +25,8 @@ export const useMusicStore = defineStore('music', () => {
   const currentIndex = ref(0)
   const isPlaying = ref(false)
   const volume = ref(0.7)
+  /** 随机播放模式（v2.8.1：开启后切歌/自动续播随机选曲，避免立即重复） */
+  const shuffle = ref<boolean>(getStorage('musicShuffle', false))
 
   const currentTrack = computed<MusicTrack | null>(
     () => playlist.value[currentIndex.value] ?? null
@@ -146,18 +149,44 @@ export const useMusicStore = defineStore('music', () => {
     play()
   }
 
+  /** 随机挑选一首不同于当前曲目的索引（v2.8.1） */
+  function randomIndex(): number {
+    const len = playlist.value.length
+    if (len <= 1) return currentIndex.value
+    let idx = currentIndex.value
+    // 避免连续重复同一首
+    while (idx === currentIndex.value) {
+      idx = Math.floor(Math.random() * len)
+    }
+    return idx
+  }
+
   function next() {
     if (playlist.value.length === 0) return
-    currentIndex.value = (currentIndex.value + 1) % playlist.value.length
+    if (shuffle.value && playlist.value.length > 1) {
+      currentIndex.value = randomIndex()
+    } else {
+      currentIndex.value = (currentIndex.value + 1) % playlist.value.length
+    }
     loadCurrent()
     if (isPlaying.value) play()
   }
 
   function prev() {
     if (playlist.value.length === 0) return
-    currentIndex.value = (currentIndex.value - 1 + playlist.value.length) % playlist.value.length
+    if (shuffle.value && playlist.value.length > 1) {
+      currentIndex.value = randomIndex()
+    } else {
+      currentIndex.value = (currentIndex.value - 1 + playlist.value.length) % playlist.value.length
+    }
     loadCurrent()
     if (isPlaying.value) play()
+  }
+
+  /** 切换随机播放模式（v2.8.1） */
+  function toggleShuffle() {
+    shuffle.value = !shuffle.value
+    setStorage('musicShuffle', shuffle.value)
   }
 
   /** 移除指定曲目（v2.7.1） */
@@ -195,6 +224,7 @@ export const useMusicStore = defineStore('music', () => {
     currentIndex,
     isPlaying,
     volume,
+    shuffle,
     currentTrack,
     hasMusic,
     isAudioName,
@@ -203,6 +233,7 @@ export const useMusicStore = defineStore('music', () => {
     play,
     pause,
     toggle,
+    toggleShuffle,
     playIndex,
     next,
     prev,

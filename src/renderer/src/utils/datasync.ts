@@ -1,16 +1,16 @@
 import { ref } from 'vue'
-import { exportAllData } from '@/utils/storage'
+import { exportAllData, getGlobalStorage, setGlobalStorage } from '@/utils/storage'
 
 /**
- * 数据目录管理（v2.8.0）
- * - 所有学习数据实时存于浏览器 localStorage（渲染进程本地），
+ * 数据目录管理（v2.8.0；v2.8.1 持久层迁移至 IndexedDB）
+ * - 所有学习数据实时存于 IndexedDB（渲染进程本地），
  *   本模块负责将数据快照同步到用户自定义的数据目录（默认"文档\11408kaoyan-helper"，
  *   不在 C 盘应用数据区），形成第二份可迁移的备份。
  * - 自定义背景图、自动备份文件由主进程直接写入数据目录。
  */
 
 const SYNC_KEY = 'kaoyan_data_sync_enabled'
-const SYNC_INTERVAL = 5 * 60 * 1000 // 每 5 分钟同步一次
+const SYNC_INTERVAL = 30 * 60 * 1000 // 每 30 分钟同步一次（v2.8.1：由 5 分钟降低频率，减少磁盘写入）
 
 export const dataDir = ref('')
 export const syncEnabled = ref(loadSyncEnabled())
@@ -19,11 +19,7 @@ export const lastSyncAt = ref<string>('')
 let syncTimer: number | null = null
 
 function loadSyncEnabled(): boolean {
-  try {
-    return localStorage.getItem(SYNC_KEY) === '1'
-  } catch {
-    return false
-  }
+  return getGlobalStorage<string>(SYNC_KEY, '0') === '1'
 }
 
 /** 加载当前数据目录路径 */
@@ -87,11 +83,7 @@ export async function syncOnce(): Promise<boolean> {
 /** 设置自动同步开关并持久化 */
 export function setSyncEnabled(on: boolean): void {
   syncEnabled.value = on
-  try {
-    localStorage.setItem(SYNC_KEY, on ? '1' : '0')
-  } catch {
-    // 忽略
-  }
+  setGlobalStorage(SYNC_KEY, on ? '1' : '0')
   if (on) {
     syncOnce()
     startAutoSync()
@@ -117,8 +109,10 @@ export function stopAutoSync(): void {
   }
 }
 
-/** 初始化：加载目录、恢复开关、启动定时同步 */
+/** 初始化：加载目录、恢复开关、启动定时同步（在存储层就绪后由根组件调用） */
 export function initDataSync(): void {
+  // 存储层已就绪：重新读取开关（模块加载期的初读可能早于存储初始化）
+  syncEnabled.value = loadSyncEnabled()
   loadDataDir()
   if (syncEnabled.value) {
     syncOnce()

@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue'
+import { getGlobalStorage, setGlobalStorage, removeGlobalStorage } from '@/utils/storage'
 
 /** 主题模式：浅色 / 深色 / 跟随系统 */
 export type ThemeMode = 'light' | 'dark' | 'system'
@@ -8,12 +9,8 @@ const THEME_KEY = 'kaoyan_theme'
 const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
 
 function loadMode(): ThemeMode {
-  try {
-    const v = localStorage.getItem(THEME_KEY)
-    if (v === 'light' || v === 'dark' || v === 'system') return v
-  } catch {
-    // 忽略读取失败
-  }
+  const v = getGlobalStorage<string>(THEME_KEY, 'light')
+  if (v === 'light' || v === 'dark' || v === 'system') return v
   return 'light'
 }
 
@@ -32,14 +29,10 @@ export function applyTheme(): void {
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
 }
 
-/** 设置主题模式并持久化 */
+/** 设置主题模式并持久化（v2.8.1：经统一存储层持久化） */
 export function setThemeMode(mode: ThemeMode): void {
   themeMode.value = mode
-  try {
-    localStorage.setItem(THEME_KEY, mode)
-  } catch {
-    // 忽略写入失败
-  }
+  setGlobalStorage(THEME_KEY, mode)
   applyTheme()
 }
 
@@ -50,6 +43,10 @@ export function toggleTheme(): void {
 
 /** 初始化：应用已保存的主题，并监听系统主题变化 */
 export function initTheme(): void {
+  // 存储层在应用挂载前已就绪，重新读取持久化值
+  // （模块加载期的初始读取可能早于存储初始化，此处校准主题与护眼状态）
+  themeMode.value = loadMode()
+  eyeCare.value = loadEyeCare()
   applyTheme()
   applyEyeCare()
   mediaQuery.addEventListener('change', (e) => {
@@ -63,11 +60,7 @@ const EYECARE_KEY = 'kaoyan_eyecare'
 export const eyeCare = ref<boolean>(loadEyeCare())
 
 function loadEyeCare(): boolean {
-  try {
-    return localStorage.getItem(EYECARE_KEY) === '1'
-  } catch {
-    return false
-  }
+  return getGlobalStorage<string>(EYECARE_KEY, '0') === '1'
 }
 
 /** 应用护眼模式：向根元素注入 .eyecare 类（暖色滤光，降低蓝光） */
@@ -75,14 +68,10 @@ export function applyEyeCare(): void {
   document.documentElement.classList.toggle('eyecare', eyeCare.value)
 }
 
-/** 切换护眼模式并持久化 */
+/** 切换护眼模式并持久化（v2.8.1：经统一存储层持久化） */
 export function setEyeCare(on: boolean): void {
   eyeCare.value = on
-  try {
-    localStorage.setItem(EYECARE_KEY, on ? '1' : '0')
-  } catch {
-    // 忽略写入失败
-  }
+  setGlobalStorage(EYECARE_KEY, on ? '1' : '0')
   applyEyeCare()
 }
 
@@ -100,22 +89,13 @@ export function applyCustomBg(url: string | null): void {
   } else {
     root.style.removeProperty('--mo-bg-custom')
   }
-  try {
-    if (url) localStorage.setItem(BG_CUSTOM_KEY, url)
-    else localStorage.removeItem(BG_CUSTOM_KEY)
-  } catch {
-    // 忽略写入失败
-  }
+  if (url) setGlobalStorage(BG_CUSTOM_KEY, url)
+  else removeGlobalStorage(BG_CUSTOM_KEY)
 }
 
 /** 初始化自定义背景：优先读取本地记忆，并向主进程核实文件是否仍存在 */
 export async function initCustomBg(): Promise<void> {
-  let url: string | null = null
-  try {
-    url = localStorage.getItem(BG_CUSTOM_KEY)
-  } catch {
-    // 忽略读取失败
-  }
+  const url = getGlobalStorage<string | null>(BG_CUSTOM_KEY, null)
   const api = (window as unknown as { electronAPI?: { getCustomBg?: () => Promise<{ enabled: boolean }> } }).electronAPI
   if (api?.getCustomBg) {
     try {

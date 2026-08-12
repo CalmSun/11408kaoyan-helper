@@ -142,6 +142,14 @@
                 <button class="mp-ctrl-btn" title="下一首" @click="music.next()">
                   <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
                 </button>
+                <button
+                  class="mp-ctrl-btn"
+                  :class="{ 'mp-ctrl-on': music.shuffle }"
+                  :title="music.shuffle ? '关闭随机播放' : '开启随机播放'"
+                  @click="music.toggleShuffle()"
+                >
+                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 3 H3.5 L8.5 9 H10.2 M1 9 H3.5 L8.5 3 H10.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9.2 1.8 L11.4 3 L9.2 4.2 Z" fill="currentColor"/><path d="M9.2 7.8 L11.4 9 L9.2 10.2 Z" fill="currentColor"/></svg>
+                </button>
               </div>
               <div class="mp-list">
                 <div
@@ -758,6 +766,13 @@ onMounted(() => {
 .mp-ctrl-btn:hover {
   background: var(--mo-surface-hover);
   color: var(--mo-primary);
+}
+
+/* 随机播放激活态（v2.8.1） */
+.mp-ctrl-btn.mp-ctrl-on {
+  background: var(--mo-primary);
+  border-color: var(--mo-primary);
+  color: #fff;
 }
 
 .mp-list {

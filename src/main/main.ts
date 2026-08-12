@@ -403,6 +403,32 @@ ipcMain.handle('music:pick-folder', async () => {
 
 const gbkDecoder = new TextDecoder('gbk')
 
+/**
+ * 解码天气接口响应（v2.8.1 修复乱码）：
+ * 中国天气网不同节点返回编码不一致（部分 GBK、部分 UTF-8），
+ * 优先按响应头 charset 声明解码；未声明时先尝试严格 UTF-8，失败回退 GBK。
+ */
+async function decodeWeatherResponse(res: Response): Promise<string> {
+  const buf = await res.arrayBuffer()
+  const contentType = res.headers.get('content-type') || ''
+  if (/charset\s*=\s*(utf-?8)/i.test(contentType)) {
+    return new TextDecoder('utf-8').decode(buf)
+  }
+  if (/charset\s*=\s*(gbk|gb2312|gb18030)/i.test(contentType)) {
+    return gbkDecoder.decode(buf)
+  }
+  try {
+    const utf8Text = new TextDecoder('utf-8', { fatal: true }).decode(buf)
+    // 少数 GBK 页面恰好能通过 UTF-8 校验：若页面内声明了 gb 系编码则仍按 GBK 解码
+    if (/charset\s*=\s*["']?(gbk|gb2312|gb18030)/i.test(utf8Text)) {
+      return gbkDecoder.decode(buf)
+    }
+    return utf8Text
+  } catch {
+    return gbkDecoder.decode(buf)
+  }
+}
+
 /** 实时天气：合并实况接口（sk_2d）与今日预报接口（weather_index） */
 ipcMain.handle('weather:current', async (_e, cityId: string) => {
   try {
@@ -414,7 +440,7 @@ ipcMain.handle('weather:current', async (_e, cityId: string) => {
       net.fetch(`http://d1.weather.com.cn/weather_index/${id}.html?_=${ts}`, { headers }).catch(() => null)
     ])
     if (!skRes.ok) return { success: false, message: `http ${skRes.status}` }
-    const skText = gbkDecoder.decode(await skRes.arrayBuffer())
+    const skText = await decodeWeatherResponse(skRes)
     const skMatch = skText.match(/var\s+dataSK\s*=\s*(\{[\s\S]*\})/)
     if (!skMatch) return { success: false, message: '解析失败' }
     const data = JSON.parse(skMatch[1]) as Record<string, string>
@@ -422,7 +448,7 @@ ipcMain.handle('weather:current', async (_e, cityId: string) => {
     // 合并今日最高/最低气温与预报天气（预报接口失败不影响实况）
     if (fcRes && fcRes.ok) {
       try {
-        const fcText = gbkDecoder.decode(await fcRes.arrayBuffer())
+        const fcText = await decodeWeatherResponse(fcRes)
         const fcMatch = fcText.match(/var\s+cityDZ\s*=\s*(\{[\s\S]*?\});/)
         if (fcMatch) {
           const fc = JSON.parse(fcMatch[1]) as { weatherinfo?: Record<string, string> }
@@ -449,7 +475,7 @@ ipcMain.handle('weather:search', async (_e, name: string) => {
       headers: { Referer: 'http://www.weather.com.cn/' }
     })
     if (!res.ok) return { success: false, results: [] }
-    const text = gbkDecoder.decode(await res.arrayBuffer())
+    const text = await decodeWeatherResponse(res)
     const m = text.match(/\[[\s\S]*\]/)
     if (!m) return { success: true, results: [] }
     const arr = JSON.parse(m[0]) as { ref?: string }[]
