@@ -1,14 +1,20 @@
 <template>
   <div class="app-container">
-    <!-- 弥散渐变背景装饰层，凸显玻璃质感 -->
-    <div class="app-bg-decor"></div>
-    <SideNav v-if="!isLoginPage" @collapse-change="handleCollapseChange" />
-    <div class="main-content" :class="{ expanded: isSidebarCollapsed, 'full-width': isLoginPage }">
-      <router-view v-slot="{ Component }">
-        <transition name="fade" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
+    <!-- 自定义窗口顶栏（无边框窗口，含自建窗口控制按钮，整条可拖拽移动窗口） -->
+    <TitleBar :transparent="isLoginPage" />
+
+    <!-- 背景磨砂层 + 弥散光斑：backdrop-filter 只模糊卡片后方页面 -->
+    <div class="app-bg-decor"><div class="bg-frost"></div></div>
+
+    <div class="app-body">
+      <SideNav v-if="!isLoginPage" @collapse-change="handleCollapseChange" />
+      <main class="main-content" :class="{ 'full-width': isLoginPage }">
+        <router-view v-slot="{ Component }">
+          <transition name="fade" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
+      </main>
     </div>
 
     <!-- 番茄钟完成提醒（全局渲染，切换页面后依然弹出） -->
@@ -34,6 +40,7 @@ import { useMainStore } from '@/stores'
 import { usePomodoroStore } from '@/stores/pomodoro'
 import { initTheme, initCustomBg } from '@/utils/theme'
 import SideNav from '@/components/SideNav.vue'
+import TitleBar from '@/components/TitleBar.vue'
 
 // 启动时应用已保存的主题（浅色/深色/跟随系统）与自定义背景
 initTheme()
@@ -48,6 +55,10 @@ const isLoginPage = computed(() => route.path === '/login')
 
 function handleCollapseChange(collapsed: boolean) {
   isSidebarCollapsed.value = collapsed
+  document.documentElement.style.setProperty(
+    '--side-nav-w',
+    collapsed ? 'var(--side-nav-w-collapsed)' : '224px'
+  )
 }
 
 // 每分钟定时记录应用使用时长（实时累计）
@@ -73,38 +84,44 @@ onUnmounted(() => {
 <style scoped>
 .app-container {
   display: flex;
+  flex-direction: column;
   width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
-.main-content {
+/* ── 主体区域 ── */
+.app-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
   position: relative;
   z-index: 1;
+}
+
+.main-content {
+  position: relative;
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
-  padding: 24px 32px;
+  overflow-x: hidden;
+  padding: 20px 28px 28px;
   background: transparent;
-  transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .main-content.full-width {
   padding: 0;
 }
 
+/* 路由切换：仅透明度过渡，卡片 GPU 层已固定，避免滤镜重采样闪动 */
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.18s ease;
 }
 
-.fade-enter-from {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
+.fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  transform: translateY(-10px);
 }
 
 /* 番茄钟完成提醒遮罩 */

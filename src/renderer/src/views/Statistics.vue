@@ -235,15 +235,15 @@ const chartColors = computed(() => ({
   axisLine: isDark.value ? 'rgba(255, 255, 255, 0.18)' : '#d8dde2',
   axisLabel: isDark.value ? '#8b95a5' : '#9aa0a8',
   splitLine: isDark.value ? 'rgba(255, 255, 255, 0.08)' : '#e2e6e9',
-  legendText: isDark.value ? '#a9b2c1' : '#7d8289',
-  pieBorder: isDark.value ? '#171e2c' : '#fff'
+  legendText: isDark.value ? '#a9b2c1' : '#7d8289'
 }))
 
 function getStudyOption(): EChartsOption {
   return {
     tooltip: {
       trigger: 'axis',
-      formatter: '{b}<br/>学习时长: {c} 分钟'
+      formatter: '{b}<br/>学习时长: {c} 分钟',
+      confine: true
     },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
@@ -286,7 +286,7 @@ function getStudyOption(): EChartsOption {
 
 function getSubjectOption(): EChartsOption {
   return {
-    tooltip: { trigger: 'item', formatter: '{b}: {c} 小时 ({d}%)' },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} 小时 ({d}%)', confine: true },
     legend: {
       orient: 'vertical',
       right: '5%',
@@ -298,7 +298,7 @@ function getSubjectOption(): EChartsOption {
       radius: ['45%', '70%'],
       center: ['35%', '50%'],
       avoidLabelOverlap: false,
-      itemStyle: { borderRadius: 8, borderColor: chartColors.value.pieBorder, borderWidth: 2 },
+      itemStyle: { borderRadius: 8, borderWidth: 0 },
       label: { show: false },
       emphasis: { label: { show: true, fontSize: 14, fontWeight: 'bold' } },
       labelLine: { show: false },
@@ -310,7 +310,7 @@ function getSubjectOption(): EChartsOption {
 
 function getPomodoroOption(): EChartsOption {
   return {
-    tooltip: { trigger: 'axis', formatter: '{b}<br/>番茄数: {c} 个' },
+    tooltip: { trigger: 'axis', formatter: '{b}<br/>番茄数: {c} 个', confine: true },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
       type: 'category',
@@ -343,7 +343,7 @@ function getPomodoroOption(): EChartsOption {
 
 function getSubjectHoursOption(): EChartsOption {
   return {
-    tooltip: { trigger: 'axis', formatter: '{b}<br/>学习时长: {c} 小时' },
+    tooltip: { trigger: 'axis', formatter: '{b}<br/>学习时长: {c} 小时', confine: true },
     grid: { left: '3%', right: '4%', bottom: '3%', top: '10%', containLabel: true },
     xAxis: {
       type: 'category',

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage } from 'electron'
 import * as path from 'path'
 import * as fs from 'fs'
 import { pathToFileURL } from 'url'
@@ -14,6 +14,16 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false       // 是否真正退出（区分"关闭隐藏到托盘"与"托盘菜单退出"）
+let trayHintShown = false    // 托盘提示气泡是否已展示过
+
+// 托盘图标路径：开发环境取项目 resources 目录，打包后取 extraResources 输出目录
+function trayIconPath(): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'tray-icon.png')
+    : path.join(__dirname, '../../resources/tray-icon.png')
+}
 
 // 窗口背景色跟随系统深浅主题（避免加载瞬间白屏闪烁与深色主题冲突）
 function getWindowBgColor(): string {
@@ -28,6 +38,7 @@ function createWindow() {
     minHeight: 640,
     title: '考研助手',
     backgroundColor: getWindowBgColor(),
+    frame: false, // v2.6.6：无边框窗口，顶栏与窗口控制按钮全部由渲染层自建
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
@@ -35,7 +46,6 @@ function createWindow() {
       webSecurity: true
     }
   })
-
   if (process.env.NODE_ENV === 'development') {
     mainWindow.loadURL('http://localhost:5173')
     mainWindow.webContents.openDevTools()
@@ -43,38 +53,143 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
 
+  // 关闭按钮默认隐藏到托盘；仅托盘菜单"退出"才真正退出应用
+  mainWindow.on('close', (e) => {
+    if (!isQuitting && mainWindow && !mainWindow.isDestroyed()) {
+      e.preventDefault()
+      mainWindow.hide()
+      showTrayHint()
+    }
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
   })
 }
 
-app.whenReady().then(() => {
-  // 自定义背景协议：存在自定义背景文件时才提供内容
-  protocol.handle('kaoyan-bg', (request) => {
-    const file = customBgPath()
-    if (!fs.existsSync(file)) {
-      return new Response('not found', { status: 404 })
+// 首次隐藏到托盘时给出气泡提示（仅 Windows）
+function showTrayHint() {
+  if (trayHintShown || !tray || process.platform !== 'win32') return
+  try {
+    tray.displayBalloon({
+      iconType: 'none',
+      title: '11408考研助手',
+      content: '应用已隐藏到托盘，双击图标可重新打开，右键菜单可完全退出'
+    })
+    trayHintShown = true
+  } catch {
+    // 气泡展示失败不影响主流程
+  }
+}
+
+function createTray() {
+  const icon = nativeImage.createFromPath(trayIconPath())
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+  tray.setToolTip('11408考研助手')
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: '显示主窗口',
+      click: () => {
+        if (mainWindow) {
+          mainWindow.show()
+          mainWindow.focus()
+        }
+      }
+    },
+    { type: 'separator' },
+    {
+      label: '退出考研助手',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      }
     }
-    return net.fetch(pathToFileURL(file).toString())
-  })
+  ])
+  tray.setContextMenu(menu)
 
-  createWindow()
-
-  // 系统主题变化时同步窗口背景色
-  nativeTheme.on('updated', () => {
-    mainWindow?.setBackgroundColor(getWindowBgColor())
-  })
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+  // 双击托盘图标恢复窗口
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
     }
   })
+}
+
+// 单实例锁：避免重复启动多个应用实例
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  app.whenReady().then(() => {
+    // 自定义背景协议：存在自定义背景文件时才提供内容
+    protocol.handle('kaoyan-bg', (request) => {
+      const file = customBgPath()
+      if (!fs.existsSync(file)) {
+        return new Response('not found', { status: 404 })
+      }
+      return net.fetch(pathToFileURL(file).toString())
+    })
+
+    createWindow()
+    createTray()
+
+    // 系统主题变化时同步窗口背景色
+    nativeTheme.on('updated', () => {
+      mainWindow?.setBackgroundColor(getWindowBgColor())
+    })
+
+    app.on('activate', () => {
+      if (mainWindow) {
+        mainWindow.show()
+      } else if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
+  })
+}
+
+// 托盘菜单"退出"触发 before-quit 时放行真正的退出
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
+  }
+})
+
+// ── 窗口控制（v2.6.6：自建顶栏按钮通过 IPC 控制窗口） ──
+
+ipcMain.on('window:minimize', () => {
+  mainWindow?.minimize()
+})
+
+ipcMain.on('window:toggle-maximize', () => {
+  if (!mainWindow) return
+  if (mainWindow.isMaximized()) {
+    mainWindow.unmaximize()
+  } else {
+    mainWindow.maximize()
+  }
+})
+
+// 自建关闭按钮：与原生关闭同语义——隐藏到托盘而非退出
+ipcMain.on('window:close-to-tray', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide()
+    showTrayHint()
   }
 })
 

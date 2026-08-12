@@ -14,6 +14,10 @@ interface ElectronAPI {
   setCustomBg: () => Promise<{ success: boolean }>
   clearCustomBg: () => Promise<{ success: boolean }>
   getCustomBg: () => Promise<{ enabled: boolean }>
+  // 窗口控制（v2.6.6：自建顶栏按钮）
+  windowMinimize: () => void
+  windowToggleMaximize: () => void
+  windowCloseToTray: () => void
 }
 
 interface Window {

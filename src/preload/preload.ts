@@ -7,5 +7,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAutoLaunch: () => ipcRenderer.invoke('get-auto-launch'),
   setCustomBg: () => ipcRenderer.invoke('set-custom-bg'),
   clearCustomBg: () => ipcRenderer.invoke('clear-custom-bg'),
-  getCustomBg: () => ipcRenderer.invoke('get-custom-bg')
+  getCustomBg: () => ipcRenderer.invoke('get-custom-bg'),
+  // 窗口控制（v2.6.6：自建顶栏按钮）
+  windowMinimize: () => ipcRenderer.send('window:minimize'),
+  windowToggleMaximize: () => ipcRenderer.send('window:toggle-maximize'),
+  windowCloseToTray: () => ipcRenderer.send('window:close-to-tray')
 })

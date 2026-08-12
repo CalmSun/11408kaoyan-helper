@@ -1,125 +1,80 @@
 <template>
-  <div class="side-nav" :class="{ collapsed: isCollapsed }">
-    <div class="nav-header">
-      <div class="logo">
-        <el-icon :size="28" class="logo-icon"><Reading /></el-icon>
-        <span v-show="!isCollapsed" class="logo-text">11408考研助手</span>
+  <div class="side-nav-wrap">
+    <div class="side-nav" :class="{ collapsed: isCollapsed }">
+      <div class="nav-header">
+        <div class="logo">
+          <el-icon :size="26" class="logo-icon"><Reading /></el-icon>
+          <span v-show="!isCollapsed" class="logo-text">11408考研助手</span>
+        </div>
+        <div v-show="!isCollapsed" class="exam-countdown-mini">
+          <span class="countdown-number">{{ store.daysUntilExam }}</span>
+          <span class="countdown-label">天</span>
+        </div>
       </div>
-      <div v-show="!isCollapsed" class="exam-countdown-mini">
-        <span class="countdown-number">{{ store.daysUntilExam }}</span>
-        <span class="countdown-label">天</span>
+
+      <!-- 扁平菜单（v2.6.6：取消分组分类，统一悬浮卡片风格） -->
+      <div class="nav-menu">
+        <div
+          v-for="item in allItems"
+          :key="item.path"
+          class="nav-item"
+          :class="{ active: isActive(item.path) }"
+          :title="isCollapsed ? item.title : ''"
+          @click="navigateTo(item.path)"
+        >
+          <el-icon :size="19">
+            <component :is="item.icon" />
+          </el-icon>
+          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
+        </div>
+      </div>
+
+      <div class="nav-footer">
+        <!-- 主题切换（折叠状态下也显示图标按钮） -->
+        <div class="theme-section" :title="themeTip">
+          <div class="theme-toggle" @click="handleToggleTheme">
+            <el-icon :size="16">
+              <component :is="dark ? Sunny : Moon" />
+            </el-icon>
+            <span v-show="!isCollapsed" class="theme-text">{{ dark ? '浅色模式' : '深色模式' }}</span>
+          </div>
+        </div>
+
+        <!-- 用户信息 -->
+        <template v-if="!isCollapsed">
+          <div class="user-section">
+            <div class="user-info" @click="goToSettings" :title="userStore.displayName">
+              <el-icon :size="18" class="user-icon"><UserFilled /></el-icon>
+              <span class="user-name">{{ userStore.displayName }}</span>
+            </div>
+            <el-button
+              type="danger"
+              link
+              size="small"
+              @click.stop="handleLogout"
+              v-if="userStore.isLoggedIn"
+            >
+              退出
+            </el-button>
+          </div>
+          <div class="study-tip">
+            <el-icon :size="16" class="study-tip-icon"><Warning /></el-icon>
+            <span>一战成硕！</span>
+          </div>
+        </template>
       </div>
     </div>
 
-    <div class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'">
-      <el-icon :size="16">
+    <!-- 折叠按钮置于外层 wrapper，避免被面板 overflow:hidden 裁剪 -->
+    <div
+      class="collapse-btn"
+      :class="{ 'on-collapsed': isCollapsed }"
+      @click="toggleCollapse"
+      :title="isCollapsed ? '展开侧边栏' : '收起侧边栏'"
+    >
+      <el-icon :size="14">
         <component :is="isCollapsed ? DArrowRight : DArrowLeft" />
       </el-icon>
-    </div>
-    
-    <div class="nav-menu">
-      <div class="nav-group">
-        <div v-show="!isCollapsed" class="nav-group-title">概览</div>
-        <div
-          v-for="item in overviewItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ active: isActive(item.path) }"
-          :title="isCollapsed ? item.title : ''"
-          @click="navigateTo(item.path)"
-        >
-          <el-icon :size="20">
-            <component :is="item.icon" />
-          </el-icon>
-          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
-        </div>
-      </div>
-
-      <div class="nav-group">
-        <div v-show="!isCollapsed" class="nav-group-title">11408 专业课</div>
-        <div
-          v-for="item in majorItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ active: isActive(item.path) }"
-          :title="isCollapsed ? item.title : ''"
-          @click="navigateTo(item.path)"
-        >
-          <el-icon :size="20">
-            <component :is="item.icon" />
-          </el-icon>
-          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
-        </div>
-      </div>
-
-      <div class="nav-group">
-        <div v-show="!isCollapsed" class="nav-group-title">学习工具</div>
-        <div
-          v-for="item in toolItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ active: isActive(item.path) }"
-          :title="isCollapsed ? item.title : ''"
-          @click="navigateTo(item.path)"
-        >
-          <el-icon :size="20">
-            <component :is="item.icon" />
-          </el-icon>
-          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
-        </div>
-      </div>
-
-      <div class="nav-group">
-        <div v-show="!isCollapsed" class="nav-group-title">公共课</div>
-        <div
-          v-for="item in publicItems"
-          :key="item.path"
-          class="nav-item"
-          :class="{ active: isActive(item.path) }"
-          :title="isCollapsed ? item.title : ''"
-          @click="navigateTo(item.path)"
-        >
-          <el-icon :size="20">
-            <component :is="item.icon" />
-          </el-icon>
-          <span v-show="!isCollapsed" class="nav-text">{{ item.title }}</span>
-        </div>
-      </div>
-    </div>
-    
-    <div class="nav-footer">
-      <!-- 主题切换（折叠状态下也显示图标按钮） -->
-      <div class="theme-section" :title="themeTip">
-        <div class="theme-toggle" @click="handleToggleTheme">
-          <el-icon :size="16">
-            <component :is="dark ? Sunny : Moon" />
-          </el-icon>
-          <span v-show="!isCollapsed" class="theme-text">{{ dark ? '浅色模式' : '深色模式' }}</span>
-        </div>
-      </div>
-
-      <!-- 用户信息 -->
-      <template v-if="!isCollapsed">
-        <div class="user-section">
-          <div class="user-info" @click="goToSettings" :title="userStore.displayName">
-            <el-icon :size="18" class="user-icon"><UserFilled /></el-icon>
-            <span class="user-name">{{ userStore.displayName }}</span>
-          </div>
-          <el-button
-            type="danger"
-            link
-            size="small"
-            @click.stop="handleLogout"
-            v-if="userStore.isLoggedIn"
-          >
-            退出
-          </el-button>
-        </div>
-        <div class="study-tip">
-          <el-icon :size="16" class="study-tip-icon"><Warning /></el-icon>
-          <span>一战成硕！</span>
-        </div>
-      </template>
     </div>
   </div>
 </template>
@@ -174,26 +129,18 @@ const emit = defineEmits<{
   (e: 'collapse-change', collapsed: boolean): void
 }>()
 
-const overviewItems = [
+// 全部菜单项（v2.6.6：取消分组分类，按使用频率平铺）
+const allItems = [
   { path: '/dashboard', title: '首页仪表盘', icon: HomeFilled },
   { path: '/countdown', title: '考研倒计时', icon: AlarmClock },
-  { path: '/statistics', title: '数据统计', icon: DataLine }
-]
-
-const majorItems = [
+  { path: '/plan', title: '每日计划', icon: List },
+  { path: '/pomodoro', title: '番茄钟', icon: Timer },
+  { path: '/statistics', title: '数据统计', icon: DataLine },
   { path: '/outline', title: '知识大纲', icon: Guide },
   { path: '/algorithms', title: '算法模板库', icon: Cpu },
   { path: '/formulas', title: '公式速查', icon: Operation },
-  { path: '/examscores', title: '真题成绩', icon: DataAnalysis }
-]
-
-const toolItems = [
-  { path: '/pomodoro', title: '番茄钟', icon: Timer },
-  { path: '/plan', title: '每日计划', icon: List },
-  { path: '/flashcards', title: '背诵卡片', icon: Collection }
-]
-
-const publicItems = [
+  { path: '/examscores', title: '真题成绩', icon: DataAnalysis },
+  { path: '/flashcards', title: '背诵卡片', icon: Collection },
   { path: '/dictionary', title: '单词词典', icon: Reading },
   { path: '/settings', title: '设置', icon: Setting }
 ]
@@ -222,45 +169,52 @@ function handleLogout() {
 </script>
 
 <style scoped>
+/* 悬浮卡片式侧边导航外层：承载面板与折叠按钮，避免按钮被裁剪 */
+.side-nav-wrap {
+  position: relative;
+  flex-shrink: 0;
+  height: 100%;
+  padding: 16px 12px 16px 16px;
+  box-sizing: border-box;
+}
+
+/* 悬浮卡片式侧边导航：四周留白 + 大圆角玻璃面板，不再贴边 */
 .side-nav {
   position: relative;
-  z-index: 1;
-  width: 220px;
+  z-index: 2;
+  width: 224px;
   height: 100%;
   background: var(--side-nav-bg);
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
-  border-right: 1px solid var(--side-nav-border);
-  box-shadow: 2px 0 16px rgba(31, 64, 130, 0.06), inset 1px 0 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.6));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--mo-radius-lg);
+  box-shadow: var(--glass-shadow-card);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
   overflow: hidden;
-}
-
-html.dark .side-nav {
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.3), inset 1px 0 0 rgba(255, 255, 255, calc(var(--glass-highlight) * 0.6));
+  contain: layout style;
 }
 
 .side-nav.collapsed {
-  width: 64px;
+  width: 68px;
 }
 
 .nav-header {
-  padding: 24px 20px;
-  border-bottom: 1px solid var(--side-nav-divider);
+  padding: 20px 16px;
 }
 
 .side-nav.collapsed .nav-header {
-  padding: 16px 12px;
+  padding: 16px 10px;
 }
 
 .logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .side-nav.collapsed .logo {
@@ -273,7 +227,7 @@ html.dark .side-nav {
 }
 
 .logo-text {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--side-nav-text-1);
   letter-spacing: 0.5px;
@@ -284,14 +238,14 @@ html.dark .side-nav {
   display: flex;
   align-items: baseline;
   gap: 4px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   background: var(--mo-surface);
-  border-radius: 10px;
+  border-radius: var(--mo-radius-sm);
   border: 1px solid var(--glass-border);
 }
 
 .countdown-number {
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
   color: var(--mo-primary);
   font-family: 'DIN Alternate', 'Menlo', 'Consolas', monospace;
@@ -302,17 +256,15 @@ html.dark .side-nav {
   color: var(--side-nav-text-2);
 }
 
-/* 折叠按钮 */
+/* 折叠按钮：吸附在面板右侧边缘（外层定位，不被裁剪） */
 .collapse-btn {
   position: absolute;
-  top: 80px;
-  right: -12px;
-  width: 24px;
-  height: 24px;
+  top: 90px;
+  right: 1px; /* 贴住面板右边缘中点 */
+  width: 22px;
+  height: 22px;
   background: var(--side-nav-collapse-bg);
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
-  border: 1px solid var(--side-nav-border);
+  border: 1px solid var(--glass-border);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -320,8 +272,8 @@ html.dark .side-nav {
   cursor: pointer;
   color: var(--side-nav-text-2);
   z-index: 10;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  box-shadow: 0 2px 8px rgba(31, 64, 130, 0.18);
 }
 
 .collapse-btn:hover {
@@ -332,45 +284,34 @@ html.dark .side-nav {
 
 .nav-menu {
   flex: 1;
-  padding: 12px 12px;
+  padding: 10px;
   overflow-y: auto;
   overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .side-nav.collapsed .nav-menu {
-  padding: 12px 8px;
-}
-
-.nav-group {
-  margin-bottom: 16px;
-}
-
-.nav-group-title {
-  font-size: 11px;
-  color: var(--side-nav-text-3);
-  padding: 8px 16px 4px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  white-space: nowrap;
+  padding: 10px 8px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
-  margin-bottom: 2px;
-  border-radius: 8px;
+  padding: 9px 14px;
+  border-radius: var(--mo-radius-sm);
   color: var(--side-nav-text-2);
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease;
   font-size: 14px;
   white-space: nowrap;
 }
 
 .side-nav.collapsed .nav-item {
   justify-content: center;
-  padding: 10px;
+  padding: 9px;
 }
 
 .nav-item:hover {
@@ -379,8 +320,9 @@ html.dark .side-nav {
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%);
+  background: var(--mo-gradient);
   color: #fff;
+  font-weight: 600;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
 }
 
@@ -389,8 +331,7 @@ html.dark .side-nav {
 }
 
 .nav-footer {
-  padding: 16px 20px;
-  border-top: 1px solid var(--side-nav-divider);
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -411,12 +352,12 @@ html.dark .side-nav {
   align-items: center;
   gap: 10px;
   padding: 9px 14px;
-  border-radius: 8px;
+  border-radius: var(--mo-radius-sm);
   background: var(--mo-surface);
   border: 1px solid var(--glass-border);
   color: var(--side-nav-text-2);
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   font-size: 13px;
   white-space: nowrap;
 }
@@ -440,8 +381,7 @@ html.dark .side-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--side-nav-divider);
+  padding-bottom: 10px;
 }
 
 .user-info {
@@ -451,7 +391,7 @@ html.dark .side-nav {
   cursor: pointer;
   padding: 4px 8px;
   border-radius: 6px;
-  transition: background 0.2s ease;
+  transition: background-color 0.2s ease;
   min-width: 0;
 }
 
