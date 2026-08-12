@@ -7,14 +7,86 @@ import { pathToFileURL } from 'url'
 // GitHub 项目地址（设置页展示 + 更新来源说明）
 export const GITHUB_REPO_URL = 'https://github.com/CalmSun/11408kaoyan-helper'
 
-// 自定义背景图存储路径（userData 目录下固定文件名）
-function customBgPath(): string {
-  return path.join(app.getPath('userData'), 'custom-bg.jpg')
+// ── 数据目录（v2.8.0）：默认"文档\11408kaoyan-helper"，不在 C 盘应用数据区，可在设置中自定义 ──
+
+const DATA_DIR_CONFIG = path.join(app.getPath('userData'), 'data-dir.json')
+let cachedDataDir: string | null = null
+
+/** 默认数据目录：用户文档下的"11408kaoyan-helper"（文档通常不在 C 盘系统区，且用户可自行迁移） */
+function defaultDataDir(): string {
+  return path.join(app.getPath('documents'), '11408kaoyan-helper')
 }
 
-// 注册私有协议：kaoyan-bg:// 用于向渲染进程提供用户自定义背景图
+/** 读取已配置的数据目录（带缓存） */
+function getDataDir(): string {
+  if (cachedDataDir) return cachedDataDir
+  try {
+    if (fs.existsSync(DATA_DIR_CONFIG)) {
+      const cfg = JSON.parse(fs.readFileSync(DATA_DIR_CONFIG, 'utf-8')) as { dir?: string }
+      if (cfg.dir && typeof cfg.dir === 'string' && fs.existsSync(cfg.dir)) {
+        cachedDataDir = cfg.dir
+        return cfg.dir
+      }
+    }
+  } catch {
+    // 配置损坏：回退默认目录
+  }
+  cachedDataDir = defaultDataDir()
+  return cachedDataDir
+}
+
+function ensureDir(dir: string): void {
+  fs.mkdirSync(dir, { recursive: true })
+}
+
+/** 自定义背景图存储路径（v2.8.0：移至数据目录） */
+function customBgPath(): string {
+  return path.join(getDataDir(), 'custom-bg.jpg')
+}
+
+/** 自动备份文件路径（数据目录内，应用每次启动覆盖一份最新数据） */
+function autoBackupPath(): string {
+  return path.join(getDataDir(), 'auto-backup.json')
+}
+
+/** 启动迁移：旧版本存于 userData 的背景图与自动备份，迁移到数据目录 */
+function migrateLegacyDataFiles(): void {
+  try {
+    ensureDir(getDataDir())
+    const legacyBg = path.join(app.getPath('userData'), 'custom-bg.jpg')
+    if (fs.existsSync(legacyBg) && !fs.existsSync(customBgPath())) {
+      fs.copyFileSync(legacyBg, customBgPath())
+      fs.unlinkSync(legacyBg)
+    }
+    const legacyBackup = path.join(app.getPath('userData'), 'auto-backup.json')
+    if (fs.existsSync(legacyBackup) && !fs.existsSync(autoBackupPath())) {
+      fs.copyFileSync(legacyBackup, autoBackupPath())
+      fs.unlinkSync(legacyBackup)
+    }
+  } catch {
+    // 迁移失败不影响启动
+  }
+}
+
+// ── 音乐文件白名单（v2.8.0：协议播放仅放行已选目录内的音频） ──
+
+const MUSIC_EXTS = ['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.wma', '.opus']
+const MUSIC_MAX_FILES = 2000
+const musicWhitelist = new Map<string, string>() // token -> 绝对路径
+let musicRootDir = ''
+
+function newToken(): string {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+// 注册私有协议：
+// - kaoyan-bg://    用户自定义背景图
+// - kaoyan-music:// 音乐文件夹内音频（白名单校验，v2.8.0 流式播放不占内存）
+// - kaoyan-data://  数据目录内备份文件（自动备份预览/读取）
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'kaoyan-bg', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  { scheme: 'kaoyan-bg', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: 'kaoyan-music', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'kaoyan-data', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ])
 
 let mainWindow: BrowserWindow | null = null
@@ -136,6 +208,9 @@ if (!gotTheLock) {
   })
 
   app.whenReady().then(() => {
+    // 初始化数据目录并迁移旧版本文件（v2.8.0）
+    migrateLegacyDataFiles()
+
     // 自定义背景协议：存在自定义背景文件时才提供内容
     protocol.handle('kaoyan-bg', (request) => {
       const file = customBgPath()
@@ -143,6 +218,44 @@ if (!gotTheLock) {
         return new Response('not found', { status: 404 })
       }
       return net.fetch(pathToFileURL(file).toString())
+    })
+
+    // 音乐协议：仅放行白名单 token 对应的音频文件（流式读取，不占内存）
+    protocol.handle('kaoyan-music', (request) => {
+      try {
+        const url = new URL(request.url)
+        const token = decodeURIComponent(url.host + url.pathname).replace(/^\/+/, '').split('/')[0]
+        const file = musicWhitelist.get(token)
+        if (!file || !fs.existsSync(file)) {
+          return new Response('not found', { status: 404 })
+        }
+        // 二次校验：文件必须仍在已选音乐目录内
+        const resolved = path.resolve(file)
+        if (!musicRootDir || !resolved.startsWith(path.resolve(musicRootDir) + path.sep)) {
+          return new Response('forbidden', { status: 403 })
+        }
+        return net.fetch(pathToFileURL(resolved).toString())
+      } catch {
+        return new Response('bad request', { status: 400 })
+      }
+    })
+
+    // 数据目录协议：仅暴露数据目录内的 json 备份文件
+    protocol.handle('kaoyan-data', (request) => {
+      try {
+        const url = new URL(request.url)
+        const name = decodeURIComponent(url.host + url.pathname).replace(/^\/+/, '')
+        if (!/^[\w.-]+\.json$/.test(name)) {
+          return new Response('forbidden', { status: 403 })
+        }
+        const file = path.join(getDataDir(), name)
+        if (!fs.existsSync(file)) {
+          return new Response('not found', { status: 404 })
+        }
+        return net.fetch(pathToFileURL(file).toString())
+      } catch {
+        return new Response('bad request', { status: 400 })
+      }
     })
 
     createWindow()
@@ -222,16 +335,13 @@ ipcMain.on('window:close-to-tray', () => {
   }
 })
 
-// 强制全屏（v2.7.0 引入；v2.7.1 改为设置页全局开关，番茄钟运行时隐藏系统任务栏）
+// 强制全屏（v2.7.0 引入；v2.8.0 开启即生效，与番茄钟运行状态解耦）
 ipcMain.on('window:set-fullscreen', (_e, on: boolean) => {
   if (!mainWindow) return
   mainWindow.setFullScreen(!!on)
 })
 
-// ── 音乐文件夹选择（v2.7.1：递归读取目录内音频文件） ──
-
-const MUSIC_EXTS = ['.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.wma', '.opus']
-const MUSIC_MAX_FILES = 500 // 防止超大目录一次性读入内存
+// ── 音乐文件夹选择（v2.8.0：仅扫描文件名清单，播放走协议流式读取，大文件夹不占内存） ──
 
 ipcMain.handle('music:pick-folder', async () => {
   const result = await dialog.showOpenDialog({
@@ -240,14 +350,14 @@ ipcMain.handle('music:pick-folder', async () => {
   })
 
   if (result.canceled || result.filePaths.length === 0) {
-    return { success: false, files: [] }
+    return { success: false, canceled: true, files: [] }
   }
 
   const root = result.filePaths[0]
-  const files: { name: string; data: ArrayBuffer }[] = []
+  const names: string[] = []
 
   function walk(dir: string) {
-    if (files.length >= MUSIC_MAX_FILES) return
+    if (names.length >= MUSIC_MAX_FILES) return
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -255,27 +365,168 @@ ipcMain.handle('music:pick-folder', async () => {
       return
     }
     for (const entry of entries) {
-      if (files.length >= MUSIC_MAX_FILES) return
+      if (names.length >= MUSIC_MAX_FILES) return
       const full = path.join(dir, entry.name)
       if (entry.isDirectory()) {
         walk(full)
       } else if (entry.isFile() && MUSIC_EXTS.includes(path.extname(entry.name).toLowerCase())) {
         try {
-          const buf = fs.readFileSync(full)
-          const data = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer
-          files.push({ name: path.relative(root, full), data })
+          // 只记录相对路径，不读文件内容
+          names.push(path.relative(root, full))
         } catch {
-          // 单个文件读取失败跳过，不影响其余文件
+          // 跳过异常文件
         }
       }
     }
   }
 
   walk(root)
-  // 按相对路径排序，播放列表顺序稳定
-  files.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  if (names.length === 0) {
+    return { success: true, canceled: false, files: [] }
+  }
 
-  return { success: true, files }
+  names.sort((a, b) => a.localeCompare(b, 'zh-CN'))
+
+  // 重建白名单：token -> 绝对路径
+  musicWhitelist.clear()
+  musicRootDir = root
+  const files = names.map(rel => {
+    const token = newToken()
+    musicWhitelist.set(token, path.join(root, rel))
+    return { name: rel, url: `kaoyan-music://${token}` }
+  })
+
+  return { success: true, canceled: false, files }
+})
+
+// ── 国内天气服务（v2.8.0：中国天气网数据源，主进程代理避免跨域） ──
+
+const gbkDecoder = new TextDecoder('gbk')
+
+/** 实时天气：合并实况接口（sk_2d）与今日预报接口（weather_index） */
+ipcMain.handle('weather:current', async (_e, cityId: string) => {
+  try {
+    const id = /^\d{5,12}$/.test(String(cityId || '')) ? cityId : '101010100'
+    const ts = Date.now()
+    const headers = { Referer: 'http://www.weather.com.cn/' }
+    const [skRes, fcRes] = await Promise.all([
+      net.fetch(`http://d1.weather.com.cn/sk_2d/${id}.html?_=${ts}`, { headers }),
+      net.fetch(`http://d1.weather.com.cn/weather_index/${id}.html?_=${ts}`, { headers }).catch(() => null)
+    ])
+    if (!skRes.ok) return { success: false, message: `http ${skRes.status}` }
+    const skText = gbkDecoder.decode(await skRes.arrayBuffer())
+    const skMatch = skText.match(/var\s+dataSK\s*=\s*(\{[\s\S]*\})/)
+    if (!skMatch) return { success: false, message: '解析失败' }
+    const data = JSON.parse(skMatch[1]) as Record<string, string>
+
+    // 合并今日最高/最低气温与预报天气（预报接口失败不影响实况）
+    if (fcRes && fcRes.ok) {
+      try {
+        const fcText = gbkDecoder.decode(await fcRes.arrayBuffer())
+        const fcMatch = fcText.match(/var\s+cityDZ\s*=\s*(\{[\s\S]*?\});/)
+        if (fcMatch) {
+          const fc = JSON.parse(fcMatch[1]) as { weatherinfo?: Record<string, string> }
+          const info = fc.weatherinfo || {}
+          if (info.temp) data.tempMax = info.temp
+          if (info.tempn) data.tempMin = info.tempn
+        }
+      } catch {
+        // 预报解析失败忽略
+      }
+    }
+    return { success: true, data }
+  } catch (err) {
+    return { success: false, message: String((err as Error)?.message || err) }
+  }
+})
+
+/** 城市搜索：toy1.weather.com.cn 检索接口 */
+ipcMain.handle('weather:search', async (_e, name: string) => {
+  try {
+    const q = encodeURIComponent(String(name || '').trim())
+    if (!q) return { success: false, results: [] }
+    const res = await net.fetch(`http://toy1.weather.com.cn/search?cityname=${q}&_=${Date.now()}`, {
+      headers: { Referer: 'http://www.weather.com.cn/' }
+    })
+    if (!res.ok) return { success: false, results: [] }
+    const text = gbkDecoder.decode(await res.arrayBuffer())
+    const m = text.match(/\[[\s\S]*\]/)
+    if (!m) return { success: true, results: [] }
+    const arr = JSON.parse(m[0]) as { ref?: string }[]
+    const results = arr
+      .map(item => (item.ref || '').split('~'))
+      .filter(p => p.length >= 9 && /^\d+$/.test(p[0]))
+      .slice(0, 10)
+      .map(p => ({ id: p[0], name: p[2], province: p[8] }))
+    return { success: true, results }
+  } catch (err) {
+    return { success: false, results: [], message: String((err as Error)?.message || err) }
+  }
+})
+
+// ── 数据目录管理（v2.8.0） ──
+
+/** 查询当前数据目录 */
+ipcMain.handle('data:get-dir', async () => {
+  return { dir: getDataDir() }
+})
+
+/** 自定义数据目录：校验可写后迁移背景图与自动备份 */
+ipcMain.handle('data:set-dir', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择数据存储目录',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, canceled: true }
+  }
+  const dir = result.filePaths[0]
+  try {
+    ensureDir(dir)
+    // 写入测试：确认目录可写
+    const probe = path.join(dir, '.kaoyan-probe')
+    fs.writeFileSync(probe, 'ok')
+    fs.unlinkSync(probe)
+
+    const oldBg = customBgPath()
+    const oldBackup = autoBackupPath()
+    cachedDataDir = dir
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(DATA_DIR_CONFIG, JSON.stringify({ dir }), 'utf-8')
+
+    // 迁移已有背景图与自动备份（同盘移动，跨盘自动降级为复制）
+    if (fs.existsSync(oldBg)) {
+      try { fs.renameSync(oldBg, customBgPath()) } catch { fs.copyFileSync(oldBg, customBgPath()) }
+    }
+    if (fs.existsSync(oldBackup)) {
+      try { fs.renameSync(oldBackup, autoBackupPath()) } catch { fs.copyFileSync(oldBackup, autoBackupPath()) }
+    }
+    return { success: true, dir }
+  } catch (err) {
+    return { success: false, message: String((err as Error)?.message || err) }
+  }
+})
+
+/** 在资源管理器中打开数据目录 */
+ipcMain.handle('data:open-dir', async () => {
+  try {
+    ensureDir(getDataDir())
+    await shell.openPath(getDataDir())
+    return { success: true }
+  } catch {
+    return { success: false }
+  }
+})
+
+/** 同步数据到数据目录（渲染进程定期推送全量数据快照，覆盖写入） */
+ipcMain.handle('data:sync', async (_e, json: string) => {
+  try {
+    ensureDir(getDataDir())
+    fs.writeFileSync(autoBackupPath(), json, 'utf-8')
+    return { success: true, path: autoBackupPath() }
+  } catch (err) {
+    return { success: false, message: String((err as Error)?.message || err) }
+  }
 })
 
 // 学习报告 PDF 导出（v2.7.0：隐藏窗口渲染 HTML 后 printToPDF）
@@ -353,7 +604,7 @@ ipcMain.handle('get-auto-launch', async () => {
   return { enabled: settings.openAtLogin }
 })
 
-// 自定义背景 - 选择图片并应用（复制到 userData 固定文件）
+// 自定义背景 - 选择图片并应用（复制到数据目录固定文件）
 ipcMain.handle('set-custom-bg', async () => {
   const result = await dialog.showOpenDialog({
     title: '选择浅色背景图片',
@@ -366,6 +617,7 @@ ipcMain.handle('set-custom-bg', async () => {
   }
 
   try {
+    ensureDir(getDataDir())
     fs.copyFileSync(result.filePaths[0], customBgPath())
     return { success: true }
   } catch {

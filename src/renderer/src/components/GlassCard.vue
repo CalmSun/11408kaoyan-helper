@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * GlassCard 全局玻璃卡片组件（v7 厚重磨砂玻璃）
+ * GlassCard 全局玻璃卡片组件（v2.8.0 · Liquid Glass 液态玻璃）
  * - 视觉参数全部来自 style.css 的 --glass-* 变量，一处调参全站生效
  * - variant: card（默认页面容器）/ strong（弹窗级）/ lite（无滤镜轻量面，长列表用）
- * - 自身只占一层 backdrop-filter，禁止在 GlassCard 内再嵌套 GlassCard（嵌套区请改用 lite）
+ * - 自身只占一层 backdrop-filter，高光由全局伪元素承载，禁止嵌套 GlassCard（嵌套区请改用 lite）
  */
 interface Props {
   variant?: 'card' | 'strong' | 'lite'

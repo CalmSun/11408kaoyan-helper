@@ -34,16 +34,21 @@
   --mo-bg-gradient: linear-gradient(160deg, #e8f0ff 0%, #f0f7ff 100%);
   --ring-track: rgba(255, 255, 255, 0.6);
 
-  /* ── 厚重磨砂玻璃统一变量（v7：上调模糊、多层弥散外阴影、左上内高光） ── */
-  --glass-bg: linear-gradient(145deg, rgba(255, 255, 255, 0.66) 0%, rgba(255, 255, 255, 0.50) 52%, rgba(255, 255, 255, 0.44) 100%);
-  --glass-bg-strong: linear-gradient(145deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.80) 55%, rgba(255, 255, 255, 0.74) 100%);
+  /* ── Liquid Glass 统一变量（v2.8.0：液态玻璃——折射渐变底 + 顶部亮线 + 镜面高光 + 弥散软阴影） ── */
+  --glass-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.52) 45%, rgba(255, 255, 255, 0.42) 100%);
+  --glass-bg-strong: linear-gradient(150deg, rgba(255, 255, 255, 0.90) 0%, rgba(255, 255, 255, 0.82) 55%, rgba(255, 255, 255, 0.76) 100%);
   --glass-bg-fallback: #f3f6fc;          /* 无滤镜降级：近似不透明底色 */
   --glass-bg-strong-fallback: #fbfcff;
-  --glass-border: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.82);
   --glass-blur: 18px;
   --glass-blur-pop: 22px;                /* 浮层专用模糊 */
-  --glass-saturate: 1.6;
+  --glass-saturate: 1.8;                 /* 液态感：提高饱和度让背景色彩折射更明显 */
   --glass-highlight: 0.85;
+  /* 液态高光参数（浅色主题） */
+  --glass-edge-highlight: 0.55;          /* 顶部内亮线强度 */
+  --glass-highlight-top: 0.30;           /* 顶部渐变高光强度 */
+  --glass-highlight-corner: 0.22;        /* 左上角镜面光斑强度 */
+  --glass-highlight-bottom: 0.06;        /* 底部反射微光 */
   /* 多层弥散外阴影：近距小阴影 + 中距 + 远距大范围柔光 */
   --glass-shadow: 0 1px 3px rgba(31, 64, 130, 0.10), 0 8px 22px rgba(31, 64, 130, 0.10), 0 24px 60px rgba(31, 64, 130, 0.12);
   --glass-shadow-hover: 0 2px 6px rgba(31, 64, 130, 0.12), 0 12px 30px rgba(31, 64, 130, 0.13), 0 32px 72px rgba(31, 64, 130, 0.15);
@@ -101,16 +106,21 @@ html.dark {
   --mo-bg-gradient: linear-gradient(160deg, #0b1220 0%, #111a2c 55%, #0d1424 100%);
   --ring-track: rgba(255, 255, 255, 0.12);
 
-  /* 深色玻璃（v7 厚重磨砂：更高模糊 + 多层弥散 + 左上内高光） */
-  --glass-bg: linear-gradient(145deg, rgba(34, 44, 63, 0.62) 0%, rgba(23, 30, 44, 0.50) 50%, rgba(18, 24, 36, 0.44) 100%);
-  --glass-bg-strong: linear-gradient(145deg, rgba(26, 34, 50, 0.92) 0%, rgba(18, 24, 36, 0.85) 100%);
+  /* 深色玻璃（v2.8.0 Liquid Glass：折射渐变底 + 顶部亮线 + 镜面高光 + 弥散软阴影） */
+  --glass-bg: linear-gradient(150deg, rgba(38, 50, 74, 0.60) 0%, rgba(26, 35, 54, 0.48) 50%, rgba(19, 26, 40, 0.42) 100%);
+  --glass-bg-strong: linear-gradient(150deg, rgba(30, 40, 60, 0.92) 0%, rgba(20, 27, 42, 0.86) 100%);
   --glass-bg-fallback: #151c2b;
   --glass-bg-strong-fallback: #141b2a;
   --glass-border: rgba(255, 255, 255, 0.16);
   --glass-blur: 18px;
   --glass-blur-pop: 22px;
-  --glass-saturate: 1.5;
+  --glass-saturate: 1.6;
   --glass-highlight: 0.16;
+  /* 液态高光参数（深色主题：高光更收敛） */
+  --glass-edge-highlight: 0.16;
+  --glass-highlight-top: 0.10;
+  --glass-highlight-corner: 0.08;
+  --glass-highlight-bottom: 0.03;
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.40), 0 8px 22px rgba(0, 0, 0, 0.32), 0 24px 60px rgba(0, 0, 0, 0.35);
   --glass-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.45), 0 12px 30px rgba(0, 0, 0, 0.38), 0 32px 72px rgba(0, 0, 0, 0.42);
 
@@ -141,12 +151,16 @@ html.dark {
   --titlebar-border: rgba(255, 255, 255, 0.06);
 }
 
-/* 降级方案：backdrop-filter 不受支持时，玻璃层自动换用不透明底色 */
+/* 降级方案：backdrop-filter 不受支持时，玻璃层自动换用不透明底色并关闭高光 */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root {
     --glass-bg: var(--glass-bg-fallback);
     --glass-bg-strong: var(--glass-bg-strong-fallback);
     --glass-highlight: 0;
+    --glass-edge-highlight: 0;
+    --glass-highlight-top: 0;
+    --glass-highlight-corner: 0;
+    --glass-highlight-bottom: 0;
     --mo-surface: rgba(243, 246, 252, 0.95);
     --mo-surface-hover: rgba(235, 240, 250, 1);
     --glass-lite-bg: rgba(243, 246, 252, 0.95);
@@ -266,22 +280,53 @@ html.dark .app-bg-decor::after {
 }
 
 /* ═══════════════════════════════════════════
-   玻璃拟态统一封装（v7 · GlassCard 三级体系）
-   .glass-card--card   标准玻璃卡片（页面级容器，单层滤镜）
-   .glass-card--strong 强化玻璃（浮层/弹窗/登录卡片，单层滤镜）
-   .glass-card--lite   轻量玻璃面（列表项/嵌套区：无 backdrop-filter，杜绝嵌套滤镜）
-   注意：GlassCard 内禁止再嵌套 GlassCard（card/strong），嵌套区一律用 lite
+   玻璃拟态统一封装（v2.8.0 · Liquid Glass 液态玻璃）
+   参照 Liquid Glass Vue 演示的观感统一复刻：
+   - 折射渐变底 + backdrop-filter（blur + 高 saturate 折射背景色彩）
+   - 顶部内亮线（inset 高光）+ 顶部渐变高光 + 左上镜面光斑（伪元素，零额外滤镜）
+   - 多层弥散软阴影；hover 时高光增强、轻浮起
+   三级体系不变：card / strong / lite（lite 无滤镜保障滚动性能）
    ═══════════════════════════════════════════ */
 .glass,
 .card,
 .glass-card--card {
+  position: relative;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius);
-  box-shadow: var(--glass-shadow);
-  transition: box-shadow 0.2s ease, background-color 0.2s ease;
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom));
+  transition: box-shadow 0.25s ease, transform 0.25s ease, background-color 0.2s ease;
+  overflow: hidden; /* 高光层贴合圆角 */
+}
+
+/* 液态高光层：顶部渐变光 + 左上镜面光斑（伪元素，pointer-events 穿透） */
+.glass::before,
+.card::before,
+.glass-card--card::before,
+.glass-card--strong::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 60% at 18% 0%, rgba(255, 255, 255, var(--glass-highlight-corner)) 0%, transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, var(--glass-highlight-top)) 0%, transparent 32%);
+  z-index: 0;
+}
+
+/* 内容置于高光层之上 */
+.glass > *,
+.card > *,
+.glass-card--card > *,
+.glass-card--strong > * {
+  position: relative;
+  z-index: 1;
 }
 
 .card,
@@ -291,26 +336,36 @@ html.dark .app-bg-decor::after {
 
 .card:hover,
 .glass-card--card:hover {
-  box-shadow: var(--glass-shadow-hover);
+  box-shadow:
+    var(--glass-shadow-hover),
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.15)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom));
+  transform: translateY(-1px);
 }
 
 .glass-strong,
 .glass-card--strong {
+  position: relative;
   background: var(--glass-bg-strong);
   backdrop-filter: var(--glass-filter-pop);
   -webkit-backdrop-filter: var(--glass-filter-pop);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius);
-  box-shadow: var(--glass-shadow);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight));
+  overflow: hidden;
 }
 
-/* 列表/网格/嵌套高频元素：不使用滤镜，仅半透明底色 + 细边框，保障滚动性能 */
+/* 列表/网格/嵌套高频元素：不使用滤镜，仅半透明底色 + 细边框 + 轻高光，保障滚动性能 */
 .glass-lite,
 .glass-card--lite {
   background: var(--glass-lite-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-sm);
-  box-shadow: 0 1px 6px rgba(31, 64, 130, 0.05);
+  box-shadow:
+    0 1px 6px rgba(31, 64, 130, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) * 0.5));
   transition: background-color 0.2s ease;
 }
 

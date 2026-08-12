@@ -39,12 +39,15 @@ import { useRoute } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { usePomodoroStore } from '@/stores/pomodoro'
 import { initTheme, initCustomBg } from '@/utils/theme'
+import { initDataSync } from '@/utils/datasync'
 import SideNav from '@/components/SideNav.vue'
 import TitleBar from '@/components/TitleBar.vue'
 
 // 启动时应用已保存的主题（浅色/深色/跟随系统）与自定义背景
 initTheme()
 initCustomBg()
+// v2.8.0：初始化数据目录同步（加载目录路径、恢复开关、启动定时备份）
+initDataSync()
 
 const route = useRoute()
 const store = useMainStore()
@@ -53,21 +56,11 @@ const isSidebarCollapsed = ref(false)
 
 const isLoginPage = computed(() => route.path === '/login')
 
-// v2.7.1：强制全屏改为全局设置（设置-番茄钟设置），在根组件统一监听执行：
-// 开启后番茄钟运行时进入全屏隐藏系统任务栏，暂停/结束/关闭时自动退出，
-// 切换页面不再影响全屏状态
-const forceFullscreenActive = computed(
-  () => store.pomodoroSettings.forceFullscreen && pmd.isRunning
-)
-
-watch(forceFullscreenActive, (on) => {
+// v2.8.0：强制全屏改为开启即生效（与番茄钟运行状态解耦）：
+// 开关打开立即进入全屏隐藏系统任务栏，关闭立即退出
+watch(() => store.pomodoroSettings.forceFullscreen, (on) => {
   window.electronAPI?.setFullscreen(on)
 }, { immediate: true })
-
-// 关闭强制全屏开关时确保退出全屏
-watch(() => store.pomodoroSettings.forceFullscreen, (enabled) => {
-  if (!enabled) window.electronAPI?.setFullscreen(false)
-})
 
 function handleCollapseChange(collapsed: boolean) {
   isSidebarCollapsed.value = collapsed

@@ -20,8 +20,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 全屏与报告导出（v2.7.0）
   setFullscreen: (on: boolean) => ipcRenderer.send('window:set-fullscreen', on),
   exportReportPdf: (html: string) => ipcRenderer.invoke('report:export-pdf', html),
-  // 音乐文件夹选择（v2.7.1）
+  // 音乐文件夹选择（v2.7.1 引入；v2.8.0 仅返回文件清单，播放走协议流式读取）
   pickMusicFolder: () => ipcRenderer.invoke('music:pick-folder'),
+  // 国内天气服务（v2.8.0）
+  weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
+  weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),
+  // 数据目录管理（v2.8.0）
+  getDataDir: () => ipcRenderer.invoke('data:get-dir'),
+  setDataDir: () => ipcRenderer.invoke('data:set-dir'),
+  openDataDir: () => ipcRenderer.invoke('data:open-dir'),
+  syncDataToDir: (json: string) => ipcRenderer.invoke('data:sync', json),
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => {
     const channels = ['update:available', 'update:not-available', 'update:progress', 'update:downloaded', 'update:error']
     channels.forEach(ch => {

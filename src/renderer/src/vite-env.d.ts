@@ -26,8 +26,20 @@ interface ElectronAPI {
   // 全屏与学习报告导出（v2.7.0）
   setFullscreen: (on: boolean) => void
   exportReportPdf: (html: string) => Promise<{ success: boolean; path?: string; message?: string }>
-  // 音乐文件夹选择（v2.7.1）
-  pickMusicFolder: () => Promise<{ success: boolean; files?: { name: string; data: ArrayBuffer }[] }>
+  // 音乐文件夹选择（v2.7.1；v2.8.0 返回播放协议地址而非文件内容）
+  pickMusicFolder: () => Promise<{
+    success: boolean
+    canceled?: boolean
+    files?: { name: string; url: string }[]
+  }>
+  // 国内天气服务（v2.8.0）
+  weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
+  weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>
+  // 数据目录管理（v2.8.0）
+  getDataDir: () => Promise<{ dir: string }>
+  setDataDir: () => Promise<{ success: boolean; canceled?: boolean; dir?: string; message?: string }>
+  openDataDir: () => Promise<{ success: boolean }>
+  syncDataToDir: (json: string) => Promise<{ success: boolean; path?: string; message?: string }>
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => void
 }
 

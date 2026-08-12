@@ -57,9 +57,14 @@ export const useMusicStore = defineStore('music', () => {
     return AUDIO_EXTS.includes(ext)
   }
 
+  /** 释放 blob 地址（kaoyan-music:// 协议地址无需释放，v2.8.0） */
+  function revokeIfBlob(url: string) {
+    if (url.startsWith('blob:')) URL.revokeObjectURL(url)
+  }
+
   /** 替换播放列表（释放旧 object URL） */
   function setPlaylist(tracks: MusicTrack[]) {
-    playlist.value.forEach(t => URL.revokeObjectURL(t.url))
+    playlist.value.forEach(t => revokeIfBlob(t.url))
     playlist.value = tracks
     currentIndex.value = 0
     loadCurrent()
@@ -86,24 +91,23 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   /**
-   * 选择音乐文件夹并加载其中全部音频（v2.7.1）
-   * 依赖 Electron 主进程目录选择 IPC；浏览器环境返回 0，调用方应降级为文件多选
+   * 选择音乐文件夹并加载其中全部音频（v2.7.1 引入，v2.8.0 优化）
+   * v2.8.0：主进程仅返回文件名清单与播放协议地址，播放时由协议按需流式读取，
+   * 大文件夹不再把全部文件内容读入内存（此前会占用大量存储/内存）
    */
   async function pickFolder(): Promise<number> {
     const api = window.electronAPI
     if (!api?.pickMusicFolder) return 0
-    let files: { name: string; data: ArrayBuffer }[] = []
+    let files: { name: string; url: string }[] = []
     try {
       const res = await api.pickMusicFolder()
+      if (res.canceled) return 0
       if (!res.success || !res.files?.length) return 0
       files = res.files
     } catch {
       return 0
     }
-    setPlaylist(files.map(f => ({
-      name: f.name,
-      url: URL.createObjectURL(new Blob([f.data]))
-    })))
+    setPlaylist(files.map(f => ({ name: f.name, url: f.url })))
     return files.length
   }
 
@@ -159,7 +163,7 @@ export const useMusicStore = defineStore('music', () => {
   /** 移除指定曲目（v2.7.1） */
   function removeTrack(index: number) {
     if (index < 0 || index >= playlist.value.length) return
-    URL.revokeObjectURL(playlist.value[index].url)
+    revokeIfBlob(playlist.value[index].url)
     playlist.value.splice(index, 1)
     if (playlist.value.length === 0) {
       pause()
@@ -180,7 +184,7 @@ export const useMusicStore = defineStore('music', () => {
   /** 清空播放列表 */
   function clearPlaylist() {
     pause()
-    playlist.value.forEach(t => URL.revokeObjectURL(t.url))
+    playlist.value.forEach(t => revokeIfBlob(t.url))
     playlist.value = []
     currentIndex.value = 0
     audio.removeAttribute('src')

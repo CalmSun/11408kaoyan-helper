@@ -65,7 +65,7 @@
         </el-form-item>
         <el-form-item label="强制全屏">
           <el-switch v-model="pomodoroForm.forceFullscreen" />
-          <span class="unit-desc">番茄钟运行时进入全屏，隐藏系统任务栏减少干扰（全局生效）</span>
+          <span class="unit-desc">开启即生效，进入全屏隐藏系统任务栏减少干扰（全局设置）</span>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="savePomodoroSettings">保存设置</el-button>
@@ -140,6 +140,41 @@
             清除数据
           </el-button>
         </div>
+      </div>
+    </GlassCard>
+
+    <!-- 数据目录（v2.8.0） -->
+    <GlassCard class="card setting-section">
+      <h3 class="section-title">
+        <el-icon><Box /></el-icon>
+        数据目录
+      </h3>
+      <p class="section-desc">自定义数据存储位置，自动备份默认开启到「我的文档」（不在 C 盘应用数据区）</p>
+
+      <div class="datadir-info">
+        <div class="datadir-row">
+          <span class="datadir-label">当前目录</span>
+          <span class="datadir-value" :title="dataDir">{{ dataDir || '加载中…' }}</span>
+        </div>
+        <div class="datadir-row">
+          <span class="datadir-label">自动备份</span>
+          <el-switch :model-value="syncEnabled" @change="onToggleSync" />
+          <span class="unit-desc">每 5 分钟自动同步数据快照到该目录<span v-if="lastSyncAt">（最近同步：{{ lastSyncAt }}）</span></span>
+        </div>
+      </div>
+      <div class="datadir-actions">
+        <el-button type="primary" @click="handleChangeDir">
+          <el-icon><FolderOpened /></el-icon>
+          更改数据目录
+        </el-button>
+        <el-button @click="handleOpenDir">
+          <el-icon><View /></el-icon>
+          打开目录
+        </el-button>
+        <el-button @click="handleSyncNow">
+          <el-icon><RefreshRight /></el-icon>
+          立即同步
+        </el-button>
       </div>
     </GlassCard>
 
@@ -268,6 +303,10 @@ import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
 import { exportAllData, importAllData, clearAllStorage } from '@/utils/storage'
 import { themeMode, setThemeMode, applyCustomBg, initCustomBg, CUSTOM_BG_URL, type ThemeMode } from '@/utils/theme'
+import {
+  dataDir, syncEnabled, lastSyncAt,
+  loadDataDir, changeDataDir, openDataDir, syncOnce, setSyncEnabled
+} from '@/utils/datasync'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlarmClock,
@@ -280,7 +319,9 @@ import {
   User,
   Setting,
   Link,
-  RefreshRight
+  RefreshRight,
+  Box,
+  View
 } from '@element-plus/icons-vue'
 
 const store = useMainStore()
@@ -289,6 +330,30 @@ const router = useRouter()
 
 // 从 package.json 读取版本号（通过 Vite define 注入）
 const appVersion = __APP_VERSION__
+
+// ── 数据目录（v2.8.0） ──
+async function handleChangeDir() {
+  const res = await changeDataDir()
+  if (res.ok) {
+    ElMessage.success('数据目录已更新，背景与备份已迁移')
+  } else if (res.message) {
+    ElMessage.error(res.message)
+  }
+}
+
+function handleOpenDir() {
+  openDataDir()
+}
+
+async function handleSyncNow() {
+  const ok = await syncOnce()
+  ElMessage[ok ? 'success' : 'error'](ok ? '数据已同步到数据目录' : '同步失败，请检查目录权限')
+}
+
+function onToggleSync(on: boolean | string | number) {
+  setSyncEnabled(Boolean(on))
+  ElMessage.success(Boolean(on) ? '已开启自动备份' : '已关闭自动备份')
+}
 
 // 外观主题
 const currentThemeMode = ref<ThemeMode>(themeMode.value)
@@ -667,6 +732,7 @@ function handleDeleteAccount() {
 
 onMounted(() => {
   loadAutoLaunch()
+  loadDataDir()
   // 番茄钟设置已通过 store 初始化，无需额外加载
 })
 </script>
@@ -841,5 +907,42 @@ onMounted(() => {
   background: rgba(245, 158, 11, 0.12);
   border-radius: 10px;
   margin: 0;
+}
+
+/* 数据目录（v2.8.0） */
+.datadir-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.datadir-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--mo-surface);
+  border-radius: 10px;
+}
+
+.datadir-label {
+  font-size: 14px;
+  color: var(--mo-text-3);
+  min-width: 70px;
+  flex-shrink: 0;
+}
+
+.datadir-value {
+  font-size: 13px;
+  color: var(--mo-text-1);
+  font-family: Consolas, monospace;
+  word-break: break-all;
+}
+
+.datadir-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 </style>

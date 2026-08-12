@@ -493,8 +493,8 @@ function buildReportHtml(): string {
 
 <h2>一、学习总览</h2>
 <div class="cards">
-  <div class="card"><div class="v">${totalStudyHours}</div><div class="l">总学习时长（小时）</div></div>
-  <div class="card"><div class="v">${totalPomodoroCount}</div><div class="l">总番茄数</div></div>
+  <div class="card"><div class="v">${totalStudyHours.value}</div><div class="l">总学习时长（小时）</div></div>
+  <div class="card"><div class="v">${totalPomodoroCount.value}</div><div class="l">总番茄数</div></div>
   <div class="card"><div class="v">${store.flashcards.length}</div><div class="l">背诵卡片数</div></div>
 </div>
 

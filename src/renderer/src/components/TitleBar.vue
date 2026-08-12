@@ -28,48 +28,57 @@
             </template>
           </div>
         </template>
-        <!-- 天气详情面板 -->
+        <!-- 天气详情面板（v2.8.0：国内数据源 + 城市搜索） -->
         <div class="weather-panel">
           <div class="wp-head">
-            <span class="wp-city">{{ weather?.city || (weatherLocation || '自动定位') }}</span>
-            <span class="wp-time" v-if="weather?.obsTime">{{ weather.obsTime }}</span>
+            <span class="wp-city">{{ weatherCity.name }}</span>
+            <span class="wp-time" v-if="weather?.obsTime">{{ weather.obsTime }} 观测</span>
           </div>
           <div class="wp-main">
             <span class="wp-icon">{{ weather?.icon || '🌤️' }}</span>
             <div class="wp-main-right">
               <div class="wp-temp">{{ weather?.tempC ?? '--' }}°C <span class="wp-cond">{{ weather?.condition || '暂无数据' }}</span></div>
-              <div class="wp-sub">体感 {{ weather?.feelsLikeC ?? '--' }}°C</div>
+              <div class="wp-sub">
+                今日 {{ weather?.tempMin ?? '--' }}°C ~ {{ weather?.tempMax ?? '--' }}°C
+              </div>
             </div>
           </div>
           <div class="wp-grid">
             <div class="wp-cell"><span class="wp-cell-label">湿度</span><span class="wp-cell-value">{{ weather?.humidity ?? '--' }}%</span></div>
             <div class="wp-cell"><span class="wp-cell-label">风速</span><span class="wp-cell-value">{{ weather?.wind ?? '--' }}km/h</span></div>
-            <div class="wp-cell"><span class="wp-cell-label">体感温度</span><span class="wp-cell-value">{{ weather?.feelsLikeC ?? '--' }}°C</span></div>
+            <div class="wp-cell"><span class="wp-cell-label">今日气温</span><span class="wp-cell-value">{{ weather?.tempMin ?? '--' }}~{{ weather?.tempMax ?? '--' }}°C</span></div>
           </div>
           <div class="wp-loc">
-            <div class="wp-loc-title">选择地点</div>
+            <div class="wp-loc-title">选择城市（中国天气网）</div>
             <div class="wp-city-chips">
               <button
-                class="wp-chip"
-                :class="{ active: weatherLocation === '' }"
-                @click="selectCity('')"
-              >自动定位</button>
-              <button
                 v-for="c in CITY_PRESETS"
-                :key="c"
+                :key="c.id"
                 class="wp-chip"
-                :class="{ active: weatherLocation === c }"
+                :class="{ active: weatherCity.id === c.id }"
                 @click="selectCity(c)"
-              >{{ c }}</button>
+              >{{ c.name }}</button>
             </div>
             <div class="wp-custom">
               <input
                 v-model="customCity"
                 class="wp-input"
-                placeholder="输入城市名，如：洛阳"
+                placeholder="搜索城市，如：洛阳"
                 @keyup.enter="applyCustomCity"
               />
-              <button class="wp-search-btn" @click="applyCustomCity">查询</button>
+              <button class="wp-search-btn" @click="applyCustomCity">搜索</button>
+            </div>
+            <!-- 搜索结果候选（v2.8.0） -->
+            <div class="wp-results" v-if="searchResults.length > 0">
+              <div
+                v-for="r in searchResults"
+                :key="r.id"
+                class="wp-result-item"
+                @click="selectSearchResult(r)"
+              >
+                <span class="wp-result-name">{{ r.name }}</span>
+                <span class="wp-result-prov">{{ r.province }}</span>
+              </div>
             </div>
           </div>
           <div class="wp-actions">
@@ -204,11 +213,13 @@ import { isDark, toggleTheme, eyeCare, toggleEyeCare } from '@/utils/theme'
 import {
   weather,
   weatherLoading,
-  weatherLocation,
+  weatherCity,
   initWeather,
   fetchWeather,
-  setLocation,
-  CITY_PRESETS
+  setCity,
+  searchCities,
+  CITY_PRESETS,
+  type WeatherCity
 } from '@/utils/weather'
 import { ElMessage } from 'element-plus'
 import { Reading, Sunny, Moon, UserFilled, Folder, List } from '@element-plus/icons-vue'
@@ -253,23 +264,41 @@ const weatherTip = computed(() =>
     : '点击查看天气 / 选择地点'
 )
 
-// ── 天气：地点选择 / 刷新（v2.7.1） ──
+// ── 天气：城市选择 / 搜索 / 刷新（v2.8.0：国内数据源） ──
 const customCity = ref('')
+const searchResults = ref<{ id: string; name: string; province: string }[]>([])
 
-async function selectCity(city: string) {
-  await setLocation(city)
-  ElMessage.success(city ? `已切换到「${city}」的天气` : '已恢复自动定位')
+async function selectCity(city: WeatherCity) {
+  searchResults.value = []
+  await setCity(city)
+  ElMessage.success(`已切换到「${city.name}」的天气`)
 }
 
 async function applyCustomCity() {
-  const city = customCity.value.trim()
-  if (!city) {
+  const name = customCity.value.trim()
+  if (!name) {
     ElMessage.warning('请输入城市名')
     return
   }
-  await setLocation(city)
-  ElMessage.success(`已切换到「${city}」的天气`)
+  const results = await searchCities(name)
+  if (results.length === 0) {
+    ElMessage.warning('未找到该城市，请换个名称试试')
+    searchResults.value = []
+    return
+  }
+  if (results.length === 1) {
+    // 唯一结果直接选中
+    await selectSearchResult(results[0])
+    return
+  }
+  searchResults.value = results
+}
+
+async function selectSearchResult(r: { id: string; name: string; province: string }) {
+  searchResults.value = []
   customCity.value = ''
+  await setCity({ id: r.id, name: r.name })
+  ElMessage.success(`已切换到「${r.name}」的天气`)
 }
 
 async function refreshWeather() {
@@ -591,6 +620,40 @@ onMounted(() => {
 .wp-actions {
   margin-top: 10px;
   text-align: right;
+}
+
+/* 城市搜索结果（v2.8.0） */
+.wp-results {
+  margin-top: 8px;
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.wp-result-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.15s ease;
+}
+
+.wp-result-item:hover {
+  background: var(--mo-surface-hover);
+}
+
+.wp-result-name {
+  color: var(--mo-text-1);
+  font-weight: 500;
+}
+
+.wp-result-prov {
+  color: var(--mo-text-3);
+  font-size: 11px;
 }
 
 /* 迷你按钮（音乐/护眼/主题） */
