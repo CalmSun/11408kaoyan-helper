@@ -819,7 +819,7 @@ ipcMain.handle('open-external-url', async (_e, url: string) => {
   }
 })
 
-// ── v3.1.2：网易云音乐 API 重构（参考 ncm-api-rs 实现）──
+// ── v3.1.3：网易云音乐 API 重构（参考 NeteaseCloudMusicApi Enhanced 官方实现）──
 
 import * as crypto from 'crypto'
 
@@ -828,17 +828,35 @@ const NETEASE_IV = Buffer.from('0102030405060708', 'utf8')
 const NETEASE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB
 -----END PUBLIC KEY-----`
-// v3.1.2：base62 字符集（与 ncm-api-rs / NeteaseCloudMusicApi 一致）
+// base62 字符集（与官方一致）
 const NETEASE_BASE62 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-// v3.1.2：常见中国 IP 段，用于 X-Real-IP 伪装避免 460 cheating
-const CN_IPS = ['116.25.146.177', '114.114.114.114', '223.5.5.5', '180.101.49.11', '120.27.38.5']
+// 常见中国 IP 段（官方推荐 116.25.146.177），用于 X-Real-IP / X-Forwarded-For 伪装避免 460 cheating
+const CN_IPS = ['116.25.146.177', '183.232.231.172', '112.65.208.134', '120.196.165.24', '180.101.49.11']
 
 // v2.9.2：网易云 Cookie 持久化路径
 const NETEASE_COOKIE_PATH = path.join(app.getPath('userData'), 'netease-cookies.json')
-// v2.9.2：内存 Cookie 存储
+// 内存 Cookie 存储
 const neteaseCookies = new Map<string, string>()
 
-/** v2.9.2：从磁盘加载网易云 Cookie */
+/** v3.1.3：生成随机十六进制字符串 */
+function randomHex(bytes: number): string {
+  return crypto.randomBytes(bytes).toString('hex')
+}
+
+/** v3.1.3：生成设备 ID（与官方 WNMCID 格式一致） */
+function generateDeviceId(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz'
+  let randomString = ''
+  for (let i = 0; i < 6; i++) {
+    randomString += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  return `${randomString}.${Date.now().toString()}.01.0`
+}
+
+// 预生成设备 ID（只生成一次）
+const NETEASE_DEVICE_ID = generateDeviceId()
+
+/** 从磁盘加载网易云 Cookie */
 function loadNeteaseCookies(): void {
   try {
     if (fs.existsSync(NETEASE_COOKIE_PATH)) {
@@ -850,7 +868,7 @@ function loadNeteaseCookies(): void {
   } catch { /* ignore */ }
 }
 
-/** v2.9.2：保存网易云 Cookie 到磁盘 */
+/** 保存网易云 Cookie 到磁盘 */
 function saveNeteaseCookies(): void {
   try {
     const obj: Record<string, string> = {}
@@ -859,10 +877,9 @@ function saveNeteaseCookies(): void {
   } catch { /* ignore */ }
 }
 
-/** v2.9.2：解析 Set-Cookie 头并存储 */
+/** 解析 Set-Cookie 头并存储 */
 function parseSetCookies(setCookie: string | string[] | null): void {
   if (!setCookie) return
-  // v3.1.2：兼容 string 和 string[]（Node fetch 可能返回数组）
   const cookies = Array.isArray(setCookie) ? setCookie : [setCookie]
   for (const cookie of cookies) {
     const kv = cookie.split(';')[0].trim()
@@ -876,18 +893,50 @@ function parseSetCookies(setCookie: string | string[] | null): void {
   saveNeteaseCookies()
 }
 
-/** v3.1.2：构建 Cookie 头字符串（ncm-api-rs：只需 MUSIC_U 即可登录） */
-function buildCookieHeader(): string {
+/**
+ * v3.1.3：构建完整 Cookie 头（参考官方 processCookieObject）
+ * 关键：必须包含 _ntes_nuid, NMTID, WNMCID, WEVNSM, __remember_me, deviceId, osver 等
+ * 缺少这些 cookie 会触发 -460 风控
+ */
+function buildCookieHeader(uri = ''): string {
+  // 确保基础匿名 cookie 存在
+  if (!neteaseCookies.has('_ntes_nuid')) {
+    neteaseCookies.set('_ntes_nuid', randomHex(16))
+  }
+  if (!neteaseCookies.has('_ntes_nnid')) {
+    const nuid = neteaseCookies.get('_ntes_nuid') || randomHex(16)
+    neteaseCookies.set('_ntes_nnid', `${nuid},${Date.now().toString()}`)
+  }
+  if (!neteaseCookies.has('WNMCID')) {
+    neteaseCookies.set('WNMCID', NETEASE_DEVICE_ID)
+  }
+  if (!neteaseCookies.has('WEVNSM')) {
+    neteaseCookies.set('WEVNSM', '1.0.0')
+  }
+  if (!neteaseCookies.has('__remember_me')) {
+    neteaseCookies.set('__remember_me', 'true')
+  }
+  if (!neteaseCookies.has('ntes_kaola_ad')) {
+    neteaseCookies.set('ntes_kaola_ad', '1')
+  }
+  // 设备和系统信息（PC 客户端）
+  if (!neteaseCookies.has('os')) neteaseCookies.set('os', 'pc')
+  if (!neteaseCookies.has('appver')) neteaseCookies.set('appver', '3.1.17.204416')
+  if (!neteaseCookies.has('osver')) neteaseCookies.set('osver', 'Microsoft-Windows-10-Professional-build-19045-64bit')
+  if (!neteaseCookies.has('channel')) neteaseCookies.set('channel', 'netease')
+  if (!neteaseCookies.has('deviceId')) neteaseCookies.set('deviceId', NETEASE_DEVICE_ID)
+  // 非登录接口添加 NMTID（匿名访客 ID，每次请求随机生成）
+  const isLogin = uri.includes('login')
+  if (!isLogin) {
+    neteaseCookies.set('NMTID', randomHex(8))
+  }
+
   const parts: string[] = []
-  neteaseCookies.forEach((v, k) => parts.push(`${k}=${v}`))
-  // 基础匿名 Cookie（与网易云 PC 客户端一致）
-  if (!neteaseCookies.has('os')) parts.push('os=pc')
-  if (!neteaseCookies.has('appver')) parts.push('appver=2.0.3.131777')
-  if (!neteaseCookies.has('channel')) parts.push('channel=netease')
+  neteaseCookies.forEach((v, k) => parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`))
   return parts.join('; ')
 }
 
-/** v3.1.2：随机中国 IP 用于 X-Real-IP 伪装 */
+/** 随机中国 IP 用于 X-Real-IP / X-Forwarded-For 伪装 */
 function randomCNIP(): string {
   return CN_IPS[Math.floor(Math.random() * CN_IPS.length)]
 }
@@ -907,7 +956,7 @@ function neteaseRsaEncrypt(text: string): string {
   return crypto.publicEncrypt({ key: NETEASE_PUBLIC_KEY, padding: crypto.constants.RSA_NO_PADDING }, buf).toString('hex')
 }
 
-/** v3.1.2：生成 16 位 base62 随机密钥（修复原 hex 字符集导致的加密问题） */
+/** 生成 16 位 base62 随机密钥 */
 function generateSecretKey(): string {
   let key = ''
   for (let i = 0; i < 16; i++) {
@@ -924,7 +973,122 @@ function neteaseWeapi(data: Record<string, unknown>): { params: string; encSecKe
   return { params, encSecKey }
 }
 
-/** v3.1.2：通用 weapi 请求（参考 ncm-api-rs，添加 X-Real-IP 伪装，改进错误处理） */
+// v3.1.3：eapi 加密（客户端 API，风控更松）
+const EAPI_KEY = Buffer.from('e82ckenh8dichen8', 'utf8')
+const EAPI_SALT = '36cd479b6b5'
+
+/** v3.1.3：eapi AES-128-ECB 加密，输出 hex */
+function eapiAesEncrypt(text: string): string {
+  const cipher = crypto.createCipheriv('aes-128-ecb', EAPI_KEY, null)
+  cipher.setAutoPadding(true)
+  return Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]).toString('hex')
+}
+
+/**
+ * v3.1.3：eapi 加密（参考官方 NeteaseCloudMusicApi Enhanced）
+ * 流程：MD5(nobody+url+use+text+md5forencrypt) → 拼接 url-salt-text-salt-digest → AES-128-ECB
+ */
+function neteaseEapi(url: string, data: Record<string, unknown>): { params: string } {
+  const text = JSON.stringify(data)
+  const message = `nobody${url}use${text}md5forencrypt`
+  const digest = crypto.createHash('md5').update(message, 'utf8').digest('hex')
+  const raw = `${url}-${EAPI_SALT}-${text}-${EAPI_SALT}-${digest}`
+  return { params: eapiAesEncrypt(raw) }
+}
+
+/** v3.1.3：生成 requestId（与官方一致：时间戳_4位随机数） */
+function generateRequestId(): string {
+  return `${Date.now()}_${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`
+}
+
+/**
+ * v3.1.3：eapi 请求（模拟网易云移动端客户端，风控更松）
+ * 关键：Cookie 只包含客户端头信息，User-Agent 使用移动端客户端 UA
+ */
+async function neteaseEapiRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
+  const csrf = neteaseCookies.get('__csrf') || ''
+  const musicU = neteaseCookies.get('MUSIC_U') || ''
+  const musicA = neteaseCookies.get('MUSIC_A') || ''
+  // eapi 客户端头信息（放入 Cookie）
+  const clientHeader: Record<string, string> = {
+    osver: neteaseCookies.get('osver') || 'Microsoft-Windows-10-Professional-build-19045-64bit',
+    deviceId: neteaseCookies.get('deviceId') || NETEASE_DEVICE_ID,
+    os: neteaseCookies.get('os') || 'pc',
+    appver: neteaseCookies.get('appver') || '3.1.17.204416',
+    versioncode: '140',
+    mobilename: '',
+    buildver: Date.now().toString().substring(0, 10),
+    resolution: '1920x1080',
+    __csrf: csrf,
+    channel: neteaseCookies.get('channel') || 'netease',
+    requestId: generateRequestId(),
+  }
+  if (musicU) clientHeader['MUSIC_U'] = musicU
+  if (musicA) clientHeader['MUSIC_A'] = musicA
+  const cookieStr = Object.entries(clientHeader)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join('; ')
+
+  // eapi 数据中需要包含 header
+  const eapiData = { ...data, header: clientHeader }
+  const { params } = neteaseEapi(`/api${path}`, eapiData)
+  const body = new URLSearchParams({ params })
+  const url = `https://music.163.com/eapi${path}`
+  const ip = randomCNIP()
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': 'https://music.163.com/',
+      'Origin': 'https://music.163.com',
+      'Accept': '*/*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      // eapi 使用移动端客户端 UA
+      'User-Agent': 'NeteaseMusic/9.1.65.240927161425(9001065);Dalvik/2.1.0 (Linux; U; Android 14; 23013RK75C Build/UKQ1.230804.001)',
+      'X-Real-IP': ip,
+      'X-Forwarded-For': ip,
+      'Cookie': cookieStr
+    },
+    body: body.toString()
+  })
+  const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get('set-cookie')
+  parseSetCookies(setCookie as string | string[] | null)
+  if (!res.ok) {
+    throw new Error(`NetEase eapi ${path} HTTP ${res.status}`)
+  }
+  const json = await res.json() as { code?: number; message?: string }
+  if (json.code && json.code !== 200) {
+    throw new Error(`NetEase eapi ${path} code=${json.code}${json.message ? ': ' + json.message : ''}`)
+  }
+  return json
+}
+
+/**
+ * v3.1.3：智能请求——优先 eapi（客户端，风控松），失败降级 weapi（网页版）
+ */
+async function neteaseSmartRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
+  try {
+    return await neteaseEapiRequest(path, data)
+  } catch (eapiErr) {
+    // eapi 失败时降级到 weapi
+    try {
+      return await neteaseRequest(path, data)
+    } catch {
+      // 两个都失败，抛出 eapi 的错误（更可能是风控问题）
+      throw eapiErr
+    }
+  }
+}
+
+/**
+ * v3.1.3：通用 weapi 请求（参考官方实现）
+ * 关键改进：
+ * 1. 同时设置 X-Real-IP 和 X-Forwarded-For
+ * 2. 完整的浏览器请求头（Accept, Accept-Language 等）
+ * 3. Edge 浏览器 User-Agent
+ * 4. 完整 cookie（含 _ntes_nuid, NMTID, WNMCID 等）
+ */
 async function neteaseRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
   const csrf = neteaseCookies.get('__csrf') || ''
   const { params, encSecKey } = neteaseWeapi({ ...data, csrf_token: csrf })
@@ -932,44 +1096,50 @@ async function neteaseRequest(path: string, data: Record<string, unknown>): Prom
   const url = csrf
     ? `https://music.163.com/weapi${path}?csrf_token=${csrf}`
     : `https://music.163.com/weapi${path}`
+  const ip = randomCNIP()
   const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Referer': 'https://music.163.com/',
       'Origin': 'https://music.163.com',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'X-Real-IP': randomCNIP(),
-      'Cookie': buildCookieHeader()
+      'Accept': '*/*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+      'X-Real-IP': ip,
+      'X-Forwarded-For': ip,
+      'Cookie': buildCookieHeader(path)
     },
     body: body.toString()
   })
-  // v3.1.2：兼容 Node fetch 返回的 set-cookie 数组
   const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get('set-cookie')
   parseSetCookies(setCookie as string | string[] | null)
   if (!res.ok) {
     throw new Error(`NetEase API ${path} HTTP ${res.status}`)
   }
   const json = await res.json() as { code?: number; message?: string }
-  // v3.1.2：检测业务错误码（301=未登录, 460=风控, 503=频繁）
   if (json.code && json.code !== 200) {
     throw new Error(`NetEase API ${path} code=${json.code}${json.message ? ': ' + json.message : ''}`)
   }
   return json
 }
 
-/** v2.9.2：普通 API 请求（不加密，用于二维码登录等接口） */
+/** v3.1.3：普通 API 请求（不加密，用于二维码登录等接口） */
 async function neteasePlainRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
   const body = new URLSearchParams(data as Record<string, string>)
+  const ip = randomCNIP()
   const res = await fetch(`https://music.163.com/api${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Referer': 'https://music.163.com/',
       'Origin': 'https://music.163.com',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'X-Real-IP': randomCNIP(),
-      'Cookie': buildCookieHeader()
+      'Accept': '*/*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+      'X-Real-IP': ip,
+      'X-Forwarded-For': ip,
+      'Cookie': buildCookieHeader(path)
     },
     body: body.toString()
   })
@@ -981,11 +1151,32 @@ async function neteasePlainRequest(path: string, data: Record<string, unknown>):
   return res.json()
 }
 
-// ── v2.9.0：搜索 / 播放地址 / 歌词 ──
+/** v3.1.3：网易云 GET 请求辅助 */
+async function neteaseGetRequest(path: string, query: Record<string, string> = {}): Promise<unknown> {
+  const params = new URLSearchParams({ ...query, timestamp: Date.now().toString() })
+  const ip = randomCNIP()
+  const res = await fetch(`https://music.163.com/api${path}?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      'Referer': 'https://music.163.com/',
+      'Origin': 'https://music.163.com',
+      'Accept': '*/*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0',
+      'X-Real-IP': ip,
+      'X-Forwarded-For': ip,
+      'Cookie': buildCookieHeader(path)
+    }
+  })
+  const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get('set-cookie')
+  parseSetCookies(setCookie as string | string[] | null)
+  if (!res.ok) throw new Error(`NetEase GET ${path} HTTP ${res.status}`)
+  return res.json()
+}
 
 ipcMain.handle('netease:search', async (_e, keyword: string, limit = 30, offset = 0) => {
   try {
-    const data = await neteaseRequest('/cloudsearch/get/web', {
+    const data = await neteaseSmartRequest('/cloudsearch/get/web', {
       s: keyword,
       type: 1,
       limit,
@@ -1010,7 +1201,7 @@ ipcMain.handle('netease:song-url', async (_e, ids: number[]) => {
     // v3.1.2：优先使用新版 /song/url/v1 接口，失败时降级到旧版
     let data: { data?: Array<{ id: number; url: string | null; br?: number }> }
     try {
-      data = await neteaseRequest('/song/url/v1', {
+      data = await neteaseSmartRequest('/song/url/v1', {
         id: ids.join(','),
         level: 'standard'
       }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
@@ -1019,7 +1210,7 @@ ipcMain.handle('netease:song-url', async (_e, ids: number[]) => {
         throw new Error('v1 returned empty urls')
       }
     } catch {
-      data = await neteaseRequest('/song/enhance/player/url', {
+      data = await neteaseSmartRequest('/song/enhance/player/url', {
         ids,
         br: 320000
       }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
@@ -1033,7 +1224,7 @@ ipcMain.handle('netease:song-url', async (_e, ids: number[]) => {
 
 ipcMain.handle('netease:lyric', async (_e, id: number) => {
   try {
-    const data = await neteaseRequest('/song/lyric', {
+    const data = await neteaseSmartRequest('/song/lyric', {
       id,
       lv: -1,
       kv: -1,
@@ -1046,25 +1237,6 @@ ipcMain.handle('netease:lyric', async (_e, id: number) => {
 })
 
 // ── v2.9.2：二维码登录 ──
-
-/** v3.1.2：网易云 GET 请求辅助（添加 X-Real-IP，改进 set-cookie 处理） */
-async function neteaseGetRequest(path: string, query: Record<string, string> = {}): Promise<unknown> {
-  const params = new URLSearchParams({ ...query, timestamp: Date.now().toString() })
-  const res = await fetch(`https://music.163.com/api${path}?${params.toString()}`, {
-    method: 'GET',
-    headers: {
-      'Referer': 'https://music.163.com/',
-      'Origin': 'https://music.163.com',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'X-Real-IP': randomCNIP(),
-      'Cookie': buildCookieHeader()
-    }
-  })
-  const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get('set-cookie')
-  parseSetCookies(setCookie as string | string[] | null)
-  if (!res.ok) throw new Error(`NetEase GET ${path} HTTP ${res.status}`)
-  return res.json()
-}
 
 /** v3.0.0：获取二维码登录 key（新版 /api/login/qr/key） */
 ipcMain.handle('netease:qr-key', async () => {
@@ -1103,7 +1275,7 @@ ipcMain.handle('netease:qr-check', async (_e, key: string) => {
 /** 获取当前登录状态 / 用户信息 */
 ipcMain.handle('netease:login-status', async () => {
   try {
-    const data = await neteaseRequest('/w/nuser/account/get', {}) as {
+    const data = await neteaseSmartRequest('/w/nuser/account/get', {}) as {
       code?: number
       profile?: { userId?: number; nickname?: string; avatarUrl?: string; signature?: string; level?: number }
       account?: { id?: number; userName?: string }
@@ -1130,7 +1302,7 @@ ipcMain.handle('netease:login-status', async () => {
 /** 退出登录 */
 ipcMain.handle('netease:logout', async () => {
   try {
-    await neteaseRequest('/logout', {})
+    await neteaseSmartRequest('/logout', {})
   } catch { /* ignore */ }
   neteaseCookies.clear()
   saveNeteaseCookies()
@@ -1154,7 +1326,7 @@ ipcMain.handle('netease:set-cookie', async (_e, cookieStr: string) => {
     })
     saveNeteaseCookies()
     // 验证登录状态
-    const data = await neteaseRequest('/w/nuser/account/get', {}) as {
+    const data = await neteaseSmartRequest('/w/nuser/account/get', {}) as {
       code?: number
       profile?: { userId?: number; nickname?: string; avatarUrl?: string }
     }
@@ -1180,7 +1352,7 @@ ipcMain.handle('netease:set-cookie', async (_e, cookieStr: string) => {
 /** 获取用户歌单列表 */
 ipcMain.handle('netease:user-playlist', async (_e, uid: number, limit = 30, offset = 0) => {
   try {
-    const data = await neteaseRequest('/user/playlist', {
+    const data = await neteaseSmartRequest('/user/playlist', {
       uid,
       limit,
       offset,
@@ -1209,7 +1381,7 @@ ipcMain.handle('netease:user-playlist', async (_e, uid: number, limit = 30, offs
 /** 获取歌单详情（含歌曲列表） */
 ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
   try {
-    const data = await neteaseRequest('/v6/playlist/detail', {
+    const data = await neteaseSmartRequest('/v6/playlist/detail', {
       id,
       n: 100000,
       s: 8

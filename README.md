@@ -208,6 +208,10 @@ kaoyan-helper/
 
 ## 📝 更新日志
 
+### v3.1.3
+- **网易云音乐 -460 风控彻底修复**：参考 NeteaseCloudMusicApi Enhanced 官方实现深度重构网易云 API 层，新增 eapi（客户端 API）加密支持，所有接口优先走 eapi（模拟官方客户端，风控更松），失败自动降级 weapi；补全完整 Cookie 体系（_ntes_nuid、NMTID、WNMCID、WEVNSM、__remember_me、deviceId、osver 等），同时设置 X-Real-IP 和 X-Forwarded-For 双 IP 头，User-Agent 升级为 Edge 124 / Android 客户端，彻底解决 code=-460 网络环境风险报错
+- **版本号升级至 3.1.3**
+
 ### v3.1.2
 - **网易云音乐 API 全面重构**：参考 SPlayer-Dev/ncm-api-rs 项目重写网易云登录、搜索、歌单功能，修复 weapi 加密 secretKey 仅生成 hex 字符的 bug（改用 base62 字符集），新增 X-Real-IP 国内 IP 伪装避免 460 风控，补全 Origin 请求头，改进 Set-Cookie 解析兼容数组格式，Cookie 登录稳定性大幅提升
 - **歌曲播放进度调节修复**：音乐页面进度条改用 `:model-value` + `@input` 手动控制，避免 `v-model` 与拖动事件冲突，进度条拖动实时生效
