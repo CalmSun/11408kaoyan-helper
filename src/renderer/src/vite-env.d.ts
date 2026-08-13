@@ -38,6 +38,46 @@ interface ElectronAPI {
     canceled?: boolean
     files?: { name: string; url: string }[]
   }>
+  // 读取本地歌词文件（v2.8.2）
+  readLyric: (trackName: string) => Promise<{ success: boolean; content: string }>
+  // v2.9.0：资料文件夹
+  pickMaterialsFolder: () => Promise<{
+    success: boolean
+    canceled?: boolean
+    files?: { name: string; url: string; ext: string; size: number }[]
+    folder?: string
+  }>
+  restoreMaterialsFolder: () => Promise<{
+    success: boolean
+    canceled?: boolean
+    files?: { name: string; url: string; ext: string; size: number }[]
+    folder?: string
+  }>
+  listMaterialsFiles: () => Promise<{
+    success: boolean
+    files?: { name: string; url: string; ext: string; size: number }[]
+    folder?: string
+  }>
+  // v2.9.0：默认浏览器打开外部链接
+  openExternalUrl: (url: string) => Promise<{ success: boolean; message?: string }>
+  // v2.9.0：网易云音乐 API
+  neteaseSearch: (keyword: string, limit?: number, offset?: number) => Promise<{
+    success: boolean
+    songs?: { id: number; name: string; artist: string; album: string; cover: string }[]
+    total?: number
+    message?: string
+  }>
+  neteaseSongUrl: (ids: number[]) => Promise<{
+    success: boolean
+    urls?: { id: number; url: string | null; br: number }[]
+    message?: string
+  }>
+  neteaseLyric: (id: number) => Promise<{
+    success: boolean
+    lyric?: string
+    tlyric?: string
+    message?: string
+  }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

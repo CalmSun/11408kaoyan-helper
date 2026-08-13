@@ -151,6 +151,15 @@
                   <svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 3 H3.5 L8.5 9 H10.2 M1 9 H3.5 L8.5 3 H10.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9.2 1.8 L11.4 3 L9.2 4.2 Z" fill="currentColor"/><path d="M9.2 7.8 L11.4 9 L9.2 10.2 Z" fill="currentColor"/></svg>
                 </button>
               </div>
+              <!-- v2.9.0：歌词显示 -->
+              <div class="mp-lyrics" v-if="music.lyricLines.length > 0">
+                <div class="mp-lyric-line" :class="{ active: i === music.currentLyricIndex }"
+                  v-for="(line, i) in visibleLyrics" :key="i">
+                  {{ line.text }}
+                </div>
+                <div v-if="visibleLyrics.length === 0" class="mp-lyric-empty">暂无歌词</div>
+              </div>
+              <div class="mp-lyrics mp-lyric-empty" v-else>暂无歌词（需同目录 .lrc 文件）</div>
               <div class="mp-list">
                 <div
                   v-for="(track, i) in music.playlist"
@@ -177,6 +186,21 @@
           <svg width="12" height="12" viewBox="0 0 12 12"><path d="M9 1 L9 8.2 A2.3 2.3 0 1 1 8 6.3 L8 3 L4 4 L4 9.2 A2.3 2.3 0 1 1 3 7.3 L3 2.5 Z" fill="currentColor"/></svg>
         </button>
       </div>
+
+      <!-- v2.9.0：学习资料入口 -->
+      <button class="mini-btn materials-btn" v-if="!transparent" title="学习资料（PDF/视频）" @click="goMaterials">
+        <el-icon :size="14"><Folder /></el-icon>
+      </button>
+
+      <!-- v2.9.0：默认浏览器入口 -->
+      <button class="mini-btn browser-btn" v-if="!transparent" title="打开浏览器查资料" @click="openBrowser">
+        <el-icon :size="14"><Search /></el-icon>
+      </button>
+
+      <!-- v2.9.0：音乐播放页面入口 -->
+      <button class="mini-btn music-page-btn" v-if="!transparent" title="音乐播放页面" @click="goMusic">
+        <el-icon :size="14"><Headset /></el-icon>
+      </button>
 
       <!-- 护眼模式（v2.7.0） -->
       <button class="mini-btn eyecare-btn" :class="{ on: eyeCareOn }" :title="eyeCareOn ? '关闭护眼模式' : '开启护眼模式'" @click="toggleEye">
@@ -230,7 +254,7 @@ import {
   type WeatherCity
 } from '@/utils/weather'
 import { ElMessage } from 'element-plus'
-import { Reading, Sunny, Moon, UserFilled, Folder, List } from '@element-plus/icons-vue'
+import { Reading, Sunny, Moon, UserFilled, Folder, List, Search, Headset } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 interface Props {
@@ -260,11 +284,24 @@ const pageTitleMap: Record<string, string> = {
   '/plan': '每日计划',
   '/flashcards': '背诵卡片',
   '/dictionary': '单词词典',
+  '/music': '音乐播放',
+  '/materials': '学习资料',
   '/settings': '设置'
 }
 
 const pageTitle = computed(() => pageTitleMap[route.path] ?? '')
 const todayStr = computed(() => dayjs().format('YYYY年MM月DD日 ddd'))
+
+// v2.9.0：歌词显示窗口（当前行上下各2行）
+const visibleLyrics = computed(() => {
+  const lines = music.lyricLines
+  if (!lines || lines.length === 0) return []
+  const idx = music.currentLyricIndex
+  if (idx < 0) return lines.slice(0, 5)
+  const start = Math.max(0, idx - 2)
+  const end = Math.min(lines.length, idx + 3)
+  return lines.slice(start, end)
+})
 
 const weatherTip = computed(() =>
   weather.value
@@ -361,6 +398,29 @@ function toggleEye() {
 
 function goToSettings() {
   router.push('/settings')
+}
+
+// v2.9.0：跳转到学习资料页面
+function goMaterials() {
+  router.push('/materials')
+}
+
+// v2.9.0：跳转到音乐播放页面
+function goMusic() {
+  router.push('/music')
+}
+
+// v2.9.0：打开默认浏览器（默认百度搜索，便于实时查资料）
+async function openBrowser() {
+  const api = window.electronAPI
+  if (api?.openExternalUrl) {
+    const res = await api.openExternalUrl('https://www.baidu.com')
+    if (!res.success) {
+      ElMessage.error('打开浏览器失败：' + (res.message || '未知错误'))
+    }
+  } else {
+    window.open('https://www.baidu.com', '_blank')
+  }
 }
 
 function onVolumeInput(e: Event) {
@@ -768,11 +828,41 @@ onMounted(() => {
   color: var(--mo-primary);
 }
 
-/* 随机播放激活态（v2.8.1） */
 .mp-ctrl-btn.mp-ctrl-on {
   background: var(--mo-primary);
   border-color: var(--mo-primary);
   color: #fff;
+}
+
+/* v2.9.0：歌词显示 */
+.mp-lyrics {
+  max-height: 80px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--mo-surface);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.mp-lyric-line {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  line-height: 1.6;
+  transition: color 0.2s ease, font-size 0.2s ease;
+}
+
+.mp-lyric-line.active {
+  color: var(--mo-primary);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.mp-lyric-empty {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  text-align: center;
+  padding: 8px;
 }
 
 .mp-list {

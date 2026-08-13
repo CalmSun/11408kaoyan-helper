@@ -26,6 +26,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restoreMusicFolder: () => ipcRenderer.invoke('music:restore-folder'),
   // 读取本地歌词文件（v2.8.2）
   readLyric: (trackName: string) => ipcRenderer.invoke('music:read-lyric', trackName),
+  // v2.9.0：资料文件夹
+  pickMaterialsFolder: () => ipcRenderer.invoke('materials:pick-folder'),
+  restoreMaterialsFolder: () => ipcRenderer.invoke('materials:restore-folder'),
+  listMaterialsFiles: () => ipcRenderer.invoke('materials:list-files'),
+  // v2.9.0：默认浏览器打开外部链接
+  openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
+  // v2.9.0：网易云音乐 API
+  neteaseSearch: (keyword: string, limit?: number, offset?: number) => ipcRenderer.invoke('netease:search', keyword, limit, offset),
+  neteaseSongUrl: (ids: number[]) => ipcRenderer.invoke('netease:song-url', ids),
+  neteaseLyric: (id: number) => ipcRenderer.invoke('netease:lyric', id),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

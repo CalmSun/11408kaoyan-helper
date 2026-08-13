@@ -7,12 +7,22 @@ import {
   authenticateUser,
   migrateGuestData,
   getUserList,
-  deleteUserAccount
+  deleteUserAccount,
+  onStorageReady
 } from '@/utils/storage'
 
 export const useUserStore = defineStore('user', () => {
   const currentUsername = ref(getCurrentUsername())
   const userList = ref(getUserList())
+
+  // v2.9.0：存储层就绪后刷新当前用户（修复重启掉登录：
+  // store 初始化时 IndexedDB 可能尚未载入，getCurrentUsername 读到空值，
+  // 就绪后需同步刷新 ref，否则路由守卫虽放行但顶栏/用户态仍显示游客）
+  function refreshCurrentUser() {
+    currentUsername.value = getCurrentUsername()
+    userList.value = getUserList()
+  }
+  onStorageReady(refreshCurrentUser)
 
   const isLoggedIn = computed(() => !!currentUsername.value)
   const displayName = computed(() => currentUsername.value || '游客')
@@ -69,6 +79,7 @@ export const useUserStore = defineStore('user', () => {
     login,
     logout,
     deleteAccount,
-    refreshUserList
+    refreshUserList,
+    refreshCurrentUser
   }
 })

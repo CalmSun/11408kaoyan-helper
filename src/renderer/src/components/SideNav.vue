@@ -71,7 +71,9 @@ import {
   Cpu,
   Operation,
   DArrowLeft,
-  DArrowRight
+  DArrowRight,
+  Headset,
+  Folder
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -97,6 +99,8 @@ const allItems = [
   { path: '/examscores', title: '真题成绩', icon: DataAnalysis },
   { path: '/flashcards', title: '背诵卡片', icon: Collection },
   { path: '/dictionary', title: '单词词典', icon: Reading },
+  { path: '/music', title: '音乐播放', icon: Headset },
+  { path: '/materials', title: '学习资料', icon: Folder },
   { path: '/settings', title: '设置', icon: Setting }
 ]
 

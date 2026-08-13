@@ -4,18 +4,30 @@ import { getStorage, setStorage } from '@/utils/storage'
 
 interface MusicTrack {
   name: string
-  url: string // 本地文件的 object URL
+  url: string // 本地协议地址或在线播放URL
+  source?: 'local' | 'online' // v2.9.0：曲目来源
+  id?: number // v2.9.0：网易云歌曲ID
+  artist?: string // v2.9.0：艺术家
+  album?: string // v2.9.0：专辑
+  cover?: string // v2.9.0：封面图URL
+}
+
+/** v2.9.0：网易云搜索结果 */
+interface NetEaseSong {
+  id: number
+  name: string
+  artist: string
+  album: string
+  cover: string
 }
 
 /** 可识别的音频扩展名 */
 const AUDIO_EXTS = ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'wma', 'opus']
 
 /**
- * 全局本地音乐播放器（v2.7.0 引入，v2.7.1 增强）
- * - 支持多选本地音频文件（mp3/flac/wav/ogg/m4a 等）构建播放列表
- * - v2.7.1：支持选择音乐文件夹（Electron 环境递归读取目录内全部音频）
- * - 播放/暂停/上一首/下一首/指定播放/音量/自动续播/移除曲目
- * - 仅播放本地文件，不联网、不上传
+ * 全局音乐播放器（v2.7.0 引入，v2.9.0 增强在线播放）
+ * - 本地文件/文件夹播放
+ * - v2.9.0：网易云在线搜索与播放、在线歌词
  */
 export const useMusicStore = defineStore('music', () => {
   const audio = new Audio()
@@ -25,12 +37,20 @@ export const useMusicStore = defineStore('music', () => {
   const currentIndex = ref(0)
   const isPlaying = ref(false)
   const volume = ref(0.7)
-  /** 随机播放模式（v2.8.1：开启后切歌/自动续播随机选曲，避免立即重复） */
   const shuffle = ref<boolean>(getStorage('musicShuffle', false))
 
   // v2.8.2：歌词相关状态
   const lyricLines = ref<{ time: number; text: string }[]>([])
   const currentLyricIndex = ref(-1)
+
+  // v2.9.0：播放进度（供音乐页面显示）
+  const currentTime = ref(0)
+  const duration = ref(0)
+
+  // v2.9.0：网易云搜索结果
+  const searchResults = ref<NetEaseSong[]>([])
+  const searchLoading = ref(false)
+  const searchKeyword = ref('')
 
   const currentTrack = computed<MusicTrack | null>(
     () => playlist.value[currentIndex.value] ?? null
@@ -52,11 +72,10 @@ export const useMusicStore = defineStore('music', () => {
     } catch {
       return 0
     }
-    setPlaylist(files.map(f => ({ name: f.name, url: f.url })))
+    setPlaylist(files.map(f => ({ name: f.name, url: f.url, source: 'local' as const })))
     return files.length
   }
 
-  // 应用启动时尝试恢复
   if (typeof window !== 'undefined' && window.electronAPI?.restoreMusicFolder) {
     restoreMusicFolder()
   }
@@ -70,6 +89,15 @@ export const useMusicStore = defineStore('music', () => {
     }
   })
 
+  // v2.9.0：监听播放进度
+  audio.addEventListener('timeupdate', () => {
+    currentTime.value = audio.currentTime
+    updateLyricIndex()
+  })
+  audio.addEventListener('loadedmetadata', () => {
+    duration.value = audio.duration || 0
+  })
+
   function applyVolume() {
     audio.volume = volume.value
   }
@@ -79,18 +107,23 @@ export const useMusicStore = defineStore('music', () => {
     applyVolume()
   }
 
-  /** 判断文件名是否为音频 */
+  /** v2.9.0：跳转到指定播放时间 */
+  function seek(time: number) {
+    if (isFinite(time) && time >= 0) {
+      audio.currentTime = time
+      currentTime.value = time
+    }
+  }
+
   function isAudioName(name: string): boolean {
     const ext = name.split('.').pop()?.toLowerCase() || ''
     return AUDIO_EXTS.includes(ext)
   }
 
-  /** v2.8.2：解析 LRC 歌词文本 */
   function parseLyric(content: string): { time: number; text: string }[] {
     const lines: { time: number; text: string }[] = []
     const regex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/
     const rawLines = content.split('\n')
-    
     for (const line of rawLines) {
       const match = line.match(regex)
       if (match) {
@@ -104,11 +137,9 @@ export const useMusicStore = defineStore('music', () => {
         }
       }
     }
-    
     return lines.sort((a, b) => a.time - b.time)
   }
 
-  /** v2.8.2：加载当前歌曲的歌词 */
   async function loadLyric() {
     const track = currentTrack.value
     if (!track) {
@@ -116,14 +147,32 @@ export const useMusicStore = defineStore('music', () => {
       currentLyricIndex.value = -1
       return
     }
-    
+
+    // v2.9.0：在线曲目走网易云歌词接口
+    if (track.source === 'online' && track.id) {
+      const api = window.electronAPI
+      if (api?.neteaseLyric) {
+        try {
+          const res = await api.neteaseLyric(track.id)
+          if (res.success && res.lyric) {
+            lyricLines.value = parseLyric(res.lyric)
+            currentLyricIndex.value = -1
+            return
+          }
+        } catch { /* fallthrough */ }
+      }
+      lyricLines.value = []
+      currentLyricIndex.value = -1
+      return
+    }
+
+    // 本地曲目：读取同目录 .lrc 文件
     const api = window.electronAPI
     if (!api?.readLyric) {
       lyricLines.value = []
       currentLyricIndex.value = -1
       return
     }
-    
     try {
       const res = await api.readLyric(track.name)
       if (res.success && res.content) {
@@ -138,35 +187,26 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
-  /** v2.8.2：根据当前播放时间更新歌词索引 */
   function updateLyricIndex() {
     if (lyricLines.value.length === 0) {
       currentLyricIndex.value = -1
       return
     }
-    
-    const currentTime = audio.currentTime
+    const t = audio.currentTime
     let idx = -1
-    
     for (let i = lyricLines.value.length - 1; i >= 0; i--) {
-      if (currentTime >= lyricLines.value[i].time) {
+      if (t >= lyricLines.value[i].time) {
         idx = i
         break
       }
     }
-    
     currentLyricIndex.value = idx
   }
 
-  // 监听播放时间更新歌词
-  audio.addEventListener('timeupdate', updateLyricIndex)
-
-  /** 释放 blob 地址（kaoyan-music:// 协议地址无需释放，v2.8.0） */
   function revokeIfBlob(url: string) {
     if (url.startsWith('blob:')) URL.revokeObjectURL(url)
   }
 
-  /** 替换播放列表（释放旧 object URL） */
   function setPlaylist(tracks: MusicTrack[]) {
     playlist.value.forEach(t => revokeIfBlob(t.url))
     playlist.value = tracks
@@ -174,7 +214,6 @@ export const useMusicStore = defineStore('music', () => {
     loadCurrent()
   }
 
-  /** 打开本地文件选择器（多选音频） */
   function pickFiles(): Promise<number> {
     return new Promise((resolve) => {
       const input = document.createElement('input')
@@ -187,18 +226,13 @@ export const useMusicStore = defineStore('music', () => {
           resolve(0)
           return
         }
-        setPlaylist(files.map(f => ({ name: f.name, url: URL.createObjectURL(f) })))
+        setPlaylist(files.map(f => ({ name: f.name, url: URL.createObjectURL(f), source: 'local' as const })))
         resolve(files.length)
       }
       input.click()
     })
   }
 
-  /**
-   * 选择音乐文件夹并加载其中全部音频（v2.7.1 引入，v2.8.0 优化）
-   * v2.8.0：主进程仅返回文件名清单与播放协议地址，播放时由协议按需流式读取，
-   * 大文件夹不再把全部文件内容读入内存（此前会占用大量存储/内存）
-   */
   async function pickFolder(): Promise<number> {
     const api = window.electronAPI
     if (!api?.pickMusicFolder) return 0
@@ -211,7 +245,7 @@ export const useMusicStore = defineStore('music', () => {
     } catch {
       return 0
     }
-    setPlaylist(files.map(f => ({ name: f.name, url: f.url })))
+    setPlaylist(files.map(f => ({ name: f.name, url: f.url, source: 'local' as const })))
     return files.length
   }
 
@@ -219,6 +253,7 @@ export const useMusicStore = defineStore('music', () => {
     const track = currentTrack.value
     if (!track) return
     audio.src = track.url
+    loadLyric()
   }
 
   async function play() {
@@ -242,7 +277,6 @@ export const useMusicStore = defineStore('music', () => {
     else play()
   }
 
-  /** 跳转到指定曲目播放（v2.7.1：播放列表选择） */
   function playIndex(index: number) {
     if (index < 0 || index >= playlist.value.length) return
     currentIndex.value = index
@@ -250,12 +284,10 @@ export const useMusicStore = defineStore('music', () => {
     play()
   }
 
-  /** 随机挑选一首不同于当前曲目的索引（v2.8.1） */
   function randomIndex(): number {
     const len = playlist.value.length
     if (len <= 1) return currentIndex.value
     let idx = currentIndex.value
-    // 避免连续重复同一首
     while (idx === currentIndex.value) {
       idx = Math.floor(Math.random() * len)
     }
@@ -284,13 +316,11 @@ export const useMusicStore = defineStore('music', () => {
     if (isPlaying.value) play()
   }
 
-  /** 切换随机播放模式（v2.8.1） */
   function toggleShuffle() {
     shuffle.value = !shuffle.value
     setStorage('musicShuffle', shuffle.value)
   }
 
-  /** 移除指定曲目（v2.7.1） */
   function removeTrack(index: number) {
     if (index < 0 || index >= playlist.value.length) return
     revokeIfBlob(playlist.value[index].url)
@@ -311,13 +341,87 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
-  /** 清空播放列表 */
   function clearPlaylist() {
     pause()
     playlist.value.forEach(t => revokeIfBlob(t.url))
     playlist.value = []
     currentIndex.value = 0
     audio.removeAttribute('src')
+  }
+
+  // ── v2.9.0：网易云在线搜索与播放 ──
+
+  async function searchOnline(keyword: string, limit = 30): Promise<number> {
+    const api = window.electronAPI
+    if (!api?.neteaseSearch) return 0
+    searchLoading.value = true
+    searchKeyword.value = keyword
+    try {
+      const res = await api.neteaseSearch(keyword, limit, 0)
+      if (res.success && res.songs) {
+        searchResults.value = res.songs
+        return res.songs.length
+      }
+      searchResults.value = []
+      return 0
+    } catch {
+      searchResults.value = []
+      return 0
+    } finally {
+      searchLoading.value = false
+    }
+  }
+
+  /** 播放网易云在线歌曲：获取播放URL后加入播放列表并立即播放 */
+  async function playOnlineSong(song: NetEaseSong): Promise<boolean> {
+    const api = window.electronAPI
+    if (!api?.neteaseSongUrl) return false
+    try {
+      const res = await api.neteaseSongUrl([song.id])
+      const urlInfo = res.urls?.find(u => u.id === song.id)
+      if (!urlInfo?.url) return false
+      const track: MusicTrack = {
+        name: song.name,
+        url: urlInfo.url,
+        source: 'online',
+        id: song.id,
+        artist: song.artist,
+        album: song.album,
+        cover: song.cover
+      }
+      // 加入播放列表末尾并播放
+      const idx = playlist.value.length
+      playlist.value.push(track)
+      currentIndex.value = idx
+      loadCurrent()
+      play()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** 将网易云歌曲加入播放列表（不立即播放） */
+  async function addOnlineSong(song: NetEaseSong): Promise<boolean> {
+    const api = window.electronAPI
+    if (!api?.neteaseSongUrl) return false
+    try {
+      const res = await api.neteaseSongUrl([song.id])
+      const urlInfo = res.urls?.find(u => u.id === song.id)
+      if (!urlInfo?.url) return false
+      playlist.value.push({
+        name: song.name,
+        url: urlInfo.url,
+        source: 'online',
+        id: song.id,
+        artist: song.artist,
+        album: song.album,
+        cover: song.cover
+      })
+      return true
+    } catch {
+      return false
+    }
   }
 
   return {
@@ -328,6 +432,13 @@ export const useMusicStore = defineStore('music', () => {
     shuffle,
     currentTrack,
     hasMusic,
+    lyricLines,
+    currentLyricIndex,
+    currentTime,
+    duration,
+    searchResults,
+    searchLoading,
+    searchKeyword,
     isAudioName,
     pickFiles,
     pickFolder,
@@ -340,6 +451,11 @@ export const useMusicStore = defineStore('music', () => {
     prev,
     removeTrack,
     clearPlaylist,
-    setVolume
+    setVolume,
+    seek,
+    loadLyric,
+    searchOnline,
+    playOnlineSong,
+    addOnlineSong
   }
 })

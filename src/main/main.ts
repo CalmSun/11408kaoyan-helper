@@ -11,6 +11,8 @@ export const GITHUB_REPO_URL = 'https://github.com/CalmSun/11408kaoyan-helper'
 
 const DATA_DIR_CONFIG = path.join(app.getPath('userData'), 'data-dir.json')
 const MUSIC_FOLDER_CONFIG = path.join(app.getPath('userData'), 'music-folder.json')
+// v2.9.0：资料文件夹配置
+const MATERIALS_FOLDER_CONFIG = path.join(app.getPath('userData'), 'materials-folder.json')
 let cachedDataDir: string | null = null
 
 /** 默认数据目录：用户文档下的"11408kaoyan-helper"（文档通常不在 C 盘系统区，且用户可自行迁移） */
@@ -76,6 +78,12 @@ const MUSIC_MAX_FILES = 2000
 const musicWhitelist = new Map<string, string>() // token -> 绝对路径
 let musicRootDir = ''
 
+// v2.9.0：资料文件夹（PDF/MP4 等）
+const MATERIAL_EXTS = ['.pdf', '.mp4', '.mp3', '.txt', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.epub', '.mobi']
+const MATERIALS_MAX_FILES = 2000
+const materialsWhitelist = new Map<string, string>() // token -> 绝对路径
+let materialsRootDir = ''
+
 function newToken(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
@@ -104,14 +112,39 @@ function loadMusicFolder(): string | null {
   return null
 }
 
+// v2.9.0：保存/加载资料文件夹路径
+function saveMaterialsFolder(folderPath: string): void {
+  try {
+    fs.writeFileSync(MATERIALS_FOLDER_CONFIG, JSON.stringify({ folder: folderPath }, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('Failed to save materials folder:', err)
+  }
+}
+
+function loadMaterialsFolder(): string | null {
+  try {
+    if (fs.existsSync(MATERIALS_FOLDER_CONFIG)) {
+      const cfg = JSON.parse(fs.readFileSync(MATERIALS_FOLDER_CONFIG, 'utf-8')) as { folder?: string }
+      if (cfg.folder && typeof cfg.folder === 'string' && fs.existsSync(cfg.folder)) {
+        return cfg.folder
+      }
+    }
+  } catch {
+    // 配置损坏：返回 null
+  }
+  return null
+}
+
 // 注册私有协议：
 // - kaoyan-bg://    用户自定义背景图
 // - kaoyan-music:// 音乐文件夹内音频（白名单校验，v2.8.0 流式播放不占内存）
 // - kaoyan-data://  数据目录内备份文件（自动备份预览/读取）
+// - kaoyan-material:// 资料文件夹内文件（PDF/MP4 等，v2.9.0）
 protocol.registerSchemesAsPrivileged([
   { scheme: 'kaoyan-bg', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   { scheme: 'kaoyan-music', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
-  { scheme: 'kaoyan-data', privileges: { standard: true, secure: true, supportFetchAPI: true } }
+  { scheme: 'kaoyan-data', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  { scheme: 'kaoyan-material', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ])
 
 let mainWindow: BrowserWindow | null = null
@@ -278,6 +311,25 @@ if (!gotTheLock) {
           return new Response('not found', { status: 404 })
         }
         return net.fetch(pathToFileURL(file).toString())
+      } catch {
+        return new Response('bad request', { status: 400 })
+      }
+    })
+
+    // v2.9.0：资料协议：仅放行白名单 token 对应的资料文件（PDF/MP4 等流式读取）
+    protocol.handle('kaoyan-material', (request) => {
+      try {
+        const url = new URL(request.url)
+        const token = decodeURIComponent(url.host + url.pathname).replace(/^\/+/, '').split('/')[0]
+        const file = materialsWhitelist.get(token)
+        if (!file || !fs.existsSync(file)) {
+          return new Response('not found', { status: 404 })
+        }
+        const resolved = path.resolve(file)
+        if (!materialsRootDir || !resolved.startsWith(path.resolve(materialsRootDir) + path.sep)) {
+          return new Response('forbidden', { status: 403 })
+        }
+        return net.fetch(pathToFileURL(resolved).toString())
       } catch {
         return new Response('bad request', { status: 400 })
       }
@@ -504,6 +556,191 @@ ipcMain.handle('music:read-lyric', async (_e, trackName: string) => {
   }
 
   return { success: false, content: '' }
+})
+
+// ── v2.9.0：资料文件夹（PDF/MP4 等阅读观看） ──
+
+function scanMaterialsFolder(root: string): { name: string; url: string; ext: string; size: number }[] {
+  const names: { rel: string; full: string }[] = []
+  function walk(dir: string) {
+    if (names.length >= MATERIALS_MAX_FILES) return
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (names.length >= MATERIALS_MAX_FILES) return
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.isFile() && MATERIAL_EXTS.includes(path.extname(entry.name).toLowerCase())) {
+        try {
+          names.push({ rel: path.relative(root, full), full })
+        } catch {
+          // 跳过异常文件
+        }
+      }
+    }
+  }
+  walk(root)
+  names.sort((a, b) => a.rel.localeCompare(b.rel, 'zh-CN'))
+  return names.map(item => {
+    const token = newToken()
+    materialsWhitelist.set(token, item.full)
+    const stat = fs.statSync(item.full)
+    return { name: item.rel, url: `kaoyan-material://${token}`, ext: path.extname(item.rel).toLowerCase(), size: stat.size }
+  })
+}
+
+ipcMain.handle('materials:pick-folder', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory'],
+    title: '选择资料文件夹'
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, canceled: true, files: [] }
+  }
+  const root = result.filePaths[0]
+  materialsWhitelist.clear()
+  materialsRootDir = root
+  saveMaterialsFolder(root)
+  const files = scanMaterialsFolder(root)
+  return { success: true, canceled: false, files, folder: root }
+})
+
+ipcMain.handle('materials:restore-folder', async () => {
+  const folderPath = loadMaterialsFolder()
+  if (!folderPath || !fs.existsSync(folderPath)) {
+    return { success: false, canceled: false, files: [], folder: '' }
+  }
+  materialsWhitelist.clear()
+  materialsRootDir = folderPath
+  const files = scanMaterialsFolder(folderPath)
+  return { success: true, canceled: false, files, folder: folderPath }
+})
+
+ipcMain.handle('materials:list-files', async () => {
+  if (!materialsRootDir || !fs.existsSync(materialsRootDir)) {
+    return { success: false, files: [], folder: '' }
+  }
+  materialsWhitelist.clear()
+  const files = scanMaterialsFolder(materialsRootDir)
+  return { success: true, files, folder: materialsRootDir }
+})
+
+// ── v2.9.0：默认浏览器打开外部链接 ──
+
+ipcMain.handle('open-external-url', async (_e, url: string) => {
+  try {
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return { success: false, message: '无效的URL' }
+    }
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
+// ── v2.9.0：网易云音乐 API 代理（weapi 加密，主进程请求避免跨域） ──
+
+import * as crypto from 'crypto'
+
+const NETEASE_PRESET_KEY = Buffer.from('0CoJUm6Qyw8W8jud', 'utf8')
+const NETEASE_IV = Buffer.from('0102030405060708', 'utf8')
+const NETEASE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB
+-----END PUBLIC KEY-----`
+
+function neteaseAesEncrypt(text: string, key: Buffer): string {
+  const cipher = crypto.createCipheriv('aes-128-cbc', key, NETEASE_IV)
+  return Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]).toString('base64')
+}
+
+function neteaseRsaEncrypt(text: string): string {
+  const reversed = text.split('').reverse().join('')
+  const buf = Buffer.alloc(128, 0)
+  const textBuf = Buffer.from(reversed, 'utf8')
+  textBuf.copy(buf, 128 - textBuf.length)
+  return crypto.publicEncrypt({ key: NETEASE_PUBLIC_KEY, padding: crypto.constants.RSA_NO_PADDING }, buf).toString('hex')
+}
+
+function neteaseWeapi(data: Record<string, unknown>): { params: string; encSecKey: string } {
+  const text = JSON.stringify(data)
+  const secretKey = crypto.randomBytes(16).toString('hex').slice(0, 16)
+  const params = neteaseAesEncrypt(neteaseAesEncrypt(text, NETEASE_PRESET_KEY), Buffer.from(secretKey, 'utf8'))
+  const encSecKey = neteaseRsaEncrypt(secretKey)
+  return { params, encSecKey }
+}
+
+async function neteaseRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
+  const { params, encSecKey } = neteaseWeapi(data)
+  const body = new URLSearchParams({ params, encSecKey })
+  const res = await fetch(`https://music.163.com/weapi${path}?csrf_token=`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': 'https://music.163.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Cookie': 'os=pc; osver=Microsoft-Windows-10-Professional-build-10586-64bit; appver=2.0.3.131777; channel=netease; __remember_me=true'
+    },
+    body: body.toString()
+  })
+  if (!res.ok) {
+    throw new Error(`NetEase API ${path} HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+ipcMain.handle('netease:search', async (_e, keyword: string, limit = 30, offset = 0) => {
+  try {
+    const data = await neteaseRequest('/cloudsearch/get/web', {
+      s: keyword,
+      type: 1,
+      limit,
+      offset,
+      total: true
+    }) as { result?: { songs?: Array<{ id: number; name: string; ar?: Array<{ name: string }>; al?: { name: string; picUrl?: string } }>; songCount?: number } }
+    const songs = (data.result?.songs || []).map(s => ({
+      id: s.id,
+      name: s.name,
+      artist: (s.ar || []).map(a => a.name).join(' / '),
+      album: s.al?.name || '',
+      cover: s.al?.picUrl || ''
+    }))
+    return { success: true, songs, total: data.result?.songCount || 0 }
+  } catch (err) {
+    return { success: false, songs: [], total: 0, message: String(err) }
+  }
+})
+
+ipcMain.handle('netease:song-url', async (_e, ids: number[]) => {
+  try {
+    const data = await neteaseRequest('/song/enhance/player/url', {
+      ids,
+      br: 320000
+    }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
+    const urls = (data.data || []).map(d => ({ id: d.id, url: d.url, br: d.br || 0 }))
+    return { success: true, urls }
+  } catch (err) {
+    return { success: false, urls: [], message: String(err) }
+  }
+})
+
+ipcMain.handle('netease:lyric', async (_e, id: number) => {
+  try {
+    const data = await neteaseRequest('/song/lyric', {
+      id,
+      lv: -1,
+      kv: -1,
+      tv: -1
+    }) as { lrc?: { lyric?: string }; tlyric?: { lyric?: string } }
+    return { success: true, lyric: data.lrc?.lyric || '', tlyric: data.tlyric?.lyric || '' }
+  } catch (err) {
+    return { success: false, lyric: '', tlyric: '', message: String(err) }
+  }
 })
 
 // ── 国内天气服务（v2.8.0：中国天气网数据源，主进程代理避免跨域） ──

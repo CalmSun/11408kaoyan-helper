@@ -81,6 +81,20 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Dictionary.vue'),
     meta: { title: '单词词典', icon: 'Reading' }
   },
+  // v2.9.0：独立音乐播放页面
+  {
+    path: '/music',
+    name: 'Music',
+    component: () => import('@/views/Music.vue'),
+    meta: { title: '音乐播放', icon: 'Headset' }
+  },
+  // v2.9.0：学习资料页面
+  {
+    path: '/materials',
+    name: 'Materials',
+    component: () => import('@/views/Materials.vue'),
+    meta: { title: '学习资料', icon: 'Folder' }
+  },
   {
     path: '/settings',
     name: 'Settings',
