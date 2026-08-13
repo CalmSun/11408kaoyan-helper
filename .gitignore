@@ -6,3 +6,5 @@ release/
 *.zip 
 # RAW 源图（已转换为 src/renderer/src/assets/background.jpg，RAW 不入库）
 background.ARW
+# 网易云 API 参考文件（不入库）
+ref-api/

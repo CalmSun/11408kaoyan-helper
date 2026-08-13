@@ -1,25 +1,26 @@
 import { ref } from 'vue'
-import { exportAllData, getGlobalStorage, setGlobalStorage } from '@/utils/storage'
+import { exportAllData } from '@/utils/storage'
 
 /**
- * 数据目录管理（v2.8.0；v2.8.1 持久层迁移至 IndexedDB）
- * - 所有学习数据实时存于 IndexedDB（渲染进程本地），
- *   本模块负责将数据快照同步到用户自定义的数据目录（默认"文档\11408kaoyan-helper"，
- *   不在 C 盘应用数据区），形成第二份可迁移的备份。
- * - 自定义背景图、自动备份文件由主进程直接写入数据目录。
+ * 数据目录管理（v2.8.0；v2.8.1 持久层迁移至 IndexedDB；v2.9.2 关闭自动备份同步）
+ * - 所有学习数据实时存于 IndexedDB（渲染进程本地），实时记录和读取。
+ * - v2.9.2：关闭每 2 分钟自动备份同步机制，不再定时写入数据目录快照。
+ * - 保留数据目录自定义、手动立即同步、打开目录等功能。
  */
 
 const SYNC_KEY = 'kaoyan_data_sync_enabled'
-const SYNC_INTERVAL = 2 * 60 * 1000 // v2.8.2：每 2 分钟同步一次（由 30 分钟调整为更频繁备份）
+// v2.9.2：自动备份同步已关闭，保留常量供手动同步使用
+const SYNC_INTERVAL = 2 * 60 * 1000
 
 export const dataDir = ref('')
-export const syncEnabled = ref(loadSyncEnabled())
+export const syncEnabled = ref(false) // v2.9.2：强制关闭自动同步
 export const lastSyncAt = ref<string>('')
 
 let syncTimer: number | null = null
 
 function loadSyncEnabled(): boolean {
-  return getGlobalStorage<string>(SYNC_KEY, '0') === '1'
+  // v2.9.2：始终返回 false，自动备份同步机制已关闭
+  return false
 }
 
 /** 加载当前数据目录路径 */
@@ -80,25 +81,15 @@ export async function syncOnce(): Promise<boolean> {
   }
 }
 
-/** 设置自动同步开关并持久化 */
+/** 设置自动同步开关（v2.9.2：自动同步已关闭，此函数保留但不生效） */
 export function setSyncEnabled(on: boolean): void {
-  syncEnabled.value = on
-  setGlobalStorage(SYNC_KEY, on ? '1' : '0')
-  if (on) {
-    syncOnce()
-    startAutoSync()
-  } else {
-    stopAutoSync()
-  }
+  // v2.9.2：自动备份同步机制已关闭，忽略开关操作
+  syncEnabled.value = false
 }
 
-/** 启动定时同步（幂等） */
+/** 启动定时同步（v2.9.2：已禁用，空实现） */
 export function startAutoSync(): void {
-  if (!syncEnabled.value) return
-  if (syncTimer) return
-  syncTimer = window.setInterval(() => {
-    syncOnce()
-  }, SYNC_INTERVAL)
+  // v2.9.2：自动同步已关闭
 }
 
 /** 停止定时同步 */
@@ -109,13 +100,8 @@ export function stopAutoSync(): void {
   }
 }
 
-/** 初始化：加载目录、恢复开关、启动定时同步（在存储层就绪后由根组件调用） */
+/** 初始化：加载目录（v2.9.2：不再启动自动同步） */
 export function initDataSync(): void {
-  // 存储层已就绪：重新读取开关（模块加载期的初读可能早于存储初始化）
-  syncEnabled.value = loadSyncEnabled()
   loadDataDir()
-  if (syncEnabled.value) {
-    syncOnce()
-    startAutoSync()
-  }
+  // v2.9.2：关闭备份同步，数据通过 IndexedDB 实时记录和读取
 }

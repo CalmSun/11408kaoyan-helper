@@ -16,13 +16,13 @@
       </div>
     </div>
 
-    <div class="materials-body" v-if="files.length > 0">
-      <!-- 文件列表 -->
+    <div class="materials-body" v-if="flatFiles.length > 0">
+      <!-- 文件树 -->
       <div class="file-list glass-card">
         <h3 class="section-title">
           <el-icon><Document /></el-icon>
           文件列表
-          <span class="file-count">{{ files.length }} 个</span>
+          <span class="file-count">{{ totalFileCount }} 个文件</span>
         </h3>
         <div class="file-filter">
           <el-radio-group v-model="filterType" size="small">
@@ -32,22 +32,42 @@
             <el-radio-button value="other">其他</el-radio-button>
           </el-radio-group>
         </div>
-        <div class="file-items">
+        <div class="file-tree">
           <div
-            v-for="(file, i) in filteredFiles"
-            :key="i"
-            class="file-item"
-            :class="{ active: currentFile?.url === file.url }"
-            @click="openFile(file)"
+            v-for="node in displayNodes"
+            :key="node.path"
+            class="tree-node"
+            :style="{ paddingLeft: (node.level * 16 + 8) + 'px' }"
           >
-            <div class="file-icon" :class="getIconClass(file.ext)">
-              <el-icon v-if="file.ext === '.pdf'"><Document /></el-icon>
-              <el-icon v-else-if="isVideo(file.ext)"><VideoPlay /></el-icon>
-              <el-icon v-else><Files /></el-icon>
+            <!-- 文件夹 -->
+            <div
+              v-if="node.type === 'folder'"
+              class="tree-folder"
+              @click="toggleFolder(node.path)"
+            >
+              <el-icon class="folder-arrow" :class="{ expanded: expandedFolders.has(node.path) }">
+                <ArrowRight />
+              </el-icon>
+              <el-icon class="folder-icon"><FolderOpened /></el-icon>
+              <span class="folder-name">{{ node.name }}</span>
+              <span class="folder-count">{{ countFilesInFolder(node) }} 个</span>
             </div>
-            <div class="file-info">
-              <div class="file-name">{{ file.name }}</div>
-              <div class="file-size">{{ formatSize(file.size) }}</div>
+            <!-- 文件 -->
+            <div
+              v-else
+              class="file-item"
+              :class="{ active: currentFile?.url === node.url }"
+              @click="openFile(node)"
+            >
+              <div class="file-icon" :class="getIconClass(node.ext || '')">
+                <el-icon v-if="node.ext === '.pdf'"><Document /></el-icon>
+                <el-icon v-else-if="isVideo(node.ext || '')"><VideoPlay /></el-icon>
+                <el-icon v-else><Files /></el-icon>
+              </div>
+              <div class="file-info">
+                <div class="file-name" :title="node.name">{{ node.name }}</div>
+                <div class="file-size">{{ formatSize(node.size || 0) }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -66,13 +86,41 @@
             :src="currentFile.url"
             class="pdf-viewer"
           />
-          <!-- 视频播放 -->
-          <video
-            v-else-if="isVideo(currentFile.ext)"
-            :src="currentFile.url"
-            controls
-            class="video-player"
-          />
+          <!-- 视频播放（v2.9.2：自定义控制栏，进度可随意调节） -->
+          <div v-else-if="isVideo(currentFile.ext)" class="video-wrap">
+            <video
+              ref="videoEl"
+              :src="currentFile.url"
+              class="video-player"
+              @timeupdate="onVideoTimeUpdate"
+              @loadedmetadata="onVideoLoaded"
+              @ended="videoPlaying = false"
+            />
+            <!-- v2.9.2：自定义视频控制栏 -->
+            <div class="video-controls">
+              <button class="video-ctrl-btn" @click="toggleVideoPlay">
+                <el-icon>{{ videoPlaying ? '⏸' : '▶' }}</el-icon>
+              </button>
+              <span class="video-time">{{ formatTime(videoCurrent) }}</span>
+              <input
+                type="range"
+                class="video-progress"
+                :min="0"
+                :max="videoDuration || 100"
+                :step="0.1"
+                :value="videoCurrent"
+                @input="onVideoSeek"
+              />
+              <span class="video-time">{{ formatTime(videoDuration) }}</span>
+              <select class="video-speed" v-model="videoSpeed" @change="onVideoSpeedChange">
+                <option value="0.5">0.5x</option>
+                <option value="1">1.0x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2">2.0x</option>
+              </select>
+            </div>
+          </div>
           <!-- 图片预览 -->
           <img
             v-else-if="isImage(currentFile.ext)"
@@ -89,7 +137,7 @@
         <div v-else class="preview-empty">
           <el-icon :size="48"><Document /></el-icon>
           <p>从左侧选择文件进行预览</p>
-          <p class="hint">支持 PDF 阅读、MP4 视频播放</p>
+          <p class="hint">支持 PDF 阅读、MP4 视频播放（进度可拖动调节）</p>
         </div>
       </div>
     </div>
@@ -107,36 +155,118 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning
+  View, Warning, ArrowRight
 } from '@element-plus/icons-vue'
 
-interface MaterialFile {
-  name: string
-  url: string
-  ext: string
-  size: number
+// v2.9.2：使用全局 MaterialNode 类型（树形结构）
+interface DisplayNode extends MaterialNode {
+  level: number
 }
 
-const files = ref<MaterialFile[]>([])
+const fileTree = ref<MaterialNode[]>([])
 const materialsFolder = ref('')
-const currentFile = ref<MaterialFile | null>(null)
+const currentFile = ref<MaterialNode | null>(null)
 const filterType = ref('all')
+const expandedFolders = ref<Set<string>>(new Set())
+
+// v2.9.2：视频控制
+const videoEl = ref<HTMLVideoElement | null>(null)
+const videoCurrent = ref(0)
+const videoDuration = ref(0)
+const videoPlaying = ref(false)
+const videoSpeed = ref(1)
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 
-const filteredFiles = computed(() => {
-  if (filterType.value === 'all') return files.value
-  if (filterType.value === 'pdf') return files.value.filter(f => f.ext === '.pdf')
-  if (filterType.value === 'video') return files.value.filter(f => isVideo(f.ext))
-  return files.value.filter(f => f.ext !== '.pdf' && !isVideo(f.ext))
+// v2.9.2：将树扁平化为显示列表（考虑展开状态和筛选）
+const flatFiles = computed<DisplayNode[]>(() => {
+  const result: DisplayNode[] = []
+  function walk(nodes: MaterialNode[], level: number) {
+    for (const node of nodes) {
+      if (node.type === 'folder') {
+        // 筛选模式下：只显示包含匹配文件的文件夹
+        if (filterType.value !== 'all') {
+          const hasMatch = folderHasMatchingFiles(node)
+          if (!hasMatch) continue
+        }
+        result.push({ ...node, level })
+        if (expandedFolders.value.has(node.path) && node.children) {
+          walk(node.children, level + 1)
+        }
+      } else {
+        // 文件筛选
+        if (filterType.value === 'pdf' && node.ext !== '.pdf') continue
+        if (filterType.value === 'video' && !isVideo(node.ext || '')) continue
+        if (filterType.value === 'other' && (node.ext === '.pdf' || isVideo(node.ext || ''))) continue
+        result.push({ ...node, level })
+      }
+    }
+  }
+  walk(fileTree.value, 0)
+  return result
 })
+
+// 显示节点（筛选后）
+const displayNodes = computed(() => flatFiles.value)
+
+// 总文件数
+const totalFileCount = computed(() => {
+  let count = 0
+  function walk(nodes: MaterialNode[]) {
+    for (const n of nodes) {
+      if (n.type === 'folder' && n.children) walk(n.children)
+      else count++
+    }
+  }
+  walk(fileTree.value)
+  return count
+})
+
+function folderHasMatchingFiles(folder: MaterialNode): boolean {
+  if (!folder.children) return false
+  for (const child of folder.children) {
+    if (child.type === 'folder') {
+      if (folderHasMatchingFiles(child)) return true
+    } else {
+      if (filterType.value === 'pdf' && child.ext === '.pdf') return true
+      if (filterType.value === 'video' && isVideo(child.ext || '')) return true
+      if (filterType.value === 'other' && child.ext !== '.pdf' && !isVideo(child.ext || '')) return true
+    }
+  }
+  return false
+}
+
+function countFilesInFolder(folder: MaterialNode): number {
+  let count = 0
+  function walk(nodes: MaterialNode[]) {
+    for (const n of nodes) {
+      if (n.type === 'folder' && n.children) walk(n.children)
+      else count++
+    }
+  }
+  if (folder.children) walk(folder.children)
+  return count
+}
 
 onMounted(() => {
   restoreFolder()
+})
+
+// v2.9.2：切换文件时重置视频状态
+watch(() => currentFile.value, () => {
+  videoCurrent.value = 0
+  videoDuration.value = 0
+  videoPlaying.value = false
+  videoSpeed.value = 1
+  nextTick(() => {
+    if (videoEl.value) {
+      videoEl.value.playbackRate = 1
+    }
+  })
 })
 
 async function restoreFolder() {
@@ -145,10 +275,20 @@ async function restoreFolder() {
   try {
     const res = await api.restoreMaterialsFolder()
     if (res.success && res.files) {
-      files.value = res.files
+      fileTree.value = res.files
       materialsFolder.value = res.folder || ''
+      // 默认展开根目录下的第一层文件夹
+      expandFirstLevel()
     }
   } catch { /* ignore */ }
+}
+
+function expandFirstLevel() {
+  for (const node of fileTree.value) {
+    if (node.type === 'folder') {
+      expandedFolders.value.add(node.path)
+    }
+  }
 }
 
 async function pickFolder() {
@@ -157,9 +297,11 @@ async function pickFolder() {
   try {
     const res = await api.pickMaterialsFolder()
     if (res.success && res.files) {
-      files.value = res.files
+      fileTree.value = res.files
       materialsFolder.value = res.folder || ''
       currentFile.value = null
+      expandedFolders.value.clear()
+      expandFirstLevel()
     }
   } catch { /* ignore */ }
 }
@@ -170,12 +312,22 @@ async function refreshList() {
   try {
     const res = await api.listMaterialsFiles()
     if (res.success && res.files) {
-      files.value = res.files
+      fileTree.value = res.files
     }
   } catch { /* ignore */ }
 }
 
-function openFile(file: MaterialFile) {
+function toggleFolder(path: string) {
+  if (expandedFolders.value.has(path)) {
+    expandedFolders.value.delete(path)
+  } else {
+    expandedFolders.value.add(path)
+  }
+  // 触发响应式更新
+  expandedFolders.value = new Set(expandedFolders.value)
+}
+
+function openFile(file: MaterialNode) {
   currentFile.value = file
 }
 
@@ -200,12 +352,57 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
 }
 
+function formatTime(sec: number): string {
+  if (!isFinite(sec) || sec < 0) return '00:00'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 function downloadFile() {
   if (!currentFile.value) return
   const a = document.createElement('a')
-  a.href = currentFile.value.url
+  a.href = currentFile.value.url || ''
   a.download = currentFile.value.name
   a.click()
+}
+
+// v2.9.2：视频控制函数
+function onVideoTimeUpdate() {
+  if (videoEl.value) {
+    videoCurrent.value = videoEl.value.currentTime
+  }
+}
+
+function onVideoLoaded() {
+  if (videoEl.value) {
+    videoDuration.value = videoEl.value.duration
+  }
+}
+
+function toggleVideoPlay() {
+  if (!videoEl.value) return
+  if (videoEl.value.paused) {
+    videoEl.value.play()
+    videoPlaying.value = true
+  } else {
+    videoEl.value.pause()
+    videoPlaying.value = false
+  }
+}
+
+function onVideoSeek(e: Event) {
+  const val = parseFloat((e.target as HTMLInputElement).value)
+  if (!isNaN(val) && videoEl.value) {
+    videoEl.value.currentTime = val
+    videoCurrent.value = val
+  }
+}
+
+function onVideoSpeedChange() {
+  if (videoEl.value) {
+    videoEl.value.playbackRate = videoSpeed.value
+  }
 }
 </script>
 
@@ -221,8 +418,6 @@ function downloadFile() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 10px;
 }
 
 .page-title {
@@ -254,7 +449,7 @@ function downloadFile() {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 16px;
-  height: calc(100vh - 180px);
+  height: calc(100% - 70px);
 }
 
 .glass-card {
@@ -263,9 +458,9 @@ function downloadFile() {
   border-radius: 16px;
   padding: 20px;
   backdrop-filter: blur(12px);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .section-title {
@@ -283,7 +478,6 @@ function downloadFile() {
   font-size: 12px;
   color: var(--mo-text-3);
   font-weight: 400;
-  margin-left: 8px;
 }
 
 .file-filter {
@@ -291,39 +485,91 @@ function downloadFile() {
   flex-shrink: 0;
 }
 
-.file-items {
+/* v2.9.2：文件树 */
+.file-tree {
   flex: 1;
   overflow-y: auto;
+  margin: 0 -8px;
+}
+
+.tree-node {
+  min-height: 36px;
+}
+
+.tree-folder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.tree-folder:hover {
+  background: var(--mo-surface-hover);
+}
+
+.folder-arrow {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.folder-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.folder-icon {
+  color: #e6a23c;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.folder-name {
+  font-size: 13px;
+  color: var(--mo-text-1);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-count {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  flex-shrink: 0;
 }
 
 .file-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background 0.2s;
-  margin-bottom: 4px;
+  transition: background-color 0.15s;
 }
 
 .file-item:hover {
-  background: var(--mo-bg-2);
+  background: var(--mo-surface-hover);
 }
 
 .file-item.active {
-  background: rgba(64, 158, 255, 0.1);
+  background: var(--mo-surface-hover);
+  color: var(--mo-primary);
 }
 
 .file-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 16px;
   flex-shrink: 0;
-  font-size: 18px;
 }
 
 .icon-pdf {
@@ -337,8 +583,8 @@ function downloadFile() {
 }
 
 .icon-other {
-  background: var(--mo-bg-2);
-  color: var(--mo-text-3);
+  background: rgba(144, 147, 153, 0.1);
+  color: #909399;
 }
 
 .file-info {
@@ -349,9 +595,9 @@ function downloadFile() {
 .file-name {
   font-size: 13px;
   color: var(--mo-text-1);
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-size {
@@ -359,15 +605,16 @@ function downloadFile() {
   color: var(--mo-text-3);
 }
 
+/* 预览区 */
 .file-preview {
-  flex: 1;
+  overflow: hidden;
 }
 
 .preview-container {
   flex: 1;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .pdf-viewer {
@@ -377,11 +624,92 @@ function downloadFile() {
   border-radius: 8px;
 }
 
+/* v2.9.2：视频播放区域 */
+.video-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .video-player {
   width: 100%;
-  max-height: 100%;
-  border-radius: 8px;
+  max-height: 70%;
+  object-fit: contain;
   background: #000;
+  border-radius: 8px;
+}
+
+.video-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--mo-surface-hover);
+  border-radius: 8px;
+}
+
+.video-ctrl-btn {
+  background: none;
+  border: none;
+  color: var(--mo-text-1);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.video-ctrl-btn:hover {
+  color: var(--mo-primary);
+}
+
+.video-time {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  min-width: 40px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-progress {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--mo-bg-2);
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+
+.video-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--mo-primary, #409eff);
+  cursor: pointer;
+}
+
+.video-progress::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--mo-primary, #409eff);
+  cursor: pointer;
+  border: none;
+}
+
+.video-speed {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--mo-border);
+  background: var(--mo-surface);
+  color: var(--mo-text-1);
+  cursor: pointer;
 }
 
 .image-viewer {
@@ -401,35 +729,40 @@ function downloadFile() {
   color: var(--mo-text-3);
 }
 
-.preview-empty, .empty-state {
+.preview-empty {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--mo-text-3);
 }
 
-.empty-state {
-  padding: 60px 20px;
+.preview-empty .hint {
+  font-size: 12px;
 }
 
-.hint {
-  font-size: 12px;
-  opacity: 0.7;
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: var(--mo-text-3);
+}
+
+.empty-state h3 {
+  margin: 0;
+  font-size: 18px;
+  color: var(--mo-text-1);
 }
 
 @media (max-width: 900px) {
   .materials-body {
     grid-template-columns: 1fr;
     height: auto;
-  }
-  .file-list {
-    max-height: 300px;
-  }
-  .file-preview {
-    min-height: 400px;
   }
 }
 </style>

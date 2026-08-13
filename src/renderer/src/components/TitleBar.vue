@@ -151,15 +151,41 @@
                   <svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 3 H3.5 L8.5 9 H10.2 M1 9 H3.5 L8.5 3 H10.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9.2 1.8 L11.4 3 L9.2 4.2 Z" fill="currentColor"/><path d="M9.2 7.8 L11.4 9 L9.2 10.2 Z" fill="currentColor"/></svg>
                 </button>
               </div>
-              <!-- v2.9.0：歌词显示 -->
-              <div class="mp-lyrics" v-if="music.lyricLines.length > 0">
+              <!-- v2.9.2：播放进度条 -->
+              <div class="mp-progress" v-if="music.duration > 0">
+                <span class="mp-time">{{ formatTime(music.currentTime) }}</span>
+                <input
+                  class="mp-progress-bar"
+                  type="range"
+                  min="0"
+                  :max="music.duration"
+                  step="0.1"
+                  :value="music.currentTime"
+                  @input="onProgressInput"
+                />
+                <span class="mp-time">{{ formatTime(music.duration) }}</span>
+              </div>
+              <!-- v2.9.2：歌词显示开关 -->
+              <div class="mp-lyrics-toggle">
+                <button
+                  class="mp-lyric-btn"
+                  :class="{ active: music.showLyrics }"
+                  :title="music.showLyrics ? '隐藏歌词' : '显示歌词'"
+                  @click="music.toggleLyrics()"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 3 H10 M2 6 H8 M2 9 H6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                  歌词
+                </button>
+              </div>
+              <!-- v2.9.0：歌词显示（v2.9.2 受开关控制） -->
+              <div class="mp-lyrics" v-if="music.showLyrics && music.lyricLines.length > 0">
                 <div class="mp-lyric-line" :class="{ active: i === music.currentLyricIndex }"
                   v-for="(line, i) in visibleLyrics" :key="i">
                   {{ line.text }}
                 </div>
                 <div v-if="visibleLyrics.length === 0" class="mp-lyric-empty">暂无歌词</div>
               </div>
-              <div class="mp-lyrics mp-lyric-empty" v-else>暂无歌词（需同目录 .lrc 文件）</div>
+              <div class="mp-lyrics mp-lyric-empty" v-else-if="music.showLyrics">暂无歌词（需同目录 .lrc 文件或在线歌曲）</div>
               <div class="mp-list">
                 <div
                   v-for="(track, i) in music.playlist"
@@ -303,6 +329,22 @@ const visibleLyrics = computed(() => {
   return lines.slice(start, end)
 })
 
+// v2.9.2：格式化播放时间
+function formatTime(sec: number): string {
+  if (!isFinite(sec) || sec < 0) return '00:00'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+// v2.9.2：拖动进度条调节播放进度
+function onProgressInput(e: Event) {
+  const val = parseFloat((e.target as HTMLInputElement).value)
+  if (!isNaN(val)) {
+    music.seek(val)
+  }
+}
+
 const weatherTip = computed(() =>
   weather.value
     ? `${weather.value.condition} · 湿度 ${weather.value.humidity}% · 风速 ${weather.value.wind}km/h（点击查看详情）`
@@ -410,16 +452,16 @@ function goMusic() {
   router.push('/music')
 }
 
-// v2.9.0：打开默认浏览器（默认百度搜索，便于实时查资料）
+// v2.9.2：打开默认浏览器（默认 Bing 搜索，便于实时查资料）
 async function openBrowser() {
   const api = window.electronAPI
   if (api?.openExternalUrl) {
-    const res = await api.openExternalUrl('https://www.baidu.com')
+    const res = await api.openExternalUrl('https://www.bing.com')
     if (!res.success) {
       ElMessage.error('打开浏览器失败：' + (res.message || '未知错误'))
     }
   } else {
-    window.open('https://www.baidu.com', '_blank')
+    window.open('https://www.bing.com', '_blank')
   }
 }
 
@@ -863,6 +905,85 @@ onMounted(() => {
   color: var(--mo-text-3);
   text-align: center;
   padding: 8px;
+}
+
+/* v2.9.2：播放进度条 */
+.mp-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+}
+
+.mp-time {
+  font-size: 10px;
+  color: var(--mo-text-3);
+  min-width: 32px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mp-progress-bar {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--mo-bg-2);
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+
+.mp-progress-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mo-primary, #409eff);
+  cursor: pointer;
+}
+
+.mp-progress-bar::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mo-primary, #409eff);
+  cursor: pointer;
+  border: none;
+}
+
+/* v2.9.2：歌词显示开关 */
+.mp-lyrics-toggle {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 8px 4px;
+}
+
+.mp-lyric-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--mo-text-3);
+  background: transparent;
+  border: 1px solid var(--mo-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mp-lyric-btn:hover {
+  color: var(--mo-text-1);
+  border-color: var(--mo-primary, #409eff);
+}
+
+.mp-lyric-btn.active {
+  color: var(--mo-primary, #409eff);
+  border-color: var(--mo-primary, #409eff);
+  background: rgba(64, 158, 255, 0.08);
 }
 
 .mp-list {

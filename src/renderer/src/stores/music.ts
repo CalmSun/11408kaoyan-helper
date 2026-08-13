@@ -42,8 +42,10 @@ export const useMusicStore = defineStore('music', () => {
   // v2.8.2：歌词相关状态
   const lyricLines = ref<{ time: number; text: string }[]>([])
   const currentLyricIndex = ref(-1)
+  // v2.9.2：顶栏歌词显示开关（持久化）
+  const showLyrics = ref<boolean>(getStorage('musicShowLyrics', true))
 
-  // v2.9.0：播放进度（供音乐页面显示）
+  // v2.9.0：播放进度（供音乐页面和顶栏显示）
   const currentTime = ref(0)
   const duration = ref(0)
 
@@ -321,6 +323,12 @@ export const useMusicStore = defineStore('music', () => {
     setStorage('musicShuffle', shuffle.value)
   }
 
+  /** v2.9.2：切换顶栏歌词显示 */
+  function toggleLyrics() {
+    showLyrics.value = !showLyrics.value
+    setStorage('musicShowLyrics', showLyrics.value)
+  }
+
   function removeTrack(index: number) {
     if (index < 0 || index >= playlist.value.length) return
     revokeIfBlob(playlist.value[index].url)
@@ -424,6 +432,201 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  // ── v2.9.2：网易云登录与歌单同步 ──
+
+  interface NetEaseUser {
+    id: number
+    nickname: string
+    avatar: string
+    signature: string
+    level: number
+  }
+
+  interface NetEasePlaylist {
+    id: number
+    name: string
+    cover: string
+    playCount: number
+    trackCount: number
+    creator: string
+  }
+
+  interface NetEasePlaylistTrack {
+    id: number
+    name: string
+    artist: string
+    album: string
+    cover: string
+    duration: number
+  }
+
+  const neteaseLoggedIn = ref(false)
+  const neteaseUser = ref<NetEaseUser | null>(null)
+  const userPlaylists = ref<NetEasePlaylist[]>([])
+  const currentPlaylistInfo = ref<NetEasePlaylist | null>(null)
+  const currentPlaylistTracks = ref<NetEasePlaylistTrack[]>([])
+  const playlistLoading = ref(false)
+  const qrKey = ref('')
+  const qrStatus = ref<number>(0) // 0=未开始, 801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期
+
+  /** 检查网易云登录状态 */
+  async function checkLoginStatus(): Promise<boolean> {
+    const api = window.electronAPI
+    if (!api?.neteaseLoginStatus) return false
+    try {
+      const res = await api.neteaseLoginStatus()
+      if (res.success && res.loggedIn && res.user) {
+        neteaseLoggedIn.value = true
+        neteaseUser.value = res.user
+        return true
+      }
+      neteaseLoggedIn.value = false
+      neteaseUser.value = null
+      return false
+    } catch {
+      return false
+    }
+  }
+
+  /** 获取二维码登录 key */
+  async function getQrKey(): Promise<string> {
+    const api = window.electronAPI
+    if (!api?.neteaseQrKey) return ''
+    try {
+      const res = await api.neteaseQrKey()
+      if (res.success && res.key) {
+        qrKey.value = res.key
+        qrStatus.value = 801
+        return res.key
+      }
+    } catch { /* ignore */ }
+    return ''
+  }
+
+  /** 检查二维码登录状态 */
+  async function checkQrLogin(): Promise<number> {
+    const api = window.electronAPI
+    if (!api?.neteaseQrCheck || !qrKey.value) return 0
+    try {
+      const res = await api.neteaseQrCheck(qrKey.value)
+      if (res.success) {
+        qrStatus.value = res.code || 0
+        if (res.code === 803) {
+          // 登录成功，刷新用户信息
+          await checkLoginStatus()
+          await fetchUserPlaylists()
+        }
+        return res.code || 0
+      }
+    } catch { /* ignore */ }
+    return 0
+  }
+
+  /** 退出网易云登录 */
+  async function logoutNetease(): Promise<void> {
+    const api = window.electronAPI
+    if (api?.neteaseLogout) {
+      try { await api.neteaseLogout() } catch { /* ignore */ }
+    }
+    neteaseLoggedIn.value = false
+    neteaseUser.value = null
+    userPlaylists.value = []
+    currentPlaylistInfo.value = null
+    currentPlaylistTracks.value = []
+    qrKey.value = ''
+    qrStatus.value = 0
+  }
+
+  /** 获取用户歌单列表 */
+  async function fetchUserPlaylists(): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseUserPlaylist || !neteaseUser.value) return
+    try {
+      const res = await api.neteaseUserPlaylist(neteaseUser.value.id, 100, 0)
+      if (res.success && res.playlists) {
+        userPlaylists.value = res.playlists
+      }
+    } catch { /* ignore */ }
+  }
+
+  /** 获取歌单详情（歌曲列表） */
+  async function fetchPlaylistDetail(id: number): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteasePlaylistDetail) return
+    playlistLoading.value = true
+    try {
+      const res = await api.neteasePlaylistDetail(id)
+      if (res.success && res.playlist) {
+        currentPlaylistInfo.value = res.playlist
+        currentPlaylistTracks.value = res.tracks || []
+      }
+    } catch { /* ignore */ }
+    playlistLoading.value = false
+  }
+
+  /** 播放整个歌单（替换当前播放列表） */
+  async function playPlaylist(tracks: NetEasePlaylistTrack[]): Promise<void> {
+    if (!tracks.length) return
+    const api = window.electronAPI
+    if (!api?.neteaseSongUrl) return
+    try {
+      // 批量获取播放地址（每次最多 20 首）
+      const allTracks: MusicTrack[] = []
+      for (let i = 0; i < tracks.length; i += 20) {
+        const batch = tracks.slice(i, i + 20)
+        const res = await api.neteaseSongUrl(batch.map(t => t.id))
+        const urlMap = new Map((res.urls || []).map(u => [u.id, u.url]))
+        for (const t of batch) {
+          const url = urlMap.get(t.id)
+          if (url) {
+            allTracks.push({
+              name: t.name,
+              url,
+              source: 'online',
+              id: t.id,
+              artist: t.artist,
+              album: t.album,
+              cover: t.cover
+            })
+          }
+        }
+      }
+      if (allTracks.length) {
+        playlist.value = allTracks
+        currentIndex.value = 0
+        play()
+      }
+    } catch { /* ignore */ }
+  }
+
+  /** 将歌单添加到播放队列末尾 */
+  async function addPlaylistToQueue(tracks: NetEasePlaylistTrack[]): Promise<void> {
+    if (!tracks.length) return
+    const api = window.electronAPI
+    if (!api?.neteaseSongUrl) return
+    try {
+      for (let i = 0; i < tracks.length; i += 20) {
+        const batch = tracks.slice(i, i + 20)
+        const res = await api.neteaseSongUrl(batch.map(t => t.id))
+        const urlMap = new Map((res.urls || []).map(u => [u.id, u.url]))
+        for (const t of batch) {
+          const url = urlMap.get(t.id)
+          if (url) {
+            playlist.value.push({
+              name: t.name,
+              url,
+              source: 'online',
+              id: t.id,
+              artist: t.artist,
+              album: t.album,
+              cover: t.cover
+            })
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   return {
     playlist,
     currentIndex,
@@ -434,18 +637,29 @@ export const useMusicStore = defineStore('music', () => {
     hasMusic,
     lyricLines,
     currentLyricIndex,
+    showLyrics,
     currentTime,
     duration,
     searchResults,
     searchLoading,
     searchKeyword,
     isAudioName,
+    // v2.9.2：网易云登录与歌单
+    neteaseLoggedIn,
+    neteaseUser,
+    userPlaylists,
+    currentPlaylistInfo,
+    currentPlaylistTracks,
+    playlistLoading,
+    qrKey,
+    qrStatus,
     pickFiles,
     pickFolder,
     play,
     pause,
     toggle,
     toggleShuffle,
+    toggleLyrics,
     playIndex,
     next,
     prev,
@@ -456,6 +670,15 @@ export const useMusicStore = defineStore('music', () => {
     loadLyric,
     searchOnline,
     playOnlineSong,
-    addOnlineSong
+    addOnlineSong,
+    // v2.9.2：网易云登录与歌单方法
+    checkLoginStatus,
+    getQrKey,
+    checkQrLogin,
+    logoutNetease,
+    fetchUserPlaylists,
+    fetchPlaylistDetail,
+    playPlaylist,
+    addPlaylistToQueue
   }
 })

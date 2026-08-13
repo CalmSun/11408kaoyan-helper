@@ -558,40 +558,64 @@ ipcMain.handle('music:read-lyric', async (_e, trackName: string) => {
   return { success: false, content: '' }
 })
 
-// ── v2.9.0：资料文件夹（PDF/MP4 等阅读观看） ──
+// ── v2.9.0：资料文件夹（PDF/MP4 等阅读观看）──
+// v2.9.2：返回树形结构，保留原文件夹层级
 
-function scanMaterialsFolder(root: string): { name: string; url: string; ext: string; size: number }[] {
-  const names: { rel: string; full: string }[] = []
-  function walk(dir: string) {
-    if (names.length >= MATERIALS_MAX_FILES) return
+interface MaterialTreeNode {
+  name: string
+  type: 'folder' | 'file'
+  path: string // 相对路径
+  children?: MaterialTreeNode[]
+  url?: string
+  ext?: string
+  size?: number
+}
+
+function scanMaterialsFolder(root: string): MaterialTreeNode[] {
+  function walk(dir: string, relPath: string): MaterialTreeNode[] {
     let entries: fs.Dirent[]
     try {
       entries = fs.readdirSync(dir, { withFileTypes: true })
     } catch {
-      return
+      return []
     }
+    const nodes: MaterialTreeNode[] = []
+    const folders: MaterialTreeNode[] = []
+    const files: MaterialTreeNode[] = []
     for (const entry of entries) {
-      if (names.length >= MATERIALS_MAX_FILES) return
       const full = path.join(dir, entry.name)
+      const childRel = relPath ? `${relPath}/${entry.name}` : entry.name
       if (entry.isDirectory()) {
-        walk(full)
+        const children = walk(full, childRel)
+        if (children.length > 0) {
+          folders.push({ name: entry.name, type: 'folder', path: childRel, children })
+        }
       } else if (entry.isFile() && MATERIAL_EXTS.includes(path.extname(entry.name).toLowerCase())) {
         try {
-          names.push({ rel: path.relative(root, full), full })
+          const token = newToken()
+          materialsWhitelist.set(token, full)
+          const stat = fs.statSync(full)
+          files.push({
+            name: entry.name,
+            type: 'file',
+            path: childRel,
+            url: `kaoyan-material://${token}`,
+            ext: path.extname(entry.name).toLowerCase(),
+            size: stat.size
+          })
         } catch {
           // 跳过异常文件
         }
       }
     }
+    // 文件夹在前，文件在后，各自按名称排序
+    folders.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    files.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    nodes.push(...folders, ...files)
+    return nodes
   }
-  walk(root)
-  names.sort((a, b) => a.rel.localeCompare(b.rel, 'zh-CN'))
-  return names.map(item => {
-    const token = newToken()
-    materialsWhitelist.set(token, item.full)
-    const stat = fs.statSync(item.full)
-    return { name: item.rel, url: `kaoyan-material://${token}`, ext: path.extname(item.rel).toLowerCase(), size: stat.size }
-  })
+  materialsWhitelist.clear()
+  return walk(root, '')
 }
 
 ipcMain.handle('materials:pick-folder', async () => {
@@ -644,7 +668,8 @@ ipcMain.handle('open-external-url', async (_e, url: string) => {
   }
 })
 
-// ── v2.9.0：网易云音乐 API 代理（weapi 加密，主进程请求避免跨域） ──
+// ── v2.9.0：网易云音乐 API 代理（weapi 加密，主进程请求避免跨域）──
+// v2.9.2：增强 — Cookie 管理、二维码登录、用户歌单同步
 
 import * as crypto from 'crypto'
 
@@ -653,6 +678,64 @@ const NETEASE_IV = Buffer.from('0102030405060708', 'utf8')
 const NETEASE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB
 -----END PUBLIC KEY-----`
+
+// v2.9.2：网易云 Cookie 持久化路径
+const NETEASE_COOKIE_PATH = path.join(app.getPath('userData'), 'netease-cookies.json')
+// v2.9.2：内存 Cookie 存储
+const neteaseCookies = new Map<string, string>()
+
+/** v2.9.2：从磁盘加载网易云 Cookie */
+function loadNeteaseCookies(): void {
+  try {
+    if (fs.existsSync(NETEASE_COOKIE_PATH)) {
+      const data = JSON.parse(fs.readFileSync(NETEASE_COOKIE_PATH, 'utf-8')) as Record<string, string>
+      for (const [k, v] of Object.entries(data)) {
+        neteaseCookies.set(k, v)
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+/** v2.9.2：保存网易云 Cookie 到磁盘 */
+function saveNeteaseCookies(): void {
+  try {
+    const obj: Record<string, string> = {}
+    neteaseCookies.forEach((v, k) => { obj[k] = v })
+    fs.writeFileSync(NETEASE_COOKIE_PATH, JSON.stringify(obj, null, 2), 'utf-8')
+  } catch { /* ignore */ }
+}
+
+/** v2.9.2：解析 Set-Cookie 头并存储 */
+function parseSetCookies(setCookie: string | null): void {
+  if (!setCookie) return
+  // Node fetch 的 set-cookie 可能是逗号分隔的多值
+  const parts = setCookie.split(/,(?=\s*[A-Za-z0-9_]+=)/)
+  for (const part of parts) {
+    const kv = part.split(';')[0].trim()
+    const eq = kv.indexOf('=')
+    if (eq > 0) {
+      const key = kv.slice(0, eq).trim()
+      const val = kv.slice(eq + 1).trim()
+      if (key && val) neteaseCookies.set(key, val)
+    }
+  }
+  saveNeteaseCookies()
+}
+
+/** v2.9.2：构建 Cookie 头字符串 */
+function buildCookieHeader(): string {
+  const parts: string[] = []
+  neteaseCookies.forEach((v, k) => parts.push(`${k}=${v}`))
+  // 基础匿名 Cookie
+  parts.push('os=pc')
+  parts.push('osver=Microsoft-Windows-10-Professional-build-10586-64bit')
+  parts.push('appver=2.0.3.131777')
+  parts.push('channel=netease')
+  parts.push('__remember_me=true')
+  return parts.join('; ')
+}
+
+loadNeteaseCookies()
 
 function neteaseAesEncrypt(text: string, key: Buffer): string {
   const cipher = crypto.createCipheriv('aes-128-cbc', key, NETEASE_IV)
@@ -675,24 +758,49 @@ function neteaseWeapi(data: Record<string, unknown>): { params: string; encSecKe
   return { params, encSecKey }
 }
 
+/** v2.9.2：通用 weapi 请求（带 Cookie 管理） */
 async function neteaseRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
-  const { params, encSecKey } = neteaseWeapi(data)
+  const csrf = neteaseCookies.get('__csrf') || ''
+  const { params, encSecKey } = neteaseWeapi({ ...data, csrf_token: csrf })
   const body = new URLSearchParams({ params, encSecKey })
-  const res = await fetch(`https://music.163.com/weapi${path}?csrf_token=`, {
+  const res = await fetch(`https://music.163.com/weapi${path}?csrf_token=${csrf}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Referer': 'https://music.163.com/',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Cookie': 'os=pc; osver=Microsoft-Windows-10-Professional-build-10586-64bit; appver=2.0.3.131777; channel=netease; __remember_me=true'
+      'Cookie': buildCookieHeader()
     },
     body: body.toString()
   })
+  parseSetCookies(res.headers.get('set-cookie'))
   if (!res.ok) {
     throw new Error(`NetEase API ${path} HTTP ${res.status}`)
   }
   return res.json()
 }
+
+/** v2.9.2：普通 API 请求（不加密，用于二维码登录等接口） */
+async function neteasePlainRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
+  const body = new URLSearchParams(data as Record<string, string>)
+  const res = await fetch(`https://music.163.com/api${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Referer': 'https://music.163.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Cookie': buildCookieHeader()
+    },
+    body: body.toString()
+  })
+  parseSetCookies(res.headers.get('set-cookie'))
+  if (!res.ok) {
+    throw new Error(`NetEase API ${path} HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+// ── v2.9.0：搜索 / 播放地址 / 歌词 ──
 
 ipcMain.handle('netease:search', async (_e, keyword: string, limit = 30, offset = 0) => {
   try {
@@ -740,6 +848,141 @@ ipcMain.handle('netease:lyric', async (_e, id: number) => {
     return { success: true, lyric: data.lrc?.lyric || '', tlyric: data.tlyric?.lyric || '' }
   } catch (err) {
     return { success: false, lyric: '', tlyric: '', message: String(err) }
+  }
+})
+
+// ── v2.9.2：二维码登录 ──
+
+/** 获取二维码登录 key */
+ipcMain.handle('netease:qr-key', async () => {
+  try {
+    const data = await neteasePlainRequest('/login/qrcode/unikey', { type: '3' }) as { data?: { unikey?: string }; code?: number }
+    return { success: true, key: data.data?.unikey || '' }
+  } catch (err) {
+    return { success: false, key: '', message: String(err) }
+  }
+})
+
+/** 检查二维码登录状态（801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期） */
+ipcMain.handle('netease:qr-check', async (_e, key: string) => {
+  try {
+    const data = await neteasePlainRequest('/login/qrcode/client/login', { key, type: '3' }) as { code?: number; message?: string; cookie?: string }
+    return { success: true, code: data.code || 0, message: data.message || '', cookie: data.cookie || '' }
+  } catch (err) {
+    return { success: false, code: 0, message: String(err), cookie: '' }
+  }
+})
+
+/** 获取当前登录状态 / 用户信息 */
+ipcMain.handle('netease:login-status', async () => {
+  try {
+    const data = await neteaseRequest('/w/nuser/account/get', {}) as {
+      code?: number
+      profile?: { userId?: number; nickname?: string; avatarUrl?: string; signature?: string; level?: number }
+      account?: { id?: number; userName?: string }
+    }
+    if (data.code === 200 && data.profile) {
+      return {
+        success: true,
+        loggedIn: true,
+        user: {
+          id: data.profile.userId || 0,
+          nickname: data.profile.nickname || '',
+          avatar: data.profile.avatarUrl || '',
+          signature: data.profile.signature || '',
+          level: data.profile.level || 0
+        }
+      }
+    }
+    return { success: true, loggedIn: false, user: null }
+  } catch (err) {
+    return { success: false, loggedIn: false, user: null, message: String(err) }
+  }
+})
+
+/** 退出登录 */
+ipcMain.handle('netease:logout', async () => {
+  try {
+    await neteaseRequest('/logout', {})
+  } catch { /* ignore */ }
+  neteaseCookies.clear()
+  saveNeteaseCookies()
+  return { success: true }
+})
+
+// ── v2.9.2：用户歌单 ──
+
+/** 获取用户歌单列表 */
+ipcMain.handle('netease:user-playlist', async (_e, uid: number, limit = 30, offset = 0) => {
+  try {
+    const data = await neteaseRequest('/user/playlist', {
+      uid,
+      limit,
+      offset,
+      includeVideo: true
+    }) as {
+      playlist?: Array<{
+        id: number; name: string; coverImgUrl?: string; playCount?: number
+        trackCount?: number; creator?: { nickname?: string }
+      }>
+      code?: number
+    }
+    const playlists = (data.playlist || []).map(p => ({
+      id: p.id,
+      name: p.name,
+      cover: p.coverImgUrl || '',
+      playCount: p.playCount || 0,
+      trackCount: p.trackCount || 0,
+      creator: p.creator?.nickname || ''
+    }))
+    return { success: true, playlists }
+  } catch (err) {
+    return { success: false, playlists: [], message: String(err) }
+  }
+})
+
+/** 获取歌单详情（含歌曲列表） */
+ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
+  try {
+    const data = await neteaseRequest('/v6/playlist/detail', {
+      id,
+      n: 100000,
+      s: 8
+    }) as {
+      playlist?: {
+        id: number; name: string; coverImgUrl?: string; playCount?: number
+        trackCount?: number; description?: string
+        tracks?: Array<{
+          id: number; name: string; ar?: Array<{ name: string }>
+          al?: { name: string; picUrl?: string }; dt?: number
+        }>
+      }
+      code?: number
+    }
+    const pl = data.playlist
+    if (!pl) return { success: false, playlist: null, tracks: [], message: '歌单不存在' }
+    const tracks = (pl.tracks || []).map(t => ({
+      id: t.id,
+      name: t.name,
+      artist: (t.ar || []).map(a => a.name).join(' / '),
+      album: t.al?.name || '',
+      cover: t.al?.picUrl || '',
+      duration: t.dt || 0
+    }))
+    return {
+      success: true,
+      playlist: {
+        id: pl.id,
+        name: pl.name,
+        cover: pl.coverImgUrl || '',
+        playCount: pl.playCount || 0,
+        trackCount: pl.trackCount || 0,
+        description: pl.description || ''
+      },
+      tracks
+    }
+  } catch (err) {
+    return { success: false, playlist: null, tracks: [], message: String(err) }
   }
 })
 

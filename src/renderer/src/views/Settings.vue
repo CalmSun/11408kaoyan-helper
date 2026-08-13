@@ -160,7 +160,7 @@
         <el-icon><Box /></el-icon>
         数据目录
       </h3>
-      <p class="section-desc">自定义数据存储位置，自动备份默认开启到「我的文档」（不在 C 盘应用数据区）</p>
+      <p class="section-desc">数据通过 IndexedDB 实时记录和读取，可手动导出备份到自定义目录</p>
 
       <div class="datadir-info">
         <div class="datadir-row">
@@ -169,8 +169,8 @@
         </div>
         <div class="datadir-row">
           <span class="datadir-label">自动备份</span>
-          <el-switch :model-value="syncEnabled" @change="onToggleSync" />
-          <span class="unit-desc">每 2 分钟自动同步数据快照到该目录<span v-if="lastSyncAt">（最近同步：{{ lastSyncAt }}）</span></span>
+          <el-switch :model-value="false" disabled />
+          <span class="unit-desc">已关闭（数据实时存储于本地 IndexedDB）<span v-if="lastSyncAt">（最近手动同步：{{ lastSyncAt }}）</span></span>
         </div>
       </div>
       <div class="datadir-actions">
@@ -361,9 +361,9 @@ async function handleSyncNow() {
   ElMessage[ok ? 'success' : 'error'](ok ? '数据已同步到数据目录' : '同步失败，请检查目录权限')
 }
 
-function onToggleSync(on: boolean | string | number) {
-  setSyncEnabled(Boolean(on))
-  ElMessage.success(Boolean(on) ? '已开启自动备份' : '已关闭自动备份')
+function onToggleSync(_on: boolean | string | number) {
+  // v2.9.2：自动备份同步已关闭，数据通过 IndexedDB 实时记录
+  ElMessage.info('自动备份已关闭，数据实时存储于本地 IndexedDB，可使用「立即同步」手动备份')
 }
 
 // 外观主题

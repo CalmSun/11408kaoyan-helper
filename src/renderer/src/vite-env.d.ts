@@ -6,6 +6,17 @@ declare module '*.vue' {
   export default component
 }
 
+// v2.9.2：资料文件夹树形节点
+interface MaterialNode {
+  name: string
+  type: 'folder' | 'file'
+  path: string
+  children?: MaterialNode[]
+  url?: string
+  ext?: string
+  size?: number
+}
+
 interface ElectronAPI {
   exportData: (data: string) => Promise<{ success: boolean; path?: string }>
   importData: () => Promise<{ success: boolean; data?: string }>
@@ -40,22 +51,22 @@ interface ElectronAPI {
   }>
   // 读取本地歌词文件（v2.8.2）
   readLyric: (trackName: string) => Promise<{ success: boolean; content: string }>
-  // v2.9.0：资料文件夹
+  // v2.9.0：资料文件夹（v2.9.2：树形结构）
   pickMaterialsFolder: () => Promise<{
     success: boolean
     canceled?: boolean
-    files?: { name: string; url: string; ext: string; size: number }[]
+    files?: MaterialNode[]
     folder?: string
   }>
   restoreMaterialsFolder: () => Promise<{
     success: boolean
     canceled?: boolean
-    files?: { name: string; url: string; ext: string; size: number }[]
+    files?: MaterialNode[]
     folder?: string
   }>
   listMaterialsFiles: () => Promise<{
     success: boolean
-    files?: { name: string; url: string; ext: string; size: number }[]
+    files?: MaterialNode[]
     folder?: string
   }>
   // v2.9.0：默认浏览器打开外部链接
@@ -76,6 +87,27 @@ interface ElectronAPI {
     success: boolean
     lyric?: string
     tlyric?: string
+    message?: string
+  }>
+  // v2.9.2：网易云登录与歌单
+  neteaseQrKey: () => Promise<{ success: boolean; key?: string; message?: string }>
+  neteaseQrCheck: (key: string) => Promise<{ success: boolean; code?: number; message?: string; cookie?: string }>
+  neteaseLoginStatus: () => Promise<{
+    success: boolean
+    loggedIn?: boolean
+    user?: { id: number; nickname: string; avatar: string; signature: string; level: number } | null
+    message?: string
+  }>
+  neteaseLogout: () => Promise<{ success: boolean }>
+  neteaseUserPlaylist: (uid: number, limit?: number, offset?: number) => Promise<{
+    success: boolean
+    playlists?: { id: number; name: string; cover: string; playCount: number; trackCount: number; creator: string }[]
+    message?: string
+  }>
+  neteasePlaylistDetail: (id: number) => Promise<{
+    success: boolean
+    playlist?: { id: number; name: string; cover: string; playCount: number; trackCount: number; description: string } | null
+    tracks?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]
     message?: string
   }>
   // 国内天气服务（v2.8.0）

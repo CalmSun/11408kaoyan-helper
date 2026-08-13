@@ -36,6 +36,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseSearch: (keyword: string, limit?: number, offset?: number) => ipcRenderer.invoke('netease:search', keyword, limit, offset),
   neteaseSongUrl: (ids: number[]) => ipcRenderer.invoke('netease:song-url', ids),
   neteaseLyric: (id: number) => ipcRenderer.invoke('netease:lyric', id),
+  // v2.9.2：网易云登录与歌单
+  neteaseQrKey: () => ipcRenderer.invoke('netease:qr-key'),
+  neteaseQrCheck: (key: string) => ipcRenderer.invoke('netease:qr-check', key),
+  neteaseLoginStatus: () => ipcRenderer.invoke('netease:login-status'),
+  neteaseLogout: () => ipcRenderer.invoke('netease:logout'),
+  neteaseUserPlaylist: (uid: number, limit?: number, offset?: number) => ipcRenderer.invoke('netease:user-playlist', uid, limit, offset),
+  neteasePlaylistDetail: (id: number) => ipcRenderer.invoke('netease:playlist-detail', id),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),
