@@ -22,6 +22,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportReportPdf: (html: string) => ipcRenderer.invoke('report:export-pdf', html),
   // 音乐文件夹选择（v2.7.1 引入；v2.8.0 仅返回文件清单，播放走协议流式读取）
   pickMusicFolder: () => ipcRenderer.invoke('music:pick-folder'),
+  // 恢复上次选择的音乐文件夹（v2.8.2）
+  restoreMusicFolder: () => ipcRenderer.invoke('music:restore-folder'),
+  // 读取本地歌词文件（v2.8.2）
+  readLyric: (trackName: string) => ipcRenderer.invoke('music:read-lyric', trackName),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

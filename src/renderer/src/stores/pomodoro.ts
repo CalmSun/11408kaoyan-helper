@@ -192,6 +192,10 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
    * 基频 + 2 倍泛音叠加，指数衰减包络，音色接近音乐盒/铃声，柔和不刺耳
    */
   function playBellNote(ctx: AudioContext, freq: number, startAt: number, duration: number, peakVol: number) {
+    // v2.8.2：应用用户设置的音量（0-100 映射到 0-1）
+    const volumeScale = (mainStore.pomodoroSettings.soundVolume ?? 70) / 100
+    const adjustedPeakVol = peakVol * volumeScale
+
     // 基音
     const osc1 = ctx.createOscillator()
     const gain1 = ctx.createGain()
@@ -200,7 +204,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
     osc1.connect(gain1)
     gain1.connect(ctx.destination)
     gain1.gain.setValueAtTime(0.001, startAt)
-    gain1.gain.exponentialRampToValueAtTime(peakVol, startAt + 0.015)
+    gain1.gain.exponentialRampToValueAtTime(adjustedPeakVol, startAt + 0.015)
     gain1.gain.exponentialRampToValueAtTime(0.001, startAt + duration)
     osc1.start(startAt)
     osc1.stop(startAt + duration)
@@ -213,7 +217,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
     osc2.connect(gain2)
     gain2.connect(ctx.destination)
     gain2.gain.setValueAtTime(0.001, startAt)
-    gain2.gain.exponentialRampToValueAtTime(peakVol * 0.3, startAt + 0.012)
+    gain2.gain.exponentialRampToValueAtTime(adjustedPeakVol * 0.3, startAt + 0.012)
     gain2.gain.exponentialRampToValueAtTime(0.001, startAt + duration * 0.6)
     osc2.start(startAt)
     osc2.stop(startAt + duration)

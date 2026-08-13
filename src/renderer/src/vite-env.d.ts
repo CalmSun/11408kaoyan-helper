@@ -32,6 +32,12 @@ interface ElectronAPI {
     canceled?: boolean
     files?: { name: string; url: string }[]
   }>
+  // 恢复上次选择的音乐文件夹（v2.8.2）
+  restoreMusicFolder: () => Promise<{
+    success: boolean
+    canceled?: boolean
+    files?: { name: string; url: string }[]
+  }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

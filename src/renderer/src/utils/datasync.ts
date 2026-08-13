@@ -10,7 +10,7 @@ import { exportAllData, getGlobalStorage, setGlobalStorage } from '@/utils/stora
  */
 
 const SYNC_KEY = 'kaoyan_data_sync_enabled'
-const SYNC_INTERVAL = 30 * 60 * 1000 // 每 30 分钟同步一次（v2.8.1：由 5 分钟降低频率，减少磁盘写入）
+const SYNC_INTERVAL = 2 * 60 * 1000 // v2.8.2：每 2 分钟同步一次（由 30 分钟调整为更频繁备份）
 
 export const dataDir = ref('')
 export const syncEnabled = ref(loadSyncEnabled())

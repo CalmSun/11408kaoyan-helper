@@ -28,6 +28,10 @@ export const useMusicStore = defineStore('music', () => {
   /** 随机播放模式（v2.8.1：开启后切歌/自动续播随机选曲，避免立即重复） */
   const shuffle = ref<boolean>(getStorage('musicShuffle', false))
 
+  // v2.8.2：歌词相关状态
+  const lyricLines = ref<{ time: number; text: string }[]>([])
+  const currentLyricIndex = ref(-1)
+
   const currentTrack = computed<MusicTrack | null>(
     () => playlist.value[currentIndex.value] ?? null
   )
@@ -35,6 +39,27 @@ export const useMusicStore = defineStore('music', () => {
   const hasMusic = computed(() => playlist.value.length > 0)
 
   audio.volume = volume.value
+
+  // v2.8.2：启动时自动恢复上次选择的音乐文件夹
+  async function restoreMusicFolder(): Promise<number> {
+    const api = window.electronAPI
+    if (!api?.restoreMusicFolder) return 0
+    let files: { name: string; url: string }[] = []
+    try {
+      const res = await api.restoreMusicFolder()
+      if (!res.success || !res.files?.length) return 0
+      files = res.files
+    } catch {
+      return 0
+    }
+    setPlaylist(files.map(f => ({ name: f.name, url: f.url })))
+    return files.length
+  }
+
+  // 应用启动时尝试恢复
+  if (typeof window !== 'undefined' && window.electronAPI?.restoreMusicFolder) {
+    restoreMusicFolder()
+  }
 
   // 自动续播
   audio.addEventListener('ended', () => {
@@ -59,6 +84,82 @@ export const useMusicStore = defineStore('music', () => {
     const ext = name.split('.').pop()?.toLowerCase() || ''
     return AUDIO_EXTS.includes(ext)
   }
+
+  /** v2.8.2：解析 LRC 歌词文本 */
+  function parseLyric(content: string): { time: number; text: string }[] {
+    const lines: { time: number; text: string }[] = []
+    const regex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/
+    const rawLines = content.split('\n')
+    
+    for (const line of rawLines) {
+      const match = line.match(regex)
+      if (match) {
+        const min = parseInt(match[1], 10)
+        const sec = parseInt(match[2], 10)
+        const ms = match[3] ? parseInt(match[3].padEnd(3, '0'), 10) : 0
+        const time = min * 60 + sec + ms / 1000
+        const text = match[4].trim()
+        if (text) {
+          lines.push({ time, text })
+        }
+      }
+    }
+    
+    return lines.sort((a, b) => a.time - b.time)
+  }
+
+  /** v2.8.2：加载当前歌曲的歌词 */
+  async function loadLyric() {
+    const track = currentTrack.value
+    if (!track) {
+      lyricLines.value = []
+      currentLyricIndex.value = -1
+      return
+    }
+    
+    const api = window.electronAPI
+    if (!api?.readLyric) {
+      lyricLines.value = []
+      currentLyricIndex.value = -1
+      return
+    }
+    
+    try {
+      const res = await api.readLyric(track.name)
+      if (res.success && res.content) {
+        lyricLines.value = parseLyric(res.content)
+      } else {
+        lyricLines.value = []
+      }
+      currentLyricIndex.value = -1
+    } catch {
+      lyricLines.value = []
+      currentLyricIndex.value = -1
+    }
+  }
+
+  /** v2.8.2：根据当前播放时间更新歌词索引 */
+  function updateLyricIndex() {
+    if (lyricLines.value.length === 0) {
+      currentLyricIndex.value = -1
+      return
+    }
+    
+    const currentTime = audio.currentTime
+    let idx = -1
+    
+    for (let i = lyricLines.value.length - 1; i >= 0; i--) {
+      if (currentTime >= lyricLines.value[i].time) {
+        idx = i
+        break
+      }
+    }
+    
+    currentLyricIndex.value = idx
+  }
+
+  // 监听播放时间更新歌词
+  audio.addEventListener('timeupdate', updateLyricIndex)
 
   /** 释放 blob 地址（kaoyan-music:// 协议地址无需释放，v2.8.0） */
   function revokeIfBlob(url: string) {

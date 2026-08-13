@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
-import { getCurrentUsername } from '@/utils/storage'
+import { getCurrentUsername, storageReady } from '@/utils/storage'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -100,12 +100,15 @@ const router = createRouter({
 })
 
 // 路由守卫：未登录时跳转到登录页
-router.beforeEach((to, _from, next) => {
+// v2.8.2：等待存储初始化完成后再判断登录状态，修复重启掉登录问题
+router.beforeEach(async (to, _from, next) => {
   // 登录页不需要认证
   if (to.path === '/login' || to.meta.requiresAuth === false) {
     next()
     return
   }
+  // 等待存储层就绪（IndexedDB 加载完成）
+  await storageReady()
   const username = getCurrentUsername()
   if (!username) {
     next({ path: '/login', query: { redirect: to.fullPath } })

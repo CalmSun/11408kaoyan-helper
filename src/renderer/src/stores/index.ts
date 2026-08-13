@@ -262,12 +262,16 @@ export const useMainStore = defineStore('main', () => {
     enableNotification: true,  // 启用通知
     enableSound: true,          // 启用声音
     enableTitleFlash: true,     // 启用页面标题闪烁
-    forceFullscreen: false      // 强制全屏（v2.7.1：专注时隐藏系统任务栏，全局设置）
+    forceFullscreen: false,     // 强制全屏（v2.7.1：专注时隐藏系统任务栏，全局设置）
+    soundVolume: 70             // v2.8.2：提醒音效音量（0-100）
   }))
 
   // 旧版本数据补齐新字段，避免 undefined
   if (pomodoroSettings.value.forceFullscreen === undefined) {
     pomodoroSettings.value.forceFullscreen = false
+  }
+  if (pomodoroSettings.value.soundVolume === undefined) {
+    pomodoroSettings.value.soundVolume = 70
   }
 
   // 计算倒计时天数
@@ -415,9 +419,11 @@ export const useMainStore = defineStore('main', () => {
 
   // 记录当日计划快照：将今天全部计划（循环+普通）的实际完成状态固化为历史
   // 口径与"今日计划"列表一致：循环计划 + 今天创建的普通计划
+  // v2.8.2 修复：与已有快照合并，保留已被"清除已完成"移除的已完成项，
+  // 避免清除已完成计划后历史记录中已完成项丢失。
   function recordPlanSnapshot() {
     const today = todayLocal()
-    const items: DailyPlanSnapshotItem[] = plans.value
+    const currentItems: DailyPlanSnapshotItem[] = plans.value
       .filter(p => p.recurring || toLocalDate(p.createdAt) === today)
       .map(p => {
         if (p.recurring) {
@@ -438,9 +444,22 @@ export const useMainStore = defineStore('main', () => {
         }
       })
 
+    // 与已有今日快照合并：保留已完成但已从当前列表移除的条目（被"清除已完成"删除的）
+    const existing = planSnapshots.value.find(s => s.date === today)
+    let items = currentItems
+    if (existing) {
+      const currentKeys = new Set(currentItems.map(i => `${i.title}__${i.subject || ''}`))
+      const preservedCompleted = existing.items.filter(
+        i => i.completed && !currentKeys.has(`${i.title}__${i.subject || ''}`)
+      )
+      if (preservedCompleted.length > 0) {
+        items = [...currentItems, ...preservedCompleted]
+      }
+    }
+
+    // 今日无任何计划时不创建空快照
     if (items.length === 0) return
 
-    const existing = planSnapshots.value.find(s => s.date === today)
     if (existing) {
       existing.items = items
     } else {
@@ -452,6 +471,28 @@ export const useMainStore = defineStore('main', () => {
         .slice()
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 60)
+    }
+  }
+
+  // v2.8.2：启动时回填最近7天内缺失的快照，防止异常退出/崩溃导致历史记录丢失。
+  // 仅回填非循环计划，循环计划的历史完成状态无法从当前数据还原。
+  function backfillMissingSnapshots() {
+    for (let daysAgo = 1; daysAgo <= 7; daysAgo++) {
+      const date = dayjs().subtract(daysAgo, 'day').format('YYYY-MM-DD')
+      if (planSnapshots.value.some(s => s.date === date)) continue
+
+      const dayPlans = plans.value.filter(p =>
+        !p.recurring && toLocalDate(p.createdAt) === date
+      )
+      if (dayPlans.length === 0) continue
+
+      const items: DailyPlanSnapshotItem[] = dayPlans.map(p => ({
+        title: p.title,
+        subject: p.subject,
+        completed: p.completed,
+        completedAt: p.completedAt
+      }))
+      planSnapshots.value.push({ date, items })
     }
   }
 
@@ -555,7 +596,8 @@ export const useMainStore = defineStore('main', () => {
   // v2.7.1 修复：番茄钟设置（含强制全屏）此前未持久化，重启后丢失
   watch(pomodoroSettings, savePomodoroSettings, { deep: true })
 
-  // 启动时补记一次当日快照（覆盖已有计划的初始状态）
+  // 启动时回填缺失快照（v2.8.2：防止异常退出导致历史丢失），再补记当日快照
+  backfillMissingSnapshots()
   recordPlanSnapshot()
 
   return {

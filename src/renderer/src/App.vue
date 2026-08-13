@@ -70,23 +70,45 @@ function handleCollapseChange(collapsed: boolean) {
   )
 }
 
-// 每分钟定时记录应用使用时长（实时累计）
+// 每分钟定时记录应用使用时长（实时累计）+ 跨午夜检测（v2.8.2）
 let usageTimer: number | null = null
+let lastDate = todayLocal()
+
+function todayLocal(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 onMounted(() => {
-  // 每60秒记录一次使用时长
+  // 每60秒记录一次使用时长，并检测是否跨天（跨天时自动固化新一天快照）
   usageTimer = window.setInterval(() => {
     store.recordAppUsage()
+    const now = todayLocal()
+    if (now !== lastDate) {
+      lastDate = now
+      store.recordPlanSnapshot()
+    }
   }, 60000)
 })
+
+// v2.8.2：应用关闭/刷新前固化当日计划快照，防止异常退出丢失最后状态
+function handleBeforeUnload() {
+  store.recordPlanSnapshot()
+}
+window.addEventListener('beforeunload', handleBeforeUnload)
 
 onUnmounted(() => {
   if (usageTimer) {
     clearInterval(usageTimer)
     usageTimer = null
   }
+  window.removeEventListener('beforeunload', handleBeforeUnload)
   // 最终保存
   store.recordAppUsage()
+  store.recordPlanSnapshot()
 })
 </script>
 

@@ -59,6 +59,17 @@
           <el-switch v-model="pomodoroForm.enableSound" />
           <span class="unit-desc">播放提示音提醒</span>
         </el-form-item>
+        <el-form-item label="提示音音量" v-if="pomodoroForm.enableSound">
+          <el-slider
+            v-model="pomodoroForm.soundVolume"
+            :min="0"
+            :max="100"
+            :step="1"
+            :format-tooltip="(val: number) => `${val}%`"
+            style="width: 300px;"
+          />
+          <span class="unit-desc">{{ pomodoroForm.soundVolume }}%</span>
+        </el-form-item>
         <el-form-item label="标题闪烁">
           <el-switch v-model="pomodoroForm.enableTitleFlash" />
           <span class="unit-desc">切换其他标签页时，浏览器标题闪烁提醒</span>
@@ -159,7 +170,7 @@
         <div class="datadir-row">
           <span class="datadir-label">自动备份</span>
           <el-switch :model-value="syncEnabled" @change="onToggleSync" />
-          <span class="unit-desc">每 30 分钟自动同步数据快照到该目录<span v-if="lastSyncAt">（最近同步：{{ lastSyncAt }}）</span></span>
+          <span class="unit-desc">每 2 分钟自动同步数据快照到该目录<span v-if="lastSyncAt">（最近同步：{{ lastSyncAt }}）</span></span>
         </div>
       </div>
       <div class="datadir-actions">
@@ -558,7 +569,8 @@ const pomodoroForm = reactive({
   enableNotification: store.pomodoroSettings.enableNotification,
   enableSound: store.pomodoroSettings.enableSound,
   enableTitleFlash: store.pomodoroSettings.enableTitleFlash,
-  forceFullscreen: store.pomodoroSettings.forceFullscreen
+  forceFullscreen: store.pomodoroSettings.forceFullscreen,
+  soundVolume: store.pomodoroSettings.soundVolume
 })
 
 function saveExamSettings() {
@@ -579,7 +591,8 @@ function savePomodoroSettings() {
     enableNotification: pomodoroForm.enableNotification,
     enableSound: pomodoroForm.enableSound,
     enableTitleFlash: pomodoroForm.enableTitleFlash,
-    forceFullscreen: pomodoroForm.forceFullscreen
+    forceFullscreen: pomodoroForm.forceFullscreen,
+    soundVolume: pomodoroForm.soundVolume
   })
   ElMessage.success('设置已保存')
 }

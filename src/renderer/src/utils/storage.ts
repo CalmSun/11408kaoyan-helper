@@ -54,6 +54,17 @@ let useFallback = false // IndexedDB 不可用时降级 localStorage
 const pendingWrites: { type: 'put' | 'delete'; key: string; value?: unknown }[] = []
 const readyCallbacks: Array<() => void> = []
 
+// v2.8.2：存储就绪 Promise。路由守卫等早期逻辑可 await 等待 IndexedDB 载入完成，
+// 避免在缓存为空时误判"未登录"（重启掉登录的根因）。
+let readyPromise: Promise<void> | null = null
+
+/** 等待存储层就绪（已就绪立即返回；未初始化则触发初始化） */
+export function storageReady(): Promise<void> {
+  if (ready) return Promise.resolve()
+  if (!readyPromise) readyPromise = initStorage()
+  return readyPromise
+}
+
 // ─── IndexedDB 基础操作 ──────────────────────────────────────
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -163,7 +174,10 @@ function migrateLegacyLocalStorage(): void {
       migrated++
     }
     // 迁移落库后清理旧键，避免双份数据
-    localStorage.removeItem(key)
+    // v2.8.2：保留当前用户键作为 localStorage 镜像（路由守卫早读兜底，修复重启掉登录）
+    if (key !== CURRENT_USER_KEY) {
+      localStorage.removeItem(key)
+    }
   })
   if (migrated > 0) {
     console.info(`[storage] 已从 localStorage 迁移 ${migrated} 条数据至 IndexedDB`)
@@ -175,49 +189,56 @@ function migrateLegacyLocalStorage(): void {
 /**
  * 初始化存储层：打开 IndexedDB → 载入缓存 → 落库排队写入 → 迁移旧数据 → 版本迁移。
  * 必须在应用挂载前 await 完成。IndexedDB 不可用时降级 localStorage（缓存仍生效）。
+ * v2.8.2：支持单例 Promise 模式，防止并发调用导致重复初始化。
  */
 export async function initStorage(): Promise<void> {
   if (ready) return
-  try {
-    db = await openDatabase()
-    const records = await idbGetAll()
-    records.forEach(r => {
-      if (!cache.has(r.key)) cache.set(r.key, r.value)
-    })
-    // 落库初始化前排队的写入
-    pendingWrites.forEach(w => {
-      if (w.type === 'put') {
-        cache.set(w.key, w.value)
-        idbPut(w.key, w.value)
-      } else {
-        cache.delete(w.key)
-        idbDelete(w.key)
+  if (readyPromise) return readyPromise
+
+  readyPromise = (async () => {
+    try {
+      db = await openDatabase()
+      const records = await idbGetAll()
+      records.forEach(r => {
+        if (!cache.has(r.key)) cache.set(r.key, r.value)
+      })
+      // 落库初始化前排队的写入
+      pendingWrites.forEach(w => {
+        if (w.type === 'put') {
+          cache.set(w.key, w.value)
+          idbPut(w.key, w.value)
+        } else {
+          cache.delete(w.key)
+          idbDelete(w.key)
+        }
+      })
+      pendingWrites.length = 0
+
+      // 一次性迁移旧版 localStorage 数据
+      migrateLegacyLocalStorage()
+
+      // 数据版本化迁移
+      const storedVersion = (cache.get(DATA_VERSION_KEY) as number) || 0
+      if (storedVersion < DATA_VERSION) {
+        runDataMigrations(storedVersion)
+        cache.set(DATA_VERSION_KEY, DATA_VERSION)
+        idbPut(DATA_VERSION_KEY, DATA_VERSION)
       }
-    })
-    pendingWrites.length = 0
 
-    // 一次性迁移旧版 localStorage 数据
-    migrateLegacyLocalStorage()
-
-    // 数据版本化迁移
-    const storedVersion = (cache.get(DATA_VERSION_KEY) as number) || 0
-    if (storedVersion < DATA_VERSION) {
-      runDataMigrations(storedVersion)
-      cache.set(DATA_VERSION_KEY, DATA_VERSION)
-      idbPut(DATA_VERSION_KEY, DATA_VERSION)
+      ready = true
+    } catch (e) {
+      console.error('IndexedDB 初始化失败，降级使用 localStorage:', e)
+      useFallback = true
+      db = null
+      ready = true
     }
+    readyCallbacks.forEach(cb => {
+      try { cb() } catch { /* 单个回调失败不影响其余 */ }
+    })
+    readyCallbacks.length = 0
+  })()
 
-    ready = true
-  } catch (e) {
-    console.error('IndexedDB 初始化失败，降级使用 localStorage:', e)
-    useFallback = true
-    db = null
-    ready = true
-  }
-  readyCallbacks.forEach(cb => {
-    try { cb() } catch { /* 单个回调失败不影响其余 */ }
-  })
-  readyCallbacks.length = 0
+  return readyPromise
 }
 
 /** 注册存储就绪回调（已就绪则立即执行） */
@@ -231,17 +252,24 @@ export function onStorageReady(cb: () => void): void {
 export function getCurrentUsername(): string {
   const v = cache.get(CURRENT_USER_KEY)
   if (typeof v === 'string') return v
-  if (!ready && !useFallback) {
+  // v2.8.2 修复重启掉登录：缓存未命中时一律回退读 localStorage 镜像。
+  // 此前仅在"未就绪且未降级"的短暂窗口回退，IndexedDB 初始化失败降级后
+  // 缓存为空且不再读 localStorage，导致每次启动都被判定为未登录。
+  try {
     return localStorage.getItem(CURRENT_USER_KEY) || ''
+  } catch {
+    return ''
   }
-  return ''
 }
 
 export function setCurrentUsername(username: string): void {
   if (username) {
     writeKey(CURRENT_USER_KEY, username)
+    // v2.8.2：同步镜像到 localStorage，作为路由守卫首次导航的兜底读取源
+    try { localStorage.setItem(CURRENT_USER_KEY, username) } catch { /* 忽略 */ }
   } else {
     deleteKey(CURRENT_USER_KEY)
+    try { localStorage.removeItem(CURRENT_USER_KEY) } catch { /* 忽略 */ }
   }
 }
 

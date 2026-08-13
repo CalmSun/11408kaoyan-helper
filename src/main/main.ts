@@ -10,6 +10,7 @@ export const GITHUB_REPO_URL = 'https://github.com/CalmSun/11408kaoyan-helper'
 // ── 数据目录（v2.8.0）：默认"文档\11408kaoyan-helper"，不在 C 盘应用数据区，可在设置中自定义 ──
 
 const DATA_DIR_CONFIG = path.join(app.getPath('userData'), 'data-dir.json')
+const MUSIC_FOLDER_CONFIG = path.join(app.getPath('userData'), 'music-folder.json')
 let cachedDataDir: string | null = null
 
 /** 默认数据目录：用户文档下的"11408kaoyan-helper"（文档通常不在 C 盘系统区，且用户可自行迁移） */
@@ -77,6 +78,30 @@ let musicRootDir = ''
 
 function newToken(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+// v2.8.2：保存用户选择的音乐文件夹路径
+function saveMusicFolder(folderPath: string): void {
+  try {
+    fs.writeFileSync(MUSIC_FOLDER_CONFIG, JSON.stringify({ folder: folderPath }, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('Failed to save music folder:', err)
+  }
+}
+
+// v2.8.2：加载上次选择的音乐文件夹路径
+function loadMusicFolder(): string | null {
+  try {
+    if (fs.existsSync(MUSIC_FOLDER_CONFIG)) {
+      const cfg = JSON.parse(fs.readFileSync(MUSIC_FOLDER_CONFIG, 'utf-8')) as { folder?: string }
+      if (cfg.folder && typeof cfg.folder === 'string' && fs.existsSync(cfg.folder)) {
+        return cfg.folder
+      }
+    }
+  } catch {
+    // 配置损坏：返回 null
+  }
+  return null
 }
 
 // 注册私有协议：
@@ -396,7 +421,89 @@ ipcMain.handle('music:pick-folder', async () => {
     return { name: rel, url: `kaoyan-music://${token}` }
   })
 
+  // v2.8.2：保存用户选择的音乐文件夹路径
+  saveMusicFolder(root)
+
   return { success: true, canceled: false, files }
+})
+
+// v2.8.2：恢复上次选择的音乐文件夹
+ipcMain.handle('music:restore-folder', async () => {
+  const folderPath = loadMusicFolder()
+  if (!folderPath) {
+    return { success: false, canceled: false, files: [] }
+  }
+  const root = folderPath
+
+  // 检查文件夹是否仍然存在
+  if (!fs.existsSync(root)) {
+    return { success: false, canceled: false, files: [] }
+  }
+
+  const names: string[] = []
+
+  function walk(dir: string) {
+    if (names.length >= MUSIC_MAX_FILES) return
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      if (names.length >= MUSIC_MAX_FILES) return
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+      } else if (entry.isFile() && MUSIC_EXTS.includes(path.extname(entry.name).toLowerCase())) {
+        try {
+          names.push(path.relative(root, full))
+        } catch {
+          // 跳过异常文件
+        }
+      }
+    }
+  }
+
+  walk(root)
+  if (names.length === 0) {
+    return { success: true, canceled: false, files: [] }
+  }
+
+  names.sort((a, b) => a.localeCompare(b, 'zh-CN'))
+
+  // 重建白名单：token -> 绝对路径
+  musicWhitelist.clear()
+  musicRootDir = root
+  const files = names.map(rel => {
+    const token = newToken()
+    musicWhitelist.set(token, path.join(root, rel))
+    return { name: rel, url: `kaoyan-music://${token}` }
+  })
+
+  return { success: true, canceled: false, files }
+})
+
+// v2.8.2：读取本地歌词文件（.lrc）
+ipcMain.handle('music:read-lyric', async (_e, trackName: string) => {
+  if (!musicRootDir || !trackName) {
+    return { success: false, content: '' }
+  }
+
+  // 尝试查找同名 .lrc 文件
+  const audioPath = path.join(musicRootDir, trackName)
+  const lrcPath = audioPath.replace(/\.[^.]+$/, '.lrc')
+
+  try {
+    if (fs.existsSync(lrcPath)) {
+      const content = fs.readFileSync(lrcPath, 'utf-8')
+      return { success: true, content }
+    }
+  } catch (err) {
+    console.error('Failed to read lyric:', err)
+  }
+
+  return { success: false, content: '' }
 })
 
 // ── 国内天气服务（v2.8.0：中国天气网数据源，主进程代理避免跨域） ──
