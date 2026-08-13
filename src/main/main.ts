@@ -4,6 +4,14 @@ import * as path from 'path'
 import * as fs from 'fs'
 import { pathToFileURL } from 'url'
 
+// v3.1.2：全局未捕获异常处理，防止主进程崩溃弹窗
+process.on('uncaughtException', (err) => {
+  console.error('[Main] uncaughtException:', err.message)
+})
+process.on('unhandledRejection', (reason) => {
+  console.error('[Main] unhandledRejection:', String(reason))
+})
+
 // GitHub 项目地址（设置页展示 + 更新来源说明）
 export const GITHUB_REPO_URL = 'https://github.com/CalmSun/11408kaoyan-helper'
 
@@ -311,7 +319,7 @@ if (!gotTheLock) {
       return net.fetch(pathToFileURL(file).toString())
     })
 
-    // 音乐协议：仅放行白名单 token 对应的音频文件（流式读取，不占内存）
+    // v3.1.2：音乐协议改用流式读取（原 net.fetch 可能导致 Array buffer allocation failed）
     protocol.handle('kaoyan-music', (request) => {
       try {
         const url = new URL(request.url)
@@ -320,12 +328,65 @@ if (!gotTheLock) {
         if (!file || !fs.existsSync(file)) {
           return new Response('not found', { status: 404 })
         }
-        // 二次校验：文件必须仍在已选音乐目录内
         const resolved = path.resolve(file)
         if (!musicRootDir || !resolved.startsWith(path.resolve(musicRootDir) + path.sep)) {
           return new Response('forbidden', { status: 403 })
         }
-        return net.fetch(pathToFileURL(resolved).toString())
+        const stat = fs.statSync(resolved)
+        const total = stat.size
+        const rangeHeader = request.headers.get('range')
+        const mime = getMimeType(resolved)
+
+        if (rangeHeader) {
+          const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader)
+          if (match) {
+            let start = match[1] ? parseInt(match[1], 10) : 0
+            let end = match[2] ? parseInt(match[2], 10) : total - 1
+            if (start >= total) start = total - 1
+            if (end >= total) end = total - 1
+            if (start > end) {
+              return new Response('range not satisfiable', {
+                status: 416,
+                headers: { 'Content-Range': `bytes */${total}` }
+              })
+            }
+            const stream = fs.createReadStream(resolved, { start, end })
+            const body = new ReadableStream({
+              start(controller) {
+                stream.on('data', chunk => { try { controller.enqueue(chunk) } catch { /* ignore */ } })
+                stream.on('end', () => { try { controller.close() } catch { /* ignore */ } })
+                stream.on('error', () => { try { controller.close() } catch { /* ignore */ } })
+              },
+              cancel() { try { stream.destroy() } catch { /* ignore */ } }
+            })
+            return new Response(body, {
+              status: 206,
+              headers: {
+                'Content-Type': mime,
+                'Content-Length': String(end - start + 1),
+                'Content-Range': `bytes ${start}-${end}/${total}`,
+                'Accept-Ranges': 'bytes'
+              }
+            })
+          }
+        }
+        const stream = fs.createReadStream(resolved)
+        const body = new ReadableStream({
+          start(controller) {
+            stream.on('data', chunk => { try { controller.enqueue(chunk) } catch { /* ignore */ } })
+            stream.on('end', () => { try { controller.close() } catch { /* ignore */ } })
+            stream.on('error', () => { try { controller.close() } catch { /* ignore */ } })
+          },
+          cancel() { try { stream.destroy() } catch { /* ignore */ } }
+        })
+        return new Response(body, {
+          status: 200,
+          headers: {
+            'Content-Type': mime,
+            'Content-Length': String(total),
+            'Accept-Ranges': 'bytes'
+          }
+        })
       } catch {
         return new Response('bad request', { status: 400 })
       }
@@ -385,11 +446,11 @@ if (!gotTheLock) {
             const stream = fs.createReadStream(resolved, { start, end })
             const body = new ReadableStream({
               start(controller) {
-                stream.on('data', chunk => controller.enqueue(chunk))
-                stream.on('end', () => controller.close())
-                stream.on('error', () => controller.error(new Error('read error')))
+                stream.on('data', chunk => { try { controller.enqueue(chunk) } catch { /* ignore */ } })
+                stream.on('end', () => { try { controller.close() } catch { /* ignore */ } })
+                stream.on('error', () => { try { controller.close() } catch { /* ignore */ } })
               },
-              cancel() { stream.destroy() }
+              cancel() { try { stream.destroy() } catch { /* ignore */ } }
             })
             return new Response(body, {
               status: 206,
@@ -406,11 +467,11 @@ if (!gotTheLock) {
         const stream = fs.createReadStream(resolved)
         const body = new ReadableStream({
           start(controller) {
-            stream.on('data', chunk => controller.enqueue(chunk))
-            stream.on('end', () => controller.close())
-            stream.on('error', () => controller.error(new Error('read error')))
+            stream.on('data', chunk => { try { controller.enqueue(chunk) } catch { /* ignore */ } })
+            stream.on('end', () => { try { controller.close() } catch { /* ignore */ } })
+            stream.on('error', () => { try { controller.close() } catch { /* ignore */ } })
           },
-          cancel() { stream.destroy() }
+          cancel() { try { stream.destroy() } catch { /* ignore */ } }
         })
         return new Response(body, {
           status: 200,
@@ -758,8 +819,7 @@ ipcMain.handle('open-external-url', async (_e, url: string) => {
   }
 })
 
-// ── v2.9.0：网易云音乐 API 代理（weapi 加密，主进程请求避免跨域）──
-// v2.9.2：增强 — Cookie 管理、二维码登录、用户歌单同步
+// ── v3.1.2：网易云音乐 API 重构（参考 ncm-api-rs 实现）──
 
 import * as crypto from 'crypto'
 
@@ -768,6 +828,10 @@ const NETEASE_IV = Buffer.from('0102030405060708', 'utf8')
 const NETEASE_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDgtQn2JZ34ZC28NWYpAUd98iZ37BUrX/aKzmFbt7clFSs6sXqHauqKWqdtLkF2KexO40H1YTX8z2lSgBBOAxLsvaklV8k4cBFK9snQXE9/DDaFt6Rr7iVZMldczhC0JNgTz+SHXT6CBHuX3e9SdB1Ua44oncaTWz7OBGLbCiK45wIDAQAB
 -----END PUBLIC KEY-----`
+// v3.1.2：base62 字符集（与 ncm-api-rs / NeteaseCloudMusicApi 一致）
+const NETEASE_BASE62 = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+// v3.1.2：常见中国 IP 段，用于 X-Real-IP 伪装避免 460 cheating
+const CN_IPS = ['116.25.146.177', '114.114.114.114', '223.5.5.5', '180.101.49.11', '120.27.38.5']
 
 // v2.9.2：网易云 Cookie 持久化路径
 const NETEASE_COOKIE_PATH = path.join(app.getPath('userData'), 'netease-cookies.json')
@@ -796,12 +860,12 @@ function saveNeteaseCookies(): void {
 }
 
 /** v2.9.2：解析 Set-Cookie 头并存储 */
-function parseSetCookies(setCookie: string | null): void {
+function parseSetCookies(setCookie: string | string[] | null): void {
   if (!setCookie) return
-  // Node fetch 的 set-cookie 可能是逗号分隔的多值
-  const parts = setCookie.split(/,(?=\s*[A-Za-z0-9_]+=)/)
-  for (const part of parts) {
-    const kv = part.split(';')[0].trim()
+  // v3.1.2：兼容 string 和 string[]（Node fetch 可能返回数组）
+  const cookies = Array.isArray(setCookie) ? setCookie : [setCookie]
+  for (const cookie of cookies) {
+    const kv = cookie.split(';')[0].trim()
     const eq = kv.indexOf('=')
     if (eq > 0) {
       const key = kv.slice(0, eq).trim()
@@ -812,17 +876,20 @@ function parseSetCookies(setCookie: string | null): void {
   saveNeteaseCookies()
 }
 
-/** v2.9.2：构建 Cookie 头字符串 */
+/** v3.1.2：构建 Cookie 头字符串（ncm-api-rs：只需 MUSIC_U 即可登录） */
 function buildCookieHeader(): string {
   const parts: string[] = []
   neteaseCookies.forEach((v, k) => parts.push(`${k}=${v}`))
-  // 基础匿名 Cookie
-  parts.push('os=pc')
-  parts.push('osver=Microsoft-Windows-10-Professional-build-10586-64bit')
-  parts.push('appver=2.0.3.131777')
-  parts.push('channel=netease')
-  parts.push('__remember_me=true')
+  // 基础匿名 Cookie（与网易云 PC 客户端一致）
+  if (!neteaseCookies.has('os')) parts.push('os=pc')
+  if (!neteaseCookies.has('appver')) parts.push('appver=2.0.3.131777')
+  if (!neteaseCookies.has('channel')) parts.push('channel=netease')
   return parts.join('; ')
+}
+
+/** v3.1.2：随机中国 IP 用于 X-Real-IP 伪装 */
+function randomCNIP(): string {
+  return CN_IPS[Math.floor(Math.random() * CN_IPS.length)]
 }
 
 loadNeteaseCookies()
@@ -840,20 +907,28 @@ function neteaseRsaEncrypt(text: string): string {
   return crypto.publicEncrypt({ key: NETEASE_PUBLIC_KEY, padding: crypto.constants.RSA_NO_PADDING }, buf).toString('hex')
 }
 
+/** v3.1.2：生成 16 位 base62 随机密钥（修复原 hex 字符集导致的加密问题） */
+function generateSecretKey(): string {
+  let key = ''
+  for (let i = 0; i < 16; i++) {
+    key += NETEASE_BASE62[Math.floor(Math.random() * NETEASE_BASE62.length)]
+  }
+  return key
+}
+
 function neteaseWeapi(data: Record<string, unknown>): { params: string; encSecKey: string } {
   const text = JSON.stringify(data)
-  const secretKey = crypto.randomBytes(16).toString('hex').slice(0, 16)
+  const secretKey = generateSecretKey()
   const params = neteaseAesEncrypt(neteaseAesEncrypt(text, NETEASE_PRESET_KEY), Buffer.from(secretKey, 'utf8'))
   const encSecKey = neteaseRsaEncrypt(secretKey)
   return { params, encSecKey }
 }
 
-/** v3.0.0：通用 weapi 请求（带 Cookie 管理，修复空 csrf 导致搜索失败） */
+/** v3.1.2：通用 weapi 请求（参考 ncm-api-rs，添加 X-Real-IP 伪装，改进错误处理） */
 async function neteaseRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
   const csrf = neteaseCookies.get('__csrf') || ''
   const { params, encSecKey } = neteaseWeapi({ ...data, csrf_token: csrf })
   const body = new URLSearchParams({ params, encSecKey })
-  // v3.0.0：仅在 csrf 非空时附加到 URL，空 csrf 会导致部分接口（如搜索）拒绝请求
   const url = csrf
     ? `https://music.163.com/weapi${path}?csrf_token=${csrf}`
     : `https://music.163.com/weapi${path}`
@@ -862,16 +937,25 @@ async function neteaseRequest(path: string, data: Record<string, unknown>): Prom
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Referer': 'https://music.163.com/',
+      'Origin': 'https://music.163.com',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'X-Real-IP': randomCNIP(),
       'Cookie': buildCookieHeader()
     },
     body: body.toString()
   })
-  parseSetCookies(res.headers.get('set-cookie'))
+  // v3.1.2：兼容 Node fetch 返回的 set-cookie 数组
+  const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get('set-cookie')
+  parseSetCookies(setCookie as string | string[] | null)
   if (!res.ok) {
     throw new Error(`NetEase API ${path} HTTP ${res.status}`)
   }
-  return res.json()
+  const json = await res.json() as { code?: number; message?: string }
+  // v3.1.2：检测业务错误码（301=未登录, 460=风控, 503=频繁）
+  if (json.code && json.code !== 200) {
+    throw new Error(`NetEase API ${path} code=${json.code}${json.message ? ': ' + json.message : ''}`)
+  }
+  return json
 }
 
 /** v2.9.2：普通 API 请求（不加密，用于二维码登录等接口） */
@@ -882,12 +966,15 @@ async function neteasePlainRequest(path: string, data: Record<string, unknown>):
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'Referer': 'https://music.163.com/',
+      'Origin': 'https://music.163.com',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'X-Real-IP': randomCNIP(),
       'Cookie': buildCookieHeader()
     },
     body: body.toString()
   })
-  parseSetCookies(res.headers.get('set-cookie'))
+  const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get('set-cookie')
+  parseSetCookies(setCookie as string | string[] | null)
   if (!res.ok) {
     throw new Error(`NetEase API ${path} HTTP ${res.status}`)
   }
@@ -920,10 +1007,23 @@ ipcMain.handle('netease:search', async (_e, keyword: string, limit = 30, offset 
 
 ipcMain.handle('netease:song-url', async (_e, ids: number[]) => {
   try {
-    const data = await neteaseRequest('/song/enhance/player/url', {
-      ids,
-      br: 320000
-    }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
+    // v3.1.2：优先使用新版 /song/url/v1 接口，失败时降级到旧版
+    let data: { data?: Array<{ id: number; url: string | null; br?: number }> }
+    try {
+      data = await neteaseRequest('/song/url/v1', {
+        id: ids.join(','),
+        level: 'standard'
+      }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
+      // 如果 v1 返回空 url，降级到旧版
+      if (!data.data || data.data.every(d => !d.url)) {
+        throw new Error('v1 returned empty urls')
+      }
+    } catch {
+      data = await neteaseRequest('/song/enhance/player/url', {
+        ids,
+        br: 320000
+      }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
+    }
     const urls = (data.data || []).map(d => ({ id: d.id, url: d.url, br: d.br || 0 }))
     return { success: true, urls }
   } catch (err) {
@@ -947,18 +1047,21 @@ ipcMain.handle('netease:lyric', async (_e, id: number) => {
 
 // ── v2.9.2：二维码登录 ──
 
-/** v3.0.0：网易云 GET 请求辅助（新版二维码接口用 GET） */
+/** v3.1.2：网易云 GET 请求辅助（添加 X-Real-IP，改进 set-cookie 处理） */
 async function neteaseGetRequest(path: string, query: Record<string, string> = {}): Promise<unknown> {
   const params = new URLSearchParams({ ...query, timestamp: Date.now().toString() })
   const res = await fetch(`https://music.163.com/api${path}?${params.toString()}`, {
     method: 'GET',
     headers: {
       'Referer': 'https://music.163.com/',
+      'Origin': 'https://music.163.com',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'X-Real-IP': randomCNIP(),
       'Cookie': buildCookieHeader()
     }
   })
-  parseSetCookies(res.headers.get('set-cookie'))
+  const setCookie = res.headers.getSetCookie ? res.headers.getSetCookie() : res.headers.get('set-cookie')
+  parseSetCookies(setCookie as string | string[] | null)
   if (!res.ok) throw new Error(`NetEase GET ${path} HTTP ${res.status}`)
   return res.json()
 }

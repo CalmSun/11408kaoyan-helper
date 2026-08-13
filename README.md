@@ -208,6 +208,16 @@ kaoyan-helper/
 
 ## 📝 更新日志
 
+### v3.1.2
+- **网易云音乐 API 全面重构**：参考 SPlayer-Dev/ncm-api-rs 项目重写网易云登录、搜索、歌单功能，修复 weapi 加密 secretKey 仅生成 hex 字符的 bug（改用 base62 字符集），新增 X-Real-IP 国内 IP 伪装避免 460 风控，补全 Origin 请求头，改进 Set-Cookie 解析兼容数组格式，Cookie 登录稳定性大幅提升
+- **歌曲播放进度调节修复**：音乐页面进度条改用 `:model-value` + `@input` 手动控制，避免 `v-model` 与拖动事件冲突，进度条拖动实时生效
+- **主进程崩溃报错修复**：音乐协议从 `net.fetch` 改用 `fs.createReadStream` 流式读取，避免大文件导致 `Array buffer allocation failed`；资料协议 ReadStream 错误处理改用安全关闭而非 `controller.error()` 抛出未捕获异常；新增主进程全局 `uncaughtException` / `unhandledRejection` 兜底
+- **视频播放无声音优化**：新增音频编码不支持检测和友好提示（AC3/DTS 等编码建议转换为 AAC/MP3），视频元数据加载后确保音量和静音状态正确设置
+- **音乐页面卡片布局优化**：取消整体居中（移除 max-width + margin auto），网格改为自适应宽度 `minmax(320px, 380px) minmax(0, 1fr)`，播放器卡片限制最大宽度避免过宽；搜索结果和歌单列表增加滚动条美化和最大高度优化；歌单网格改为 `auto-fill minmax(120px, 1fr)` 自适应列数；新增 1100px / 800px 响应式断点
+- **顶栏新增液态玻璃开关按钮**：在护眼模式和主题切换之间添加液态玻璃快捷开关，点击即时切换效果并持久化
+- **番茄钟提示音音量提高**：默认音量从 70% 提升至 85%，铃音峰值音量同步提升（尾音 0.38→0.45，普通音 0.26→0.32，倒计时滴答 0.15→0.22）
+- **版本号升级至 3.1.2**
+
 ### v3.1.0
 - **数据持久化改回 LocalStorage**：彻底修复重启应用后设置和学习进度数据丢失问题，存储层从 IndexedDB 改回 LocalStorage 实时记录，退出应用前自动保存最终数据状态（beforeunload + pagehide 双保险）
 - **液态玻璃效果重新优化**：参考 ybouane/liquidglass 项目参数（Blur 25px、圆角40px、菲涅尔高光、色差0.05、阴影透明度0.3），背景使用用户自定义背景，移除动态高光旋转动画

@@ -237,7 +237,8 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
       const isLast = i === seq.length - 1
       // 尾音前稍作停顿并拉长，形成"叮叮叮——"的节奏感
       const t = now + i * 0.22 + (isLast ? 0.06 : 0)
-      playBellNote(ctx, freq, t, isLast ? 1.6 : 0.5, isLast ? 0.38 : 0.26)
+      // v3.1.2：提高基础音量
+      playBellNote(ctx, freq, t, isLast ? 1.6 : 0.5, isLast ? 0.45 : 0.32)
     })
   }
 
@@ -245,7 +246,8 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
   function playCountdownBeep() {
     const ctx = ensureAudioContext()
     const now = ctx.currentTime
-    playBellNote(ctx, 880, now, 0.18, 0.15)
+    // v3.1.2：提高基础音量
+    playBellNote(ctx, 880, now, 0.18, 0.22)
   }
 
   // 显示桌面通知

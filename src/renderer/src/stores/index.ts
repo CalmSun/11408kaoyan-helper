@@ -263,7 +263,7 @@ export const useMainStore = defineStore('main', () => {
     enableSound: true,          // 启用声音
     enableTitleFlash: true,     // 启用页面标题闪烁
     forceFullscreen: false,     // 强制全屏（v2.7.1：专注时隐藏系统任务栏，全局设置）
-    soundVolume: 70             // v2.8.2：提醒音效音量（0-100）
+    soundVolume: 85             // v3.1.2：提高提醒音效默认音量（0-100）
   }))
 
   // 旧版本数据补齐新字段，避免 undefined
@@ -271,7 +271,7 @@ export const useMainStore = defineStore('main', () => {
     pomodoroSettings.value.forceFullscreen = false
   }
   if (pomodoroSettings.value.soundVolume === undefined) {
-    pomodoroSettings.value.soundVolume = 70
+    pomodoroSettings.value.soundVolume = 85
   }
 
   // 计算倒计时天数
@@ -614,7 +614,7 @@ export const useMainStore = defineStore('main', () => {
     pomodoroSettings.value = getStorage('pomodoroSettings', {
       workDuration: 25, breakDuration: 5, longBreakDuration: 15,
       longBreakInterval: 4, autoStartBreak: true, autoStartWork: false,
-      soundEnabled: true, forceFullscreen: false, soundVolume: 70
+      soundEnabled: true, forceFullscreen: false, soundVolume: 85
     })
   }
   onStorageReady(refreshAllFromStorage)

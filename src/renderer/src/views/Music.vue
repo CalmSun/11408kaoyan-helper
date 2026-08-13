@@ -56,14 +56,14 @@
           <div class="progress-section">
             <span class="time-label">{{ formatTime(music.currentTime) }}</span>
             <el-slider
-              v-model="progressValue"
+              :model-value="progressValue"
               :min="0"
               :max="music.duration || 100"
               :step="0.1"
               :show-tooltip="false"
               class="progress-slider"
-              @input="(val: number) => { isDraggingProgress = true; music.seek(val) }"
-              @change="() => { isDraggingProgress = false }"
+              @input="handleProgressInput"
+              @change="handleProgressChange"
             />
             <span class="time-label">{{ formatTime(music.duration) }}</span>
           </div>
@@ -359,6 +359,17 @@ watch(() => music.currentTime, (t) => {
   }
 })
 
+// v3.1.2：进度条拖动处理（修复无法调节问题）
+function handleProgressInput(val: number | number[]) {
+  const time = Array.isArray(val) ? val[0] : val
+  isDraggingProgress.value = true
+  progressValue.value = time
+  music.seek(time)
+}
+function handleProgressChange() {
+  isDraggingProgress.value = false
+}
+
 watch(() => music.volume, (v) => {
   volumeValue.value = v
 })
@@ -481,10 +492,9 @@ onUnmounted(() => {
 
 .music-body {
   display: grid;
-  grid-template-columns: minmax(340px, 420px) 1fr;
-  gap: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
 }
 
 /* v3.1.0：统一卡片样式，与其他页面保持一致 */
@@ -492,10 +502,22 @@ onUnmounted(() => {
   background: var(--mo-surface);
   border: 1px solid var(--mo-border);
   border-radius: var(--mo-radius);
-  padding: 24px;
+  padding: 20px;
   backdrop-filter: var(--glass-filter, blur(12px));
   position: relative;
   overflow: hidden;
+}
+
+/* v3.1.2：播放器卡片限制最大宽度，避免过宽 */
+.player-card {
+  max-width: 420px;
+}
+
+/* v3.1.2：右侧内容区卡片自适应，最大宽度限制 */
+.playlist-card,
+.search-card {
+  width: 100%;
+  max-width: 100%;
 }
 
 .section-title {
@@ -697,8 +719,18 @@ onUnmounted(() => {
 }
 
 .search-results {
-  max-height: 280px;
+  max-height: 360px;
   overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* v3.1.2：搜索结果滚动条美化 */
+.search-results::-webkit-scrollbar {
+  width: 6px;
+}
+.search-results::-webkit-scrollbar-thumb {
+  background: var(--mo-border);
+  border-radius: 3px;
 }
 
 .search-item {
@@ -863,9 +895,18 @@ onUnmounted(() => {
   color: #f56c6c;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
+  .music-body {
+    grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 800px) {
   .music-body {
     grid-template-columns: 1fr;
+  }
+  .player-card {
+    max-width: 100%;
   }
 }
 
@@ -932,13 +973,22 @@ onUnmounted(() => {
   background: var(--mo-primary, #409eff);
 }
 
-/* v2.9.2：歌单网格 */
+/* v3.1.2：歌单网格自适应列数 */
 .user-playlists-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 12px;
-  max-height: 400px;
+  max-height: 420px;
   overflow-y: auto;
+  padding-right: 4px;
+}
+
+.user-playlists-grid::-webkit-scrollbar {
+  width: 6px;
+}
+.user-playlists-grid::-webkit-scrollbar-thumb {
+  background: var(--mo-border);
+  border-radius: 3px;
 }
 
 .playlist-grid-item {

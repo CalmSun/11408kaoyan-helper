@@ -96,8 +96,11 @@
               @timeupdate="onVideoTimeUpdate"
               @loadedmetadata="onVideoLoaded"
               @ended="videoPlaying = false"
+              @error="onVideoError"
               @click="toggleVideoPlay"
             />
+            <!-- v3.1.2：音频编码不支持警告 -->
+            <div v-if="audioWarning" class="audio-warning">{{ audioWarning }}</div>
             <!-- v3.0.0：自定义视频控制栏（含音量+全屏） -->
             <div class="video-controls">
               <button class="video-ctrl-btn" @click="toggleVideoPlay">
@@ -201,6 +204,8 @@ const videoPlaying = ref(false)
 const videoSpeed = ref(1)
 const videoVolume = ref(80)
 const videoMuted = ref(false)
+// v3.1.2：音频编码不支持警告
+const audioWarning = ref('')
 const isFullscreen = ref(false)
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
@@ -405,7 +410,22 @@ function onVideoTimeUpdate() {
 function onVideoLoaded() {
   if (videoEl.value) {
     videoDuration.value = videoEl.value.duration
+    // v3.1.2：确保音量设置在元数据加载后生效
+    videoEl.value.volume = videoVolume.value / 100
+    videoEl.value.muted = false
+    // v3.1.2：检测是否有音轨但可能无法解码
+    const el = videoEl.value as HTMLVideoElement & { audioTracks?: { length: number } }
+    if (el.audioTracks && el.audioTracks.length === 0 && videoEl.value.videoWidth > 0) {
+      audioWarning.value = '该视频可能包含不支持的音频编码（如 AC3/DTS），建议转换为 AAC/MP3 格式后播放'
+    } else {
+      audioWarning.value = ''
+    }
   }
+}
+
+// v3.1.2：视频加载错误处理
+function onVideoError() {
+  audioWarning.value = '视频加载失败，可能是编码格式不支持，建议转换为 MP4(H.264+AAC) 格式'
 }
 
 function toggleVideoPlay() {
@@ -705,6 +725,17 @@ if (typeof document !== 'undefined') {
   object-fit: contain;
   background: #000;
   border-radius: 8px;
+}
+
+/* v3.1.2：音频编码不支持警告 */
+.audio-warning {
+  padding: 8px 12px;
+  background: rgba(255, 152, 0, 0.15);
+  border: 1px solid rgba(255, 152, 0, 0.4);
+  border-radius: 6px;
+  color: #ff9800;
+  font-size: 12px;
+  text-align: center;
 }
 
 /* v3.1.0：全屏时视频铺满整个屏幕 */

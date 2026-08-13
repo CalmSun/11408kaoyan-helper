@@ -241,6 +241,11 @@
         <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2 C9 2 11 6 11 6 C11 6 9 10 6 10 C3 10 1 6 1 6 C1 6 3 2 6 2 Z" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="6" cy="6" r="1.8" fill="currentColor"/></svg>
       </button>
 
+      <!-- v3.1.2：液态玻璃开关 -->
+      <button class="mini-btn liquidglass-btn" :class="{ on: liquidGlassOn }" :title="liquidGlassOn ? '关闭液态玻璃效果' : '开启液态玻璃效果'" @click="handleToggleLiquidGlass">
+        <svg width="13" height="13" viewBox="0 0 13 13"><defs><linearGradient id="lg-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.9"/><stop offset="50%" stop-color="currentColor" stop-opacity="0.4"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.7"/></linearGradient></defs><rect x="1.5" y="1.5" width="10" height="10" rx="3" fill="url(#lg-grad)" stroke="currentColor" stroke-width="0.8"/><path d="M3 4 Q6.5 2.5 10 4" fill="none" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.6" stroke-linecap="round"/></svg>
+      </button>
+
       <!-- 主题切换 -->
       <button class="mini-btn theme-btn" :title="dark ? '切换到浅色模式' : '切换到深色模式'" @click="handleToggleTheme">
         <el-icon :size="14"><component :is="dark ? Sunny : Moon" /></el-icon>
@@ -275,7 +280,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
 import { useMusicStore } from '@/stores/music'
-import { isDark, toggleTheme, eyeCare, toggleEyeCare } from '@/utils/theme'
+import { isDark, toggleTheme, eyeCare, toggleEyeCare, liquidGlass, toggleLiquidGlass } from '@/utils/theme'
 import {
   weather,
   weatherLoading,
@@ -305,6 +310,7 @@ const music = useMusicStore()
 const isMaximized = ref(false)
 const dark = isDark
 const eyeCareOn = eyeCare
+const liquidGlassOn = liquidGlass
 
 const pageTitleMap: Record<string, string> = {
   '/dashboard': '首页仪表盘',
@@ -458,6 +464,11 @@ function handleToggleTheme() {
 
 function toggleEye() {
   toggleEyeCare()
+}
+
+// v3.1.2：液态玻璃开关
+function handleToggleLiquidGlass() {
+  toggleLiquidGlass()
 }
 
 function goToSettings() {
