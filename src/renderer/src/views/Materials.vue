@@ -86,17 +86,19 @@
             :src="currentFile.url"
             class="pdf-viewer"
           />
-          <!-- 视频播放（v2.9.2：自定义控制栏，进度可随意调节） -->
-          <div v-else-if="isVideo(currentFile.ext)" class="video-wrap">
+          <!-- 视频播放（v3.0.0：支持音量调节/全屏/进度拖动，Range 协议加速加载） -->
+          <div v-else-if="isVideo(currentFile.ext)" class="video-wrap" ref="videoWrap">
             <video
               ref="videoEl"
               :src="currentFile.url"
               class="video-player"
+              preload="metadata"
               @timeupdate="onVideoTimeUpdate"
               @loadedmetadata="onVideoLoaded"
               @ended="videoPlaying = false"
+              @click="toggleVideoPlay"
             />
-            <!-- v2.9.2：自定义视频控制栏 -->
+            <!-- v3.0.0：自定义视频控制栏（含音量+全屏） -->
             <div class="video-controls">
               <button class="video-ctrl-btn" @click="toggleVideoPlay">
                 <el-icon>{{ videoPlaying ? '⏸' : '▶' }}</el-icon>
@@ -112,6 +114,20 @@
                 @input="onVideoSeek"
               />
               <span class="video-time">{{ formatTime(videoDuration) }}</span>
+              <!-- 音量控制 -->
+              <button class="video-ctrl-btn" @click="toggleMute">
+                <el-icon>{{ videoMuted || videoVolume === 0 ? '🔇' : '🔊' }}</el-icon>
+              </button>
+              <input
+                type="range"
+                class="video-volume"
+                :min="0"
+                :max="100"
+                :step="1"
+                v-model="videoVolume"
+                @input="onVolumeChange"
+              />
+              <!-- 倍速 -->
               <select class="video-speed" v-model="videoSpeed" @change="onVideoSpeedChange">
                 <option value="0.5">0.5x</option>
                 <option value="1">1.0x</option>
@@ -119,6 +135,10 @@
                 <option value="1.5">1.5x</option>
                 <option value="2">2.0x</option>
               </select>
+              <!-- 全屏 -->
+              <button class="video-ctrl-btn" @click="toggleFullscreen">
+                <el-icon>{{ isFullscreen ? '🗗' : '⛶' }}</el-icon>
+              </button>
             </div>
           </div>
           <!-- 图片预览 -->
@@ -172,12 +192,16 @@ const currentFile = ref<MaterialNode | null>(null)
 const filterType = ref('all')
 const expandedFolders = ref<Set<string>>(new Set())
 
-// v2.9.2：视频控制
+// v3.0.0：视频控制（含音量/全屏）
 const videoEl = ref<HTMLVideoElement | null>(null)
+const videoWrap = ref<HTMLElement | null>(null)
 const videoCurrent = ref(0)
 const videoDuration = ref(0)
 const videoPlaying = ref(false)
 const videoSpeed = ref(1)
+const videoVolume = ref(80)
+const videoMuted = ref(false)
+const isFullscreen = ref(false)
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
@@ -256,15 +280,19 @@ onMounted(() => {
   restoreFolder()
 })
 
-// v2.9.2：切换文件时重置视频状态
+// v3.0.0：切换文件时重置视频状态
 watch(() => currentFile.value, () => {
   videoCurrent.value = 0
   videoDuration.value = 0
   videoPlaying.value = false
   videoSpeed.value = 1
+  videoMuted.value = false
+  isFullscreen.value = false
   nextTick(() => {
     if (videoEl.value) {
       videoEl.value.playbackRate = 1
+      videoEl.value.volume = videoVolume.value / 100
+      videoEl.value.muted = false
     }
   })
 })
@@ -403,6 +431,45 @@ function onVideoSpeedChange() {
   if (videoEl.value) {
     videoEl.value.playbackRate = videoSpeed.value
   }
+}
+
+// v3.0.0：音量控制
+function onVolumeChange() {
+  if (videoEl.value) {
+    videoEl.value.volume = videoVolume.value / 100
+    videoEl.value.muted = videoVolume.value === 0
+    videoMuted.value = videoVolume.value === 0
+  }
+}
+
+function toggleMute() {
+  if (!videoEl.value) return
+  videoMuted.value = !videoMuted.value
+  videoEl.value.muted = videoMuted.value
+  if (!videoMuted.value && videoVolume.value === 0) {
+    videoVolume.value = 50
+    videoEl.value.volume = 0.5
+  }
+}
+
+// v3.0.0：全屏控制
+function toggleFullscreen() {
+  if (!videoWrap.value) return
+  if (document.fullscreenElement) {
+    document.exitFullscreen()
+    isFullscreen.value = false
+  } else {
+    videoWrap.value.requestFullscreen().then(() => {
+      isFullscreen.value = true
+    }).catch(() => { /* ignore */ })
+  }
+}
+
+// 监听全屏变化（用户按 ESC 退出时同步状态）
+if (typeof document !== 'undefined') {
+  document.addEventListener('fullscreenchange', () => {
+    isFullscreen.value = !!document.fullscreenElement
+  })
 }
 </script>
 
@@ -710,6 +777,36 @@ function onVideoSpeedChange() {
   background: var(--mo-surface);
   color: var(--mo-text-1);
   cursor: pointer;
+}
+
+/* v3.0.0：音量滑块 */
+.video-volume {
+  width: 60px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  cursor: pointer;
+  outline: none;
+}
+
+.video-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+.video-volume::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: none;
 }
 
 .image-viewer {

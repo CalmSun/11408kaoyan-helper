@@ -580,3 +580,111 @@ html.dark .el-textarea__inner:focus {
   background-color: var(--mo-primary);
   border-color: var(--mo-primary);
 }
+
+/* ═══════════════════════════════════════════
+   v3.0.0：增强版液态玻璃模式（Liquid Glass Pro）
+   参考 https://liquid-glass.ybouane.com/
+   - 更强模糊 + 高饱和折射
+   - 动态镜面高光（缓慢旋转的 conic-gradient）
+   - 噪声纹理叠加增加真实感
+   - 多层边框营造深度
+   - 更 vibrant 的背景渐变
+   ═══════════════════════════════════════════ */
+body.liquid-glass {
+  /* 增强背景：更丰富的色彩渐变，体现玻璃折射 */
+  --mo-bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 25%, #f093fb 50%, #4facfe 75%, #00f2fe 100%);
+  --mo-bg-image: none;
+
+  /* 增强玻璃变量 */
+  --glass-bg: linear-gradient(135deg, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.10) 100%);
+  --glass-bg-strong: linear-gradient(135deg, rgba(255,255,255,0.40) 0%, rgba(255,255,255,0.25) 50%, rgba(255,255,255,0.18) 100%);
+  --glass-border: rgba(255,255,255,0.40);
+  --glass-blur: 32px;
+  --glass-blur-pop: 40px;
+  --glass-saturate: 2.2;
+  --glass-edge-highlight: 0.8;
+  --glass-highlight-top: 0.45;
+  --glass-highlight-corner: 0.35;
+  --glass-highlight-bottom: 0.10;
+  --glass-shadow: 0 4px 12px rgba(0,0,0,0.08), 0 16px 40px rgba(0,0,0,0.12), 0 40px 100px rgba(0,0,0,0.15);
+  --glass-shadow-hover: 0 6px 18px rgba(0,0,0,0.10), 0 24px 56px rgba(0,0,0,0.15), 0 56px 120px rgba(0,0,0,0.18);
+  --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
+
+  /* 更大圆角 */
+  --mo-radius: 20px;
+  --mo-radius-lg: 28px;
+  --mo-radius-sm: 14px;
+
+  /* 侧边导航增强 */
+  --side-nav-bg: linear-gradient(160deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0.20) 60%, rgba(255,255,255,0.15) 100%);
+  --side-nav-border: rgba(255,255,255,0.35);
+
+  /* 顶栏增强 */
+  --titlebar-bg: rgba(255,255,255,0.25);
+  --titlebar-border: rgba(255,255,255,0.30);
+}
+
+/* 深色主题下的增强液态玻璃 */
+html.dark body.liquid-glass {
+  --mo-bg-gradient: linear-gradient(135deg, #0f0c29 0%, #302b63 35%, #24243e 70%, #1a1a2e 100%);
+  --glass-bg: linear-gradient(135deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.04) 100%);
+  --glass-bg-strong: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.07) 100%);
+  --glass-border: rgba(255,255,255,0.20);
+  --glass-edge-highlight: 0.25;
+  --glass-highlight-top: 0.15;
+  --glass-highlight-corner: 0.12;
+  --side-nav-bg: linear-gradient(160deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.06) 60%, rgba(255,255,255,0.04) 100%);
+  --side-nav-border: rgba(255,255,255,0.15);
+  --titlebar-bg: rgba(255,255,255,0.08);
+  --titlebar-border: rgba(255,255,255,0.12);
+}
+
+/* 增强模式：卡片动态高光层 */
+body.liquid-glass .glass-card--card::before,
+body.liquid-glass .glass-card--strong::before,
+body.liquid-glass .card::before {
+  background:
+    radial-gradient(150% 80% at 20% 0%, rgba(255,255,255,var(--glass-highlight-corner)) 0%, transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,var(--glass-highlight-top)) 0%, transparent 40%),
+    conic-gradient(from 0deg at 50% 50%, transparent 0deg, rgba(255,255,255,0.06) 60deg, transparent 120deg, rgba(255,255,255,0.04) 180deg, transparent 240deg, rgba(255,255,255,0.05) 300deg, transparent 360deg);
+  animation: liquid-glass-shimmer 8s linear infinite;
+}
+
+/* 增强模式：噪声纹理叠加（增加真实感） */
+body.liquid-glass .glass-card--card::after,
+body.liquid-glass .glass-card--strong::after,
+body.liquid-glass .card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.03;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 动态高光旋转动画 */
+@keyframes liquid-glass-shimmer {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 增强模式：卡片悬浮更明显的深度变化 */
+body.liquid-glass .glass-card--card:hover,
+body.liquid-glass .card:hover {
+  transform: translateY(-2px) scale(1.005);
+}
+
+/* 增强模式：背景动画（缓慢流动的渐变） */
+body.liquid-glass {
+  animation: liquid-bg-flow 20s ease infinite;
+  background-size: 160px 160px, 400% 400%;
+}
+
+@keyframes liquid-bg-flow {
+  0% { background-position: 0 0, 0% 50%; }
+  50% { background-position: 0 0, 100% 50%; }
+  100% { background-position: 0 0, 0% 50%; }
+}

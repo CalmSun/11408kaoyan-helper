@@ -88,6 +88,39 @@ function newToken(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
 }
 
+// v3.0.0：根据文件扩展名返回 MIME 类型（用于资料协议响应头）
+function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase()
+  const map: Record<string, string> = {
+    '.pdf': 'application/pdf',
+    '.mp4': 'video/mp4',
+    '.mkv': 'video/x-matroska',
+    '.avi': 'video/x-msvideo',
+    '.mov': 'video/quicktime',
+    '.flv': 'video/x-flv',
+    '.wmv': 'video/x-ms-wmv',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.flac': 'audio/flac',
+    '.m4a': 'audio/mp4',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.bmp': 'image/bmp',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.htm': 'text/html; charset=utf-8',
+    '.json': 'application/json',
+    '.epub': 'application/epub+zip',
+    '.mobi': 'application/x-mobipocket-ebook'
+  }
+  return map[ext] || 'application/octet-stream'
+}
+
 // v2.8.2：保存用户选择的音乐文件夹路径
 function saveMusicFolder(folderPath: string): void {
   try {
@@ -316,7 +349,9 @@ if (!gotTheLock) {
       }
     })
 
-    // v2.9.0：资料协议：仅放行白名单 token 对应的资料文件（PDF/MP4 等流式读取）
+    // v3.0.0：资料协议：显式支持 Range 请求（视频拖动进度/快速加载），
+    // 此前用 net.fetch(file://) 在部分 Electron 版本下 Range 支持不稳定，
+    // 改用 fs.createReadStream + 206 Partial Content 确保 seek 正常。
     protocol.handle('kaoyan-material', (request) => {
       try {
         const url = new URL(request.url)
@@ -329,7 +364,62 @@ if (!gotTheLock) {
         if (!materialsRootDir || !resolved.startsWith(path.resolve(materialsRootDir) + path.sep)) {
           return new Response('forbidden', { status: 403 })
         }
-        return net.fetch(pathToFileURL(resolved).toString())
+        const stat = fs.statSync(resolved)
+        const total = stat.size
+        const rangeHeader = request.headers.get('range')
+        const mime = getMimeType(resolved)
+
+        if (rangeHeader) {
+          const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader)
+          if (match) {
+            let start = match[1] ? parseInt(match[1], 10) : 0
+            let end = match[2] ? parseInt(match[2], 10) : total - 1
+            if (start >= total) start = total - 1
+            if (end >= total) end = total - 1
+            if (start > end) {
+              return new Response('range not satisfiable', {
+                status: 416,
+                headers: { 'Content-Range': `bytes */${total}` }
+              })
+            }
+            const stream = fs.createReadStream(resolved, { start, end })
+            const body = new ReadableStream({
+              start(controller) {
+                stream.on('data', chunk => controller.enqueue(chunk))
+                stream.on('end', () => controller.close())
+                stream.on('error', () => controller.error(new Error('read error')))
+              },
+              cancel() { stream.destroy() }
+            })
+            return new Response(body, {
+              status: 206,
+              headers: {
+                'Content-Type': mime,
+                'Content-Length': String(end - start + 1),
+                'Content-Range': `bytes ${start}-${end}/${total}`,
+                'Accept-Ranges': 'bytes'
+              }
+            })
+          }
+        }
+        // 无 Range：返回完整文件
+        const stream = fs.createReadStream(resolved)
+        const body = new ReadableStream({
+          start(controller) {
+            stream.on('data', chunk => controller.enqueue(chunk))
+            stream.on('end', () => controller.close())
+            stream.on('error', () => controller.error(new Error('read error')))
+          },
+          cancel() { stream.destroy() }
+        })
+        return new Response(body, {
+          status: 200,
+          headers: {
+            'Content-Type': mime,
+            'Content-Length': String(total),
+            'Accept-Ranges': 'bytes'
+          }
+        })
       } catch {
         return new Response('bad request', { status: 400 })
       }
@@ -758,12 +848,16 @@ function neteaseWeapi(data: Record<string, unknown>): { params: string; encSecKe
   return { params, encSecKey }
 }
 
-/** v2.9.2：通用 weapi 请求（带 Cookie 管理） */
+/** v3.0.0：通用 weapi 请求（带 Cookie 管理，修复空 csrf 导致搜索失败） */
 async function neteaseRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
   const csrf = neteaseCookies.get('__csrf') || ''
   const { params, encSecKey } = neteaseWeapi({ ...data, csrf_token: csrf })
   const body = new URLSearchParams({ params, encSecKey })
-  const res = await fetch(`https://music.163.com/weapi${path}?csrf_token=${csrf}`, {
+  // v3.0.0：仅在 csrf 非空时附加到 URL，空 csrf 会导致部分接口（如搜索）拒绝请求
+  const url = csrf
+    ? `https://music.163.com/weapi${path}?csrf_token=${csrf}`
+    : `https://music.163.com/weapi${path}`
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -853,20 +947,50 @@ ipcMain.handle('netease:lyric', async (_e, id: number) => {
 
 // ── v2.9.2：二维码登录 ──
 
-/** 获取二维码登录 key */
+/** v3.0.0：网易云 GET 请求辅助（新版二维码接口用 GET） */
+async function neteaseGetRequest(path: string, query: Record<string, string> = {}): Promise<unknown> {
+  const params = new URLSearchParams({ ...query, timestamp: Date.now().toString() })
+  const res = await fetch(`https://music.163.com/api${path}?${params.toString()}`, {
+    method: 'GET',
+    headers: {
+      'Referer': 'https://music.163.com/',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Cookie': buildCookieHeader()
+    }
+  })
+  parseSetCookies(res.headers.get('set-cookie'))
+  if (!res.ok) throw new Error(`NetEase GET ${path} HTTP ${res.status}`)
+  return res.json()
+}
+
+/** v3.0.0：获取二维码登录 key（新版 /api/login/qr/key） */
 ipcMain.handle('netease:qr-key', async () => {
   try {
-    const data = await neteasePlainRequest('/login/qrcode/unikey', { type: '3' }) as { data?: { unikey?: string }; code?: number }
-    return { success: true, key: data.data?.unikey || '' }
+    const data = await neteaseGetRequest('/login/qr/key') as { data?: { unikey?: string }; code?: number }
+    const key = data.data?.unikey || ''
+    if (!key) return { success: false, key: '', qrimg: '', message: '获取二维码 key 失败' }
+    // 同时获取二维码图片（base64），前端无需第三方二维码服务
+    const createData = await neteaseGetRequest('/login/qr/create', { key, qrimg: 'true' }) as { data?: { qrimg?: string; qrurl?: string } }
+    return { success: true, key, qrimg: createData.data?.qrimg || '', qrurl: createData.data?.qrurl || '' }
   } catch (err) {
-    return { success: false, key: '', message: String(err) }
+    return { success: false, key: '', qrimg: '', message: String(err) }
   }
 })
 
-/** 检查二维码登录状态（801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期） */
+/** v3.0.0：检查二维码登录状态（新版 /api/login/qr/check）
+ *  801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期 */
 ipcMain.handle('netease:qr-check', async (_e, key: string) => {
   try {
-    const data = await neteasePlainRequest('/login/qrcode/client/login', { key, type: '3' }) as { code?: number; message?: string; cookie?: string }
+    const data = await neteaseGetRequest('/login/qr/check', { key }) as { code?: number; message?: string; cookie?: string }
+    // 登录成功时，cookie 可能在响应体或 Set-Cookie 头中
+    if (data.code === 803 && data.cookie) {
+      // 解析 cookie 字符串并存储
+      data.cookie.split(';').forEach(pair => {
+        const [k, ...v] = pair.trim().split('=')
+        if (k && v.length) neteaseCookies.set(k, v.join('='))
+      })
+      saveNeteaseCookies()
+    }
     return { success: true, code: data.code || 0, message: data.message || '', cookie: data.cookie || '' }
   } catch (err) {
     return { success: false, code: 0, message: String(err), cookie: '' }

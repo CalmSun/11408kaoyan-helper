@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
-import { getStorage, setStorage } from '@/utils/storage'
+import { getStorage, setStorage, onStorageReady } from '@/utils/storage'
 import { todayLocal, toLocalDate } from '@/utils/date'
 import dayjs from 'dayjs'
 
@@ -595,6 +595,29 @@ export const useMainStore = defineStore('main', () => {
   watch(planSnapshots, savePlanSnapshots, { deep: true })
   // v2.7.1 修复：番茄钟设置（含强制全屏）此前未持久化，重启后丢失
   watch(pomodoroSettings, savePomodoroSettings, { deep: true })
+
+  // v3.0.0 修复：存储就绪后重新加载全部数据，确保 IndexedDB 持久化数据正确读入。
+  // 此前 store 可能在 IndexedDB 未就绪时初始化，读到默认值后不再刷新，导致重启数据丢失。
+  function refreshAllFromStorage() {
+    examDate.value = getStorage('examDate', '2026-12-21')
+    examName.value = getStorage('examName', '2027年全国硕士研究生招生考试（11408）')
+    plans.value = getStorage('plans', [] as PlanItem[])
+    flashcards.value = getStorage('flashcards', [] as Flashcard[])
+    pomodoroRecords.value = getStorage('pomodoroRecords', [] as PomodoroRecord[])
+    examScores.value = getStorage('examScores', [] as ExamScoreRecord[])
+    dailyRecords.value = getStorage('dailyRecords', [] as DailyStudyRecord[])
+    planSnapshots.value = getStorage('planSnapshots', [] as DailyPlanSnapshot[])
+    subjectProgress.value = getStorage('subjectProgress', {
+      politics: 0, english: 0, math: 0, cs408: 0
+    })
+    appUsageMinutes.value = getStorage('appUsageMinutes', 0)
+    pomodoroSettings.value = getStorage('pomodoroSettings', {
+      workDuration: 25, breakDuration: 5, longBreakDuration: 15,
+      longBreakInterval: 4, autoStartBreak: true, autoStartWork: false,
+      soundEnabled: true, forceFullscreen: false, soundVolume: 70
+    })
+  }
+  onStorageReady(refreshAllFromStorage)
 
   // 启动时回填缺失快照（v2.8.2：防止异常退出导致历史丢失），再补记当日快照
   backfillMissingSnapshots()

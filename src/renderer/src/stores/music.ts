@@ -468,6 +468,7 @@ export const useMusicStore = defineStore('music', () => {
   const playlistLoading = ref(false)
   const qrKey = ref('')
   const qrStatus = ref<number>(0) // 0=未开始, 801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期
+  const qrImage = ref('') // v3.0.0：二维码 base64 图片
 
   /** 检查网易云登录状态 */
   async function checkLoginStatus(): Promise<boolean> {
@@ -488,19 +489,20 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
-  /** 获取二维码登录 key */
-  async function getQrKey(): Promise<string> {
+  /** v3.0.0：获取二维码登录 key + 二维码图片（新版 API 直接返回 base64 图片） */
+  async function getQrKey(): Promise<{ key: string; qrimg: string }> {
     const api = window.electronAPI
-    if (!api?.neteaseQrKey) return ''
+    if (!api?.neteaseQrKey) return { key: '', qrimg: '' }
     try {
       const res = await api.neteaseQrKey()
       if (res.success && res.key) {
         qrKey.value = res.key
         qrStatus.value = 801
-        return res.key
+        qrImage.value = res.qrimg || ''
+        return { key: res.key, qrimg: res.qrimg || '' }
       }
     } catch { /* ignore */ }
-    return ''
+    return { key: '', qrimg: '' }
   }
 
   /** 检查二维码登录状态 */
@@ -653,6 +655,7 @@ export const useMusicStore = defineStore('music', () => {
     playlistLoading,
     qrKey,
     qrStatus,
+    qrImage,
     pickFiles,
     pickFolder,
     play,

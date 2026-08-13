@@ -105,6 +105,11 @@
           <el-button :disabled="!customBgOn || bgBusy" @click="resetCustomBg">恢复默认</el-button>
           <span class="unit-desc">自定义浅色模式的全屏背景图（深色模式不受影响）</span>
         </el-form-item>
+        <!-- v3.0.0：增强液态玻璃模式 -->
+        <el-form-item label="液态玻璃">
+          <el-switch v-model="liquidGlassOn" @change="handleLiquidGlassChange" />
+          <span class="unit-desc">开启增强版液态玻璃效果（更强模糊、动态高光、流动背景）</span>
+        </el-form-item>
         <el-form-item label="开机自启动">
           <el-switch v-model="autoLaunch" @change="toggleAutoLaunch" />
           <span class="unit-desc">开机时自动启动考研助手</span>
@@ -154,38 +159,18 @@
       </div>
     </GlassCard>
 
-    <!-- 数据目录（v2.8.0） -->
+    <!-- 数据管理（v3.0.0：去除数据目录选择，数据由 IndexedDB 实时持久化） -->
     <GlassCard class="card setting-section">
       <h3 class="section-title">
         <el-icon><Box /></el-icon>
-        数据目录
+        数据管理
       </h3>
-      <p class="section-desc">数据通过 IndexedDB 实时记录和读取，可手动导出备份到自定义目录</p>
+      <p class="section-desc">所有学习数据实时存储于本地 IndexedDB，无需手动备份。可导出数据文件迁移到其他设备。</p>
 
-      <div class="datadir-info">
-        <div class="datadir-row">
-          <span class="datadir-label">当前目录</span>
-          <span class="datadir-value" :title="dataDir">{{ dataDir || '加载中…' }}</span>
-        </div>
-        <div class="datadir-row">
-          <span class="datadir-label">自动备份</span>
-          <el-switch :model-value="false" disabled />
-          <span class="unit-desc">已关闭（数据实时存储于本地 IndexedDB）<span v-if="lastSyncAt">（最近手动同步：{{ lastSyncAt }}）</span></span>
-        </div>
-      </div>
       <div class="datadir-actions">
-        <el-button type="primary" @click="handleChangeDir">
-          <el-icon><FolderOpened /></el-icon>
-          更改数据目录
-        </el-button>
-        <el-button @click="handleOpenDir">
-          <el-icon><View /></el-icon>
-          打开目录
-        </el-button>
-        <el-button @click="handleSyncNow">
-          <el-icon><RefreshRight /></el-icon>
-          立即同步
-        </el-button>
+        <el-button type="primary" @click="exportData"><el-icon><Download /></el-icon> 导出数据</el-button>
+        <el-button @click="importData"><el-icon><Upload /></el-icon> 导入数据</el-button>
+        <el-button type="danger" plain @click="clearAllData"><el-icon><Delete /></el-icon> 清除全部数据</el-button>
       </div>
     </GlassCard>
 
@@ -313,16 +298,11 @@ import { useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
 import { exportAllData, importAllData, clearAllStorage } from '@/utils/storage'
-import { themeMode, setThemeMode, applyCustomBg, initCustomBg, CUSTOM_BG_URL, type ThemeMode } from '@/utils/theme'
-import {
-  dataDir, syncEnabled, lastSyncAt,
-  loadDataDir, changeDataDir, openDataDir, syncOnce, setSyncEnabled
-} from '@/utils/datasync'
+import { themeMode, setThemeMode, applyCustomBg, initCustomBg, CUSTOM_BG_URL, type ThemeMode, liquidGlass, setLiquidGlass } from '@/utils/theme'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlarmClock,
   Timer,
-  FolderOpened,
   Download,
   Upload,
   Delete,
@@ -330,9 +310,7 @@ import {
   User,
   Setting,
   Link,
-  RefreshRight,
-  Box,
-  View
+  Box
 } from '@element-plus/icons-vue'
 
 const store = useMainStore()
@@ -341,30 +319,6 @@ const router = useRouter()
 
 // 从 package.json 读取版本号（通过 Vite define 注入）
 const appVersion = __APP_VERSION__
-
-// ── 数据目录（v2.8.0） ──
-async function handleChangeDir() {
-  const res = await changeDataDir()
-  if (res.ok) {
-    ElMessage.success('数据目录已更新，背景与备份已迁移')
-  } else if (res.message) {
-    ElMessage.error(res.message)
-  }
-}
-
-function handleOpenDir() {
-  openDataDir()
-}
-
-async function handleSyncNow() {
-  const ok = await syncOnce()
-  ElMessage[ok ? 'success' : 'error'](ok ? '数据已同步到数据目录' : '同步失败，请检查目录权限')
-}
-
-function onToggleSync(_on: boolean | string | number) {
-  // v2.9.2：自动备份同步已关闭，数据通过 IndexedDB 实时记录
-  ElMessage.info('自动备份已关闭，数据实时存储于本地 IndexedDB，可使用「立即同步」手动备份')
-}
 
 // 外观主题
 const currentThemeMode = ref<ThemeMode>(themeMode.value)
@@ -375,6 +329,14 @@ function handleThemeChange(mode: ThemeMode) {
   setThemeMode(mode)
   window.setTimeout(() => root.classList.remove('theme-anim'), 350)
   ElMessage.success(mode === 'system' ? '已切换为跟随系统主题' : mode === 'dark' ? '已切换为深色模式' : '已切换为浅色模式')
+}
+
+// v3.0.0：液态玻璃模式
+const liquidGlassOn = ref(liquidGlass.value)
+
+function handleLiquidGlassChange(on: boolean) {
+  setLiquidGlass(on)
+  ElMessage.success(on ? '已开启液态玻璃效果' : '已关闭液态玻璃效果')
 }
 
 // ── 项目与更新（v2.6.7） ──
@@ -745,7 +707,6 @@ function handleDeleteAccount() {
 
 onMounted(() => {
   loadAutoLaunch()
-  loadDataDir()
   // 番茄钟设置已通过 store 初始化，无需额外加载
 })
 </script>

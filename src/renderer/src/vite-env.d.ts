@@ -90,7 +90,7 @@ interface ElectronAPI {
     message?: string
   }>
   // v2.9.2：网易云登录与歌单
-  neteaseQrKey: () => Promise<{ success: boolean; key?: string; message?: string }>
+  neteaseQrKey: () => Promise<{ success: boolean; key?: string; qrimg?: string; qrurl?: string; message?: string }>
   neteaseQrCheck: (key: string) => Promise<{ success: boolean; code?: number; message?: string; cookie?: string }>
   neteaseLoginStatus: () => Promise<{
     success: boolean

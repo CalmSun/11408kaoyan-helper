@@ -100,6 +100,13 @@
 
         <template v-if="music.hasMusic">
           <span class="music-name" :title="music.currentTrack?.name">{{ music.currentTrack?.name }}</span>
+          <!-- v3.0.0：顶栏一行歌词显示（滚动/截断） -->
+          <span
+            v-if="music.showLyrics && currentLyricText"
+            class="titlebar-lyric"
+            :title="currentLyricText"
+            @click="goToMusic"
+          >{{ currentLyricText }}</span>
           <button class="mini-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
             <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
             <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
@@ -328,6 +335,20 @@ const visibleLyrics = computed(() => {
   const end = Math.min(lines.length, idx + 3)
   return lines.slice(start, end)
 })
+
+// v3.0.0：顶栏一行当前歌词
+const currentLyricText = computed(() => {
+  const lines = music.lyricLines
+  if (!lines || lines.length === 0) return ''
+  const idx = music.currentLyricIndex
+  if (idx < 0 || idx >= lines.length) return ''
+  return lines[idx].text || ''
+})
+
+// v3.0.0：点击歌词跳转到音乐页面
+function goToMusic() {
+  router.push('/music')
+}
 
 // v2.9.2：格式化播放时间
 function formatTime(sec: number): string {
@@ -809,6 +830,25 @@ onMounted(() => {
   text-overflow: ellipsis;
   font-size: 12px;
   color: var(--mo-text-2);
+}
+
+/* v3.0.0：顶栏一行歌词显示 */
+.titlebar-lyric {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--mo-text-3);
+  font-style: italic;
+  cursor: pointer;
+  padding: 0 4px;
+  border-left: 1px solid var(--mo-border);
+  transition: color 0.2s;
+}
+
+.titlebar-lyric:hover {
+  color: var(--mo-primary);
 }
 
 .mini-volume {

@@ -62,7 +62,8 @@
               :step="0.1"
               :show-tooltip="false"
               class="progress-slider"
-              @change="music.seek(progressValue)"
+              @input="(val: number) => { isDraggingProgress = true; music.seek(val) }"
+              @change="() => { isDraggingProgress = false }"
             />
             <span class="time-label">{{ formatTime(music.duration) }}</span>
           </div>
@@ -332,6 +333,7 @@ const searchKeyword = ref('')
 const progressValue = ref(0)
 const volumeValue = ref(music.volume)
 const lyricsContainer = ref<HTMLElement | null>(null)
+const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime 覆盖
 
 // v2.9.2：网易云登录与歌单
 const neteaseTab = ref<'search' | 'playlists'>('search')
@@ -343,7 +345,9 @@ let qrPollTimer: number | null = null
 const currentCover = computed(() => music.currentTrack?.cover || '')
 
 watch(() => music.currentTime, (t) => {
-  progressValue.value = t
+  if (!isDraggingProgress.value) {
+    progressValue.value = t
+  }
 })
 
 watch(() => music.volume, (v) => {
@@ -385,11 +389,15 @@ function scrollToLyric(el: HTMLElement) {
 
 async function startQrLogin() {
   qrImageUrl.value = ''
-  const key = await music.getQrKey()
+  const { key, qrimg } = await music.getQrKey()
   if (key) {
-    // 生成二维码图片 URL（使用网易云登录页 URL 编码为二维码）
-    const qrUrl = `https://music.163.com/login?codekey=${key}`
-    qrImageUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`
+    // v3.0.0：优先使用 API 返回的 base64 二维码图片，降级用 qrserver
+    if (qrimg) {
+      qrImageUrl.value = qrimg.startsWith('data:') ? qrimg : `data:image/png;base64,${qrimg}`
+    } else {
+      const qrUrl = `https://music.163.com/login?codekey=${key}`
+      qrImageUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`
+    }
     startQrPolling()
   } else {
     ElMessage.error('获取二维码失败，请重试')
@@ -484,8 +492,10 @@ onUnmounted(() => {
 
 .music-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(320px, 400px) 1fr;
   gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .glass-card {

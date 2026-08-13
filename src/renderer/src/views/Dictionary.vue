@@ -68,6 +68,17 @@
             <el-icon><Plus /></el-icon>
             加入背诵
           </el-button>
+          <!-- v3.0.0：自定义词库单词可删除 -->
+          <el-button
+            v-if="isCustomWord(word)"
+            type="danger"
+            link
+            size="small"
+            @click.stop="deleteCustomWord(word)"
+          >
+            <el-icon><Delete /></el-icon>
+            删除
+          </el-button>
         </div>
       </div>
     </div>
@@ -126,10 +137,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useMainStore } from '@/stores'
-import { ElMessage } from 'element-plus'
-import { Search, Plus, Reading, Loading, Warning } from '@element-plus/icons-vue'
+import { getStorage, setStorage } from '@/utils/storage'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Search, Plus, Reading, Loading, Warning, Delete } from '@element-plus/icons-vue'
 
 const store = useMainStore()
 
@@ -137,6 +149,13 @@ const searchWord = ref('')
 const currentCategory = ref('high')
 const showDetail = ref(false)
 const currentWord = ref<WordItem | null>(null)
+
+// v3.0.0：用户自定义词库（在线查询自动保存，可删除）
+const CUSTOM_WORDS_KEY = 'dictionary_custom_words'
+const customWords = ref<WordItem[]>(getStorage(CUSTOM_WORDS_KEY, []) as WordItem[])
+watch(customWords, (val) => {
+  setStorage(CUSTOM_WORDS_KEY, val)
+}, { deep: true })
 
 // 在线查询状态
 const isSearchingOnline = ref(false)
@@ -422,24 +441,38 @@ const wordDatabase: WordItem[] = [
   { word: 'vulnerable', phonetic: 'ˈvʌlnərəbl', meaning: 'adj. 脆弱的，易受攻击的', level: '低频', example: { en: 'Children are vulnerable to infections.', cn: '儿童容易受到感染。' } },
 ]
 
-const categories = [
+// v3.0.0：分类改为 computed（自定义词库数量动态变化）
+const categories = computed(() => [
   { key: 'high', name: '高频词', count: wordDatabase.filter(w => w.level === '高频').length },
   { key: 'mid', name: '中频词', count: wordDatabase.filter(w => w.level === '中频').length },
   { key: 'low', name: '低频词', count: wordDatabase.filter(w => w.level === '低频').length },
-  { key: 'all', name: '全部', count: wordDatabase.length }
-]
+  { key: 'custom', name: '我的词库', count: customWords.value.length },
+  { key: 'all', name: '全部', count: wordDatabase.length + customWords.value.length }
+])
 
 // 在线查询结果（本地词库之外的补充结果）
 const onlineResults = ref<WordItem[]>([])
 
+// v3.0.0：合并内置词库 + 用户自定义词库（去重）
+const allWords = computed(() => {
+  const merged = [...wordDatabase]
+  customWords.value.forEach(w => {
+    if (!merged.some(m => m.word.toLowerCase() === w.word.toLowerCase())) {
+      merged.push(w)
+    }
+  })
+  return merged
+})
+
 const filteredByCategory = computed(() => {
-  if (currentCategory.value === 'all') return wordDatabase
+  if (currentCategory.value === 'all') return allWords.value
+  if (currentCategory.value === 'custom') return customWords.value
   const levelMap: Record<string, string> = {
     high: '高频',
     mid: '中频',
     low: '低频'
   }
-  return wordDatabase.filter(w => w.level === levelMap[currentCategory.value])
+  return allWords.value.filter(w => w.level === levelMap[currentCategory.value])
 })
 
 const displayWords = computed(() => {
@@ -447,7 +480,7 @@ const displayWords = computed(() => {
     return filteredByCategory.value.slice(0, 50)
   }
   const keyword = searchWord.value.trim().toLowerCase()
-  const localMatches = wordDatabase.filter(w =>
+  const localMatches = allWords.value.filter(w =>
     w.word.toLowerCase().includes(keyword) ||
     w.meaning.includes(keyword)
   )
@@ -470,7 +503,7 @@ function isEnglishWord(text: string): boolean {
 const localMatchCount = computed(() => {
   const keyword = searchWord.value.trim().toLowerCase()
   if (!keyword) return 0
-  return wordDatabase.filter(w =>
+  return allWords.value.filter(w =>
     w.word.toLowerCase().includes(keyword) || w.meaning.includes(keyword)
   ).length
 })
@@ -567,9 +600,9 @@ async function search() {
     ElMessage.info('请输入搜索关键词')
     return
   }
-  // 本地已有匹配，无需在线查询
+  // v3.0.0：本地（内置+自定义）已有匹配，无需在线查询
   const kw = keyword.toLowerCase()
-  const localMatches = wordDatabase.filter(w =>
+  const localMatches = allWords.value.filter(w =>
     w.word.toLowerCase().includes(kw) || w.meaning.includes(kw)
   )
   onlineResults.value = []
@@ -587,6 +620,8 @@ async function search() {
     const result = await searchOnline(keyword)
     if (result) {
       onlineResults.value = [result]
+      // v3.0.0：自动保存到本地自定义词库（去重）
+      saveToCustomWords(result)
     } else {
       onlineSearchFailed.value = true
     }
@@ -596,6 +631,35 @@ async function search() {
   } finally {
     isSearchingOnline.value = false
   }
+}
+
+// v3.0.0：保存单词到自定义词库（去重）
+function saveToCustomWords(word: WordItem) {
+  const exists = allWords.value.some(w => w.word.toLowerCase() === word.word.toLowerCase())
+  if (!exists) {
+    const newWord = { ...word, level: word.level || '自定义' }
+    customWords.value.push(newWord)
+  }
+}
+
+// v3.0.0：从自定义词库删除单词
+function deleteCustomWord(word: WordItem) {
+  ElMessageBox.confirm(`确定从我的词库删除「${word.word}」吗？`, '删除确认', {
+    confirmButtonText: '删除',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    const idx = customWords.value.findIndex(w => w.word.toLowerCase() === word.word.toLowerCase())
+    if (idx >= 0) {
+      customWords.value.splice(idx, 1)
+      ElMessage.success('已从我的词库删除')
+    }
+  }).catch(() => {})
+}
+
+// v3.0.0：判断单词是否属于自定义词库
+function isCustomWord(word: WordItem): boolean {
+  return customWords.value.some(w => w.word.toLowerCase() === word.word.toLowerCase())
 }
 
 function getLevelTagType(level: string) {

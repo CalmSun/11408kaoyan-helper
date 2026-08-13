@@ -221,6 +221,20 @@
           </div>
           <span>学习统计</span>
         </div>
+        <!-- v3.0.0：新增音乐播放入口 -->
+        <div class="quick-item" @click="goToMusic">
+          <div class="quick-icon music-icon">
+            <el-icon :size="32"><Headset /></el-icon>
+          </div>
+          <span>音乐播放</span>
+        </div>
+        <!-- v3.0.0：新增学习资料入口 -->
+        <div class="quick-item" @click="goToMaterials">
+          <div class="quick-icon materials-icon">
+            <el-icon :size="32"><FolderOpened /></el-icon>
+          </div>
+          <span>学习资料</span>
+        </div>
       </div>
     </GlassCard>
   </div>
@@ -248,7 +262,9 @@ import {
   Guide,
   Cpu,
   Operation,
-  Monitor
+  Monitor,
+  Headset,
+  FolderOpened
 } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -319,6 +335,8 @@ function goToStatistics() { router.push('/statistics') }
 function goToOutline() { router.push('/outline') }
 function goToAlgorithms() { router.push('/algorithms') }
 function goToFormulas() { router.push('/formulas') }
+function goToMusic() { router.push('/music') }
+function goToMaterials() { router.push('/materials') }
 </script>
 
 <style scoped>
@@ -681,4 +699,7 @@ function goToFormulas() { router.push('/formulas') }
 .dict-icon { background: linear-gradient(135deg, #8b5cf6 0%, #a78bfa 100%); }
 .plan-icon { background: linear-gradient(135deg, #6366f1 0%, #818cf8 100%); }
 .stat-icon { background: linear-gradient(135deg, #14b8a6 0%, #2dd4bf 100%); }
+/* v3.0.0：新增入口图标 */
+.music-icon { background: linear-gradient(135deg, #ec4899 0%, #f472b6 100%); }
+.materials-icon { background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%); }
 </style>

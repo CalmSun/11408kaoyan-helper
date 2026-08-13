@@ -47,8 +47,10 @@ export function initTheme(): void {
   // （模块加载期的初始读取可能早于存储初始化，此处校准主题与护眼状态）
   themeMode.value = loadMode()
   eyeCare.value = loadEyeCare()
+  liquidGlass.value = loadLiquidGlass()
   applyTheme()
   applyEyeCare()
+  applyLiquidGlass()
   mediaQuery.addEventListener('change', (e) => {
     systemDark.value = e.matches
     applyTheme()
@@ -77,6 +79,31 @@ export function setEyeCare(on: boolean): void {
 
 export function toggleEyeCare(): void {
   setEyeCare(!eyeCare.value)
+}
+
+// ── v3.0.0：增强液态玻璃模式（Liquid Glass Pro） ──
+const LIQUID_GLASS_KEY = 'kaoyan_liquid_glass'
+
+function loadLiquidGlass(): boolean {
+  return getGlobalStorage<string>(LIQUID_GLASS_KEY, '0') === '1'
+}
+
+export const liquidGlass = ref<boolean>(loadLiquidGlass())
+
+/** 应用液态玻璃模式：向 body 注入 .liquid-glass 类 */
+export function applyLiquidGlass(): void {
+  document.body.classList.toggle('liquid-glass', liquidGlass.value)
+}
+
+/** 设置液态玻璃模式并持久化 */
+export function setLiquidGlass(on: boolean): void {
+  liquidGlass.value = on
+  setGlobalStorage(LIQUID_GLASS_KEY, on ? '1' : '0')
+  applyLiquidGlass()
+}
+
+export function toggleLiquidGlass(): void {
+  setLiquidGlass(!liquidGlass.value)
 }
 
 const BG_CUSTOM_KEY = 'kaoyan_bg_custom'

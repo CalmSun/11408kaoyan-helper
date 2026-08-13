@@ -199,10 +199,13 @@ export async function initStorage(): Promise<void> {
     try {
       db = await openDatabase()
       const records = await idbGetAll()
+      // v3.0.0 修复：始终用 IndexedDB 持久化数据覆盖缓存，
+      // 此前 `if (!cache.has(r.key))` 会导致预就绪写入（如 migrateOldData）
+      // 的默认值阻止真实持久化数据加载，造成重启后数据丢失。
       records.forEach(r => {
-        if (!cache.has(r.key)) cache.set(r.key, r.value)
+        cache.set(r.key, r.value)
       })
-      // 落库初始化前排队的写入
+      // 落库初始化前排队的写入（优先级高于持久化数据，因为是更新的写入）
       pendingWrites.forEach(w => {
         if (w.type === 'put') {
           cache.set(w.key, w.value)
