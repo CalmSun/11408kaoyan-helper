@@ -489,6 +489,30 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  /** v3.1.0：通过 Cookie 字符串登录网易云（用户从浏览器复制 Cookie 粘贴） */
+  async function setNeteaseCookie(cookie: string): Promise<{ success: boolean; message: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseSetCookie) return { success: false, message: 'API 不可用' }
+    try {
+      const res = await api.neteaseSetCookie(cookie)
+      if (res.success && res.loggedIn && res.user) {
+        neteaseLoggedIn.value = true
+        neteaseUser.value = {
+          id: res.user.id,
+          nickname: res.user.nickname,
+          avatar: res.user.avatar,
+          signature: '',
+          level: 0
+        }
+        await fetchUserPlaylists()
+        return { success: true, message: `登录成功：${res.user.nickname}` }
+      }
+      return { success: false, message: res.message || 'Cookie 无效或已过期' }
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
   /** v3.0.0：获取二维码登录 key + 二维码图片（新版 API 直接返回 base64 图片） */
   async function getQrKey(): Promise<{ key: string; qrimg: string }> {
     const api = window.electronAPI
@@ -676,6 +700,7 @@ export const useMusicStore = defineStore('music', () => {
     addOnlineSong,
     // v2.9.2：网易云登录与歌单方法
     checkLoginStatus,
+    setNeteaseCookie,
     getQrKey,
     checkQrLogin,
     logoutNetease,

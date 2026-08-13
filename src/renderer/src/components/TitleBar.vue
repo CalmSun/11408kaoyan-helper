@@ -4,13 +4,141 @@
       <el-icon :size="16" class="titlebar-logo"><Reading /></el-icon>
       <span class="titlebar-title">11408考研助手</span>
       <span v-if="!transparent" class="titlebar-page">{{ pageTitle }}</span>
+
+      <!-- v3.1.0：音乐组件移到左侧 -->
+      <div class="music-widget" v-if="!transparent">
+        <button class="mini-btn" title="选择音乐文件夹" @click="handlePickFolder">
+          <el-icon :size="13"><Folder /></el-icon>
+        </button>
+
+        <template v-if="music.hasMusic">
+          <span class="music-name" :title="music.currentTrack?.name">{{ music.currentTrack?.name }}</span>
+          <!-- v3.0.0：顶栏一行歌词显示 -->
+          <span
+            v-if="music.showLyrics && currentLyricText"
+            class="titlebar-lyric"
+            :title="currentLyricText"
+            @click="goToMusic"
+          >{{ currentLyricText }}</span>
+          <button class="mini-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
+            <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
+            <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
+          </button>
+          <button class="mini-btn" title="下一首" @click="music.next()">
+            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
+          </button>
+          <input
+            class="mini-volume"
+            type="range" min="0" max="100"
+            :value="Math.round(music.volume * 100)"
+            @input="onVolumeInput"
+            title="音量"
+          />
+          <!-- 播放列表面板 -->
+          <el-popover
+            placement="bottom-start"
+            :width="300"
+            trigger="click"
+            popper-class="titlebar-popover"
+          >
+            <template #reference>
+              <button class="mini-btn" :class="{ on: music.isPlaying }" title="播放列表">
+                <el-icon :size="13"><List /></el-icon>
+              </button>
+            </template>
+            <div class="music-panel">
+              <div class="mp-head">
+                <span class="mp-title">播放列表</span>
+                <span class="mp-count">{{ music.playlist.length }} 首</span>
+              </div>
+              <div class="mp-controls">
+                <button class="mp-ctrl-btn" title="上一首" @click="music.prev()">
+                  <svg width="10" height="10" viewBox="0 0 10 10"><path d="M9 1 L4 5 L9 9 Z" fill="currentColor"/><rect x="1" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
+                </button>
+                <button class="mp-ctrl-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
+                  <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
+                  <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
+                </button>
+                <button class="mp-ctrl-btn" title="下一首" @click="music.next()">
+                  <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
+                </button>
+                <button
+                  class="mp-ctrl-btn"
+                  :class="{ 'mp-ctrl-on': music.shuffle }"
+                  :title="music.shuffle ? '关闭随机播放' : '开启随机播放'"
+                  @click="music.toggleShuffle()"
+                >
+                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 3 H3.5 L8.5 9 H10.2 M1 9 H3.5 L8.5 3 H10.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9.2 1.8 L11.4 3 L9.2 4.2 Z" fill="currentColor"/><path d="M9.2 7.8 L11.4 9 L9.2 10.2 Z" fill="currentColor"/></svg>
+                </button>
+              </div>
+              <!-- 播放进度条 -->
+              <div class="mp-progress" v-if="music.duration > 0">
+                <span class="mp-time">{{ formatTime(music.currentTime) }}</span>
+                <input
+                  class="mp-progress-bar"
+                  type="range"
+                  min="0"
+                  :max="music.duration"
+                  step="0.1"
+                  :value="music.currentTime"
+                  @input="onProgressInput"
+                />
+                <span class="mp-time">{{ formatTime(music.duration) }}</span>
+              </div>
+              <!-- 歌词显示开关 -->
+              <div class="mp-lyrics-toggle">
+                <button
+                  class="mp-lyric-btn"
+                  :class="{ active: music.showLyrics }"
+                  :title="music.showLyrics ? '隐藏歌词' : '显示歌词'"
+                  @click="music.toggleLyrics()"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 3 H10 M2 6 H8 M2 9 H6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+                  歌词
+                </button>
+              </div>
+              <!-- 歌词显示 -->
+              <div class="mp-lyrics" v-if="music.showLyrics && music.lyricLines.length > 0">
+                <div class="mp-lyric-line" :class="{ active: i === music.currentLyricIndex }"
+                  v-for="(line, i) in visibleLyrics" :key="i">
+                  {{ line.text }}
+                </div>
+                <div v-if="visibleLyrics.length === 0" class="mp-lyric-empty">暂无歌词</div>
+              </div>
+              <div class="mp-lyrics mp-lyric-empty" v-else-if="music.showLyrics">暂无歌词（需同目录 .lrc 文件或在线歌曲）</div>
+              <div class="mp-list">
+                <div
+                  v-for="(track, i) in music.playlist"
+                  :key="i"
+                  class="mp-item"
+                  :class="{ active: i === music.currentIndex }"
+                  @click="music.playIndex(i)"
+                >
+                  <span class="mp-item-index">{{ i + 1 }}</span>
+                  <span class="mp-item-name" :title="track.name">{{ track.name }}</span>
+                  <span class="mp-item-playing" v-if="i === music.currentIndex && music.isPlaying">♪</span>
+                  <button class="mp-item-del" title="移除" @click.stop="music.removeTrack(i)">×</button>
+                </div>
+              </div>
+              <div class="mp-actions">
+                <button class="mp-action-btn" @click="handlePickFolder">选择文件夹</button>
+                <button class="mp-action-btn" @click="handlePickFiles">选择文件</button>
+                <button class="mp-action-btn danger" @click="music.clearPlaylist()">清空</button>
+              </div>
+            </div>
+          </el-popover>
+        </template>
+        <button v-else class="mini-btn music-open" title="选择音乐文件" @click="handlePickFiles">
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M9 1 L9 8.2 A2.3 2.3 0 1 1 8 6.3 L8 3 L4 4 L4 9.2 A2.3 2.3 0 1 1 3 7.3 L3 2.5 Z" fill="currentColor"/></svg>
+        </button>
+      </div>
     </div>
 
-    <div class="titlebar-right">
-      <!-- 天气组件（v2.7.1：点击查看详情 + 地点选择） -->
+    <!-- v3.1.0：中间区域 - 天气、倒计时、日期居中 -->
+    <div class="titlebar-center" v-if="!transparent">
+      <!-- 天气组件 -->
       <el-popover
-        v-if="!transparent"
-        placement="bottom-end"
+        placement="bottom"
         :width="300"
         trigger="click"
         popper-class="titlebar-popover"
@@ -28,7 +156,7 @@
             </template>
           </div>
         </template>
-        <!-- 天气详情面板（v2.8.0：国内数据源 + 城市搜索） -->
+        <!-- 天气详情面板 -->
         <div class="weather-panel">
           <div class="wp-head">
             <span class="wp-city">{{ weatherCity.name }}</span>
@@ -68,7 +196,6 @@
               />
               <button class="wp-search-btn" @click="applyCustomCity">搜索</button>
             </div>
-            <!-- 搜索结果候选（v2.8.0） -->
             <div class="wp-results" v-if="searchResults.length > 0">
               <div
                 v-for="r in searchResults"
@@ -89,137 +216,11 @@
         </div>
       </el-popover>
 
-      <span v-if="!transparent" class="titlebar-countdown">距考研 {{ store.daysUntilExam }} 天</span>
+      <span class="titlebar-countdown">距考研 {{ store.daysUntilExam }} 天</span>
       <span class="titlebar-date">{{ todayStr }}</span>
+    </div>
 
-      <!-- 全局音乐组件（v2.7.1：选择文件夹/文件、播放、暂停、下一首、列表选择） -->
-      <div class="music-widget" v-if="!transparent">
-        <button class="mini-btn" title="选择音乐文件夹" @click="handlePickFolder">
-          <el-icon :size="13"><Folder /></el-icon>
-        </button>
-
-        <template v-if="music.hasMusic">
-          <span class="music-name" :title="music.currentTrack?.name">{{ music.currentTrack?.name }}</span>
-          <!-- v3.0.0：顶栏一行歌词显示（滚动/截断） -->
-          <span
-            v-if="music.showLyrics && currentLyricText"
-            class="titlebar-lyric"
-            :title="currentLyricText"
-            @click="goToMusic"
-          >{{ currentLyricText }}</span>
-          <button class="mini-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
-            <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
-            <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
-          </button>
-          <button class="mini-btn" title="下一首" @click="music.next()">
-            <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
-          </button>
-          <input
-            class="mini-volume"
-            type="range" min="0" max="100"
-            :value="Math.round(music.volume * 100)"
-            @input="onVolumeInput"
-            title="音量"
-          />
-          <!-- 播放列表面板 -->
-          <el-popover
-            placement="bottom-end"
-            :width="300"
-            trigger="click"
-            popper-class="titlebar-popover"
-          >
-            <template #reference>
-              <button class="mini-btn" :class="{ on: music.isPlaying }" title="播放列表">
-                <el-icon :size="13"><List /></el-icon>
-              </button>
-            </template>
-            <div class="music-panel">
-              <div class="mp-head">
-                <span class="mp-title">播放列表</span>
-                <span class="mp-count">{{ music.playlist.length }} 首</span>
-              </div>
-              <div class="mp-controls">
-                <button class="mp-ctrl-btn" title="上一首" @click="music.prev()">
-                  <svg width="10" height="10" viewBox="0 0 10 10"><path d="M9 1 L4 5 L9 9 Z" fill="currentColor"/><rect x="1" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
-                </button>
-                <button class="mp-ctrl-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
-                  <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
-                  <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
-                </button>
-                <button class="mp-ctrl-btn" title="下一首" @click="music.next()">
-                  <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
-                </button>
-                <button
-                  class="mp-ctrl-btn"
-                  :class="{ 'mp-ctrl-on': music.shuffle }"
-                  :title="music.shuffle ? '关闭随机播放' : '开启随机播放'"
-                  @click="music.toggleShuffle()"
-                >
-                  <svg width="11" height="11" viewBox="0 0 12 12"><path d="M1 3 H3.5 L8.5 9 H10.2 M1 9 H3.5 L8.5 3 H10.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M9.2 1.8 L11.4 3 L9.2 4.2 Z" fill="currentColor"/><path d="M9.2 7.8 L11.4 9 L9.2 10.2 Z" fill="currentColor"/></svg>
-                </button>
-              </div>
-              <!-- v2.9.2：播放进度条 -->
-              <div class="mp-progress" v-if="music.duration > 0">
-                <span class="mp-time">{{ formatTime(music.currentTime) }}</span>
-                <input
-                  class="mp-progress-bar"
-                  type="range"
-                  min="0"
-                  :max="music.duration"
-                  step="0.1"
-                  :value="music.currentTime"
-                  @input="onProgressInput"
-                />
-                <span class="mp-time">{{ formatTime(music.duration) }}</span>
-              </div>
-              <!-- v2.9.2：歌词显示开关 -->
-              <div class="mp-lyrics-toggle">
-                <button
-                  class="mp-lyric-btn"
-                  :class="{ active: music.showLyrics }"
-                  :title="music.showLyrics ? '隐藏歌词' : '显示歌词'"
-                  @click="music.toggleLyrics()"
-                >
-                  <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 3 H10 M2 6 H8 M2 9 H6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-                  歌词
-                </button>
-              </div>
-              <!-- v2.9.0：歌词显示（v2.9.2 受开关控制） -->
-              <div class="mp-lyrics" v-if="music.showLyrics && music.lyricLines.length > 0">
-                <div class="mp-lyric-line" :class="{ active: i === music.currentLyricIndex }"
-                  v-for="(line, i) in visibleLyrics" :key="i">
-                  {{ line.text }}
-                </div>
-                <div v-if="visibleLyrics.length === 0" class="mp-lyric-empty">暂无歌词</div>
-              </div>
-              <div class="mp-lyrics mp-lyric-empty" v-else-if="music.showLyrics">暂无歌词（需同目录 .lrc 文件或在线歌曲）</div>
-              <div class="mp-list">
-                <div
-                  v-for="(track, i) in music.playlist"
-                  :key="i"
-                  class="mp-item"
-                  :class="{ active: i === music.currentIndex }"
-                  @click="music.playIndex(i)"
-                >
-                  <span class="mp-item-index">{{ i + 1 }}</span>
-                  <span class="mp-item-name" :title="track.name">{{ track.name }}</span>
-                  <span class="mp-item-playing" v-if="i === music.currentIndex && music.isPlaying">♪</span>
-                  <button class="mp-item-del" title="移除" @click.stop="music.removeTrack(i)">×</button>
-                </div>
-              </div>
-              <div class="mp-actions">
-                <button class="mp-action-btn" @click="handlePickFolder">选择文件夹</button>
-                <button class="mp-action-btn" @click="handlePickFiles">选择文件</button>
-                <button class="mp-action-btn danger" @click="music.clearPlaylist()">清空</button>
-              </div>
-            </div>
-          </el-popover>
-        </template>
-        <button v-else class="mini-btn music-open" title="选择音乐文件" @click="handlePickFiles">
-          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M9 1 L9 8.2 A2.3 2.3 0 1 1 8 6.3 L8 3 L4 4 L4 9.2 A2.3 2.3 0 1 1 3 7.3 L3 2.5 Z" fill="currentColor"/></svg>
-        </button>
-      </div>
-
+    <div class="titlebar-right">
       <!-- v2.9.0：学习资料入口 -->
       <button class="mini-btn materials-btn" v-if="!transparent" title="学习资料（PDF/视频）" @click="goMaterials">
         <el-icon :size="14"><Folder /></el-icon>
@@ -235,23 +236,23 @@
         <el-icon :size="14"><Headset /></el-icon>
       </button>
 
-      <!-- 护眼模式（v2.7.0） -->
+      <!-- 护眼模式 -->
       <button class="mini-btn eyecare-btn" :class="{ on: eyeCareOn }" :title="eyeCareOn ? '关闭护眼模式' : '开启护眼模式'" @click="toggleEye">
         <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2 C9 2 11 6 11 6 C11 6 9 10 6 10 C3 10 1 6 1 6 C1 6 3 2 6 2 Z" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="6" cy="6" r="1.8" fill="currentColor"/></svg>
       </button>
 
-      <!-- 主题切换（从侧栏移入顶栏 v2.7.0） -->
+      <!-- 主题切换 -->
       <button class="mini-btn theme-btn" :title="dark ? '切换到浅色模式' : '切换到深色模式'" @click="handleToggleTheme">
         <el-icon :size="14"><component :is="dark ? Sunny : Moon" /></el-icon>
       </button>
 
-      <!-- 用户栏（从侧栏移入顶栏 v2.7.0） -->
+      <!-- 用户栏 -->
       <div v-if="!transparent && userStore.isLoggedIn" class="user-mini" :title="userStore.displayName" @click="goToSettings">
         <el-icon :size="14" class="user-mini-icon"><UserFilled /></el-icon>
         <span class="user-mini-name">{{ userStore.displayName }}</span>
       </div>
 
-      <!-- 自建窗口控制按钮（无边框窗口） -->
+      <!-- 自建窗口控制按钮 -->
       <div class="win-controls">
         <button class="win-btn" title="最小化" @click="minimize">
           <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1" y="4.5" width="8" height="1" rx="0.5" fill="currentColor"/></svg>
@@ -522,11 +523,30 @@ onMounted(() => {
 }
 
 .titlebar-left,
+.titlebar-center,
 .titlebar-right {
   display: flex;
   align-items: center;
   gap: 10px;
   white-space: nowrap;
+}
+
+/* v3.1.0：三栏布局 - 左侧音乐，中间天气，右侧工具 */
+.titlebar-left {
+  flex: 1;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.titlebar-center {
+  flex: 1;
+  justify-content: center;
+  gap: 14px;
+}
+
+.titlebar-right {
+  flex: 1;
+  justify-content: flex-end;
 }
 
 .titlebar-logo {

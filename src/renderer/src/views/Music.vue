@@ -289,29 +289,38 @@
       </div>
     </div>
 
-    <!-- v2.9.2：网易云二维码登录对话框 -->
-    <el-dialog v-model="showLoginDialog" title="网易云音乐登录" width="360px" :close-on-click-modal="false" @close="stopQrPolling">
-      <div class="qr-login-box">
-        <div v-if="qrImageUrl" class="qr-image-wrap">
-          <img :src="qrImageUrl" class="qr-image" alt="登录二维码" />
-          <div v-if="music.qrStatus === 802" class="qr-overlay">
-            <el-icon :size="32"><CircleCheck /></el-icon>
-            <div>已扫码，请在手机上确认</div>
-          </div>
-          <div v-else-if="music.qrStatus === 800" class="qr-overlay expired">
-            <el-icon :size="32"><Warning /></el-icon>
-            <div>二维码已过期</div>
-            <el-button size="small" type="primary" @click="refreshQrCode" style="margin-top: 8px">刷新二维码</el-button>
-          </div>
+    <!-- v3.1.0：网易云 Cookie 登录对话框 -->
+    <el-dialog v-model="showLoginDialog" title="网易云音乐登录" width="480px" :close-on-click-modal="false">
+      <div class="cookie-login-box">
+        <div class="cookie-tip">
+          <el-icon><InfoFilled /></el-icon>
+          <span>请从浏览器登录 <b>music.163.com</b> 后，按 F12 打开开发者工具，在 Application → Cookies 中复制全部 Cookie 粘贴到下方。</span>
         </div>
-        <div v-else class="qr-loading">
-          <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-          <div>正在生成二维码...</div>
+        <el-input
+          v-model="cookieInput"
+          type="textarea"
+          :rows="5"
+          placeholder="粘贴网易云 Cookie，例如：MUSIC_U=xxx; __csrf=xxx; NMTID=xxx; ..."
+          resize="vertical"
+        />
+        <div class="cookie-actions">
+          <el-button type="primary" :loading="cookieLogging" @click="handleCookieLogin">
+            登录
+          </el-button>
+          <el-button @click="showLoginDialog = false">取消</el-button>
         </div>
-        <div class="qr-tip">
-          打开网易云音乐 App，扫描二维码登录
+        <div class="cookie-help">
+          <details>
+            <summary>如何获取 Cookie？</summary>
+            <ol>
+              <li>在浏览器中打开 <b>https://music.163.com</b> 并登录账号</li>
+              <li>按 F12 打开开发者工具，切换到 Application（应用）标签</li>
+              <li>左侧找到 Cookies → https://music.163.com</li>
+              <li>全选所有 Cookie 行，复制 Name 和 Value，格式为 <code>key=value; key2=value2</code></li>
+              <li>粘贴到上方输入框，点击登录</li>
+            </ol>
+          </details>
         </div>
-        <div class="qr-status" v-if="music.qrStatus === 801">等待扫码...</div>
       </div>
     </el-dialog>
   </div>
@@ -321,9 +330,9 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useMusicStore } from '@/stores/music'
 import {
-  Headset, FolderOpened, Document, Delete, Search, Loading,
+  Headset, FolderOpened, Document, Delete, Search,
   VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, Microphone,
-  List, Plus, Close, User, CircleCheck, Warning
+  List, Plus, Close, User, InfoFilled
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -335,12 +344,12 @@ const volumeValue = ref(music.volume)
 const lyricsContainer = ref<HTMLElement | null>(null)
 const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime 覆盖
 
-// v2.9.2：网易云登录与歌单
+// v3.1.0：网易云 Cookie 登录与歌单
 const neteaseTab = ref<'search' | 'playlists'>('search')
 const showLoginDialog = ref(false)
-const qrImageUrl = ref('')
+const cookieInput = ref('')
+const cookieLogging = ref(false)
 const viewingPlaylistId = ref(0)
-let qrPollTimer: number | null = null
 
 const currentCover = computed(() => music.currentTrack?.cover || '')
 
@@ -354,11 +363,10 @@ watch(() => music.volume, (v) => {
   volumeValue.value = v
 })
 
-// v2.9.2：登录成功后关闭对话框
+// v3.1.0：登录成功后关闭对话框
 watch(() => music.neteaseLoggedIn, (logged) => {
   if (logged) {
     showLoginDialog.value = false
-    stopQrPolling()
   }
 })
 
@@ -385,44 +393,27 @@ function scrollToLyric(el: HTMLElement) {
   container.scrollTo({ top: targetScroll, behavior: 'smooth' })
 }
 
-// ── v2.9.2：网易云二维码登录 ──
+// ── v3.1.0：网易云 Cookie 登录 ──
 
-async function startQrLogin() {
-  qrImageUrl.value = ''
-  const { key, qrimg } = await music.getQrKey()
-  if (key) {
-    // v3.0.0：优先使用 API 返回的 base64 二维码图片，降级用 qrserver
-    if (qrimg) {
-      qrImageUrl.value = qrimg.startsWith('data:') ? qrimg : `data:image/png;base64,${qrimg}`
+async function handleCookieLogin() {
+  const cookie = cookieInput.value.trim()
+  if (!cookie) {
+    ElMessage.warning('请输入 Cookie')
+    return
+  }
+  cookieLogging.value = true
+  try {
+    const res = await music.setNeteaseCookie(cookie)
+    if (res.success) {
+      ElMessage.success(res.message)
+      showLoginDialog.value = false
+      cookieInput.value = ''
     } else {
-      const qrUrl = `https://music.163.com/login?codekey=${key}`
-      qrImageUrl.value = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrUrl)}`
+      ElMessage.error(res.message)
     }
-    startQrPolling()
-  } else {
-    ElMessage.error('获取二维码失败，请重试')
+  } finally {
+    cookieLogging.value = false
   }
-}
-
-function startQrPolling() {
-  stopQrPolling()
-  qrPollTimer = window.setInterval(async () => {
-    const code = await music.checkQrLogin()
-    if (code === 803 || code === 800) {
-      stopQrPolling()
-    }
-  }, 2000)
-}
-
-function stopQrPolling() {
-  if (qrPollTimer) {
-    clearInterval(qrPollTimer)
-    qrPollTimer = null
-  }
-}
-
-async function refreshQrCode() {
-  await startQrLogin()
 }
 
 async function handleLogout() {
@@ -443,12 +434,10 @@ async function openPlaylist(id: number) {
   await music.fetchPlaylistDetail(id)
 }
 
-// v2.9.2：监听登录对话框显示
+// v3.1.0：监听登录对话框显示
 watch(showLoginDialog, (val) => {
-  if (val) {
-    startQrLogin()
-  } else {
-    stopQrPolling()
+  if (!val) {
+    cookieInput.value = ''
   }
 })
 
@@ -457,7 +446,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  stopQrPolling()
+  // 无定时器需要清理
 })
 </script>
 
@@ -492,18 +481,21 @@ onUnmounted(() => {
 
 .music-body {
   display: grid;
-  grid-template-columns: minmax(320px, 400px) 1fr;
-  gap: 16px;
+  grid-template-columns: minmax(340px, 420px) 1fr;
+  gap: 20px;
   max-width: 1400px;
   margin: 0 auto;
 }
 
+/* v3.1.0：统一卡片样式，与其他页面保持一致 */
 .glass-card {
   background: var(--mo-surface);
   border: 1px solid var(--mo-border);
-  border-radius: 16px;
-  padding: 20px;
-  backdrop-filter: blur(12px);
+  border-radius: var(--mo-radius);
+  padding: 24px;
+  backdrop-filter: var(--glass-filter, blur(12px));
+  position: relative;
+  overflow: hidden;
 }
 
 .section-title {
@@ -1019,67 +1011,56 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
-/* v2.9.2：二维码登录 */
-.qr-login-box {
+/* v3.1.0：Cookie 登录 */
+.cookie-login-box {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  padding: 10px 0;
+  gap: 14px;
 }
 
-.qr-image-wrap {
-  position: relative;
-  width: 200px;
-  height: 200px;
-}
-
-.qr-image {
-  width: 200px;
-  height: 200px;
-  border-radius: 12px;
-  border: 1px solid var(--mo-border);
-}
-
-.qr-overlay {
-  position: absolute;
-  inset: 0;
+.cookie-tip {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 12px;
-  font-size: 13px;
-  color: var(--mo-text-1);
-}
-
-.qr-overlay.expired {
-  color: #f56c6c;
-}
-
-.qr-loading {
-  width: 200px;
-  height: 200px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: var(--mo-text-3);
-  font-size: 13px;
-}
-
-.qr-tip {
-  margin-top: 14px;
+  padding: 10px 12px;
+  background: var(--mo-surface);
+  border-radius: 8px;
   font-size: 13px;
   color: var(--mo-text-2);
-  text-align: center;
+  line-height: 1.5;
 }
 
-.qr-status {
-  margin-top: 6px;
+.cookie-tip .el-icon {
+  color: var(--mo-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.cookie-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cookie-help {
   font-size: 12px;
   color: var(--mo-text-3);
+}
+
+.cookie-help details {
+  cursor: pointer;
+}
+
+.cookie-help ol {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  line-height: 1.8;
+}
+
+.cookie-help code {
+  background: var(--mo-surface);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
 }
 </style>

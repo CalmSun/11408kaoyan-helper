@@ -99,6 +99,12 @@ interface ElectronAPI {
     message?: string
   }>
   neteaseLogout: () => Promise<{ success: boolean }>
+  neteaseSetCookie: (cookie: string) => Promise<{
+    success: boolean
+    loggedIn?: boolean
+    user?: { id: number; nickname: string; avatar: string } | null
+    message?: string
+  }>
   neteaseUserPlaylist: (uid: number, limit?: number, offset?: number) => Promise<{
     success: boolean
     playlists?: { id: number; name: string; cover: string; playCount: number; trackCount: number; creator: string }[]

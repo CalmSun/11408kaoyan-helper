@@ -123,7 +123,7 @@
         <el-icon><FolderOpened /></el-icon>
         数据管理
       </h3>
-      <p class="section-desc">备份和恢复你的学习数据，防止数据丢失</p>
+      <p class="section-desc">所有学习数据实时存储于本地 LocalStorage，退出时自动保存。可导出数据文件迁移到其他设备。</p>
       
       <div class="data-actions">
         <div class="data-action-item">
@@ -156,21 +156,6 @@
             清除数据
           </el-button>
         </div>
-      </div>
-    </GlassCard>
-
-    <!-- 数据管理（v3.0.0：去除数据目录选择，数据由 IndexedDB 实时持久化） -->
-    <GlassCard class="card setting-section">
-      <h3 class="section-title">
-        <el-icon><Box /></el-icon>
-        数据管理
-      </h3>
-      <p class="section-desc">所有学习数据实时存储于本地 IndexedDB，无需手动备份。可导出数据文件迁移到其他设备。</p>
-
-      <div class="datadir-actions">
-        <el-button type="primary" @click="exportData"><el-icon><Download /></el-icon> 导出数据</el-button>
-        <el-button @click="importData"><el-icon><Upload /></el-icon> 导入数据</el-button>
-        <el-button type="danger" plain @click="clearAllData"><el-icon><Delete /></el-icon> 清除全部数据</el-button>
       </div>
     </GlassCard>
 

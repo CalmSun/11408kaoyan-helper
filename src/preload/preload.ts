@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseQrCheck: (key: string) => ipcRenderer.invoke('netease:qr-check', key),
   neteaseLoginStatus: () => ipcRenderer.invoke('netease:login-status'),
   neteaseLogout: () => ipcRenderer.invoke('netease:logout'),
+  neteaseSetCookie: (cookie: string) => ipcRenderer.invoke('netease:set-cookie', cookie),
   neteaseUserPlaylist: (uid: number, limit?: number, offset?: number) => ipcRenderer.invoke('netease:user-playlist', uid, limit, offset),
   neteasePlaylistDetail: (id: number) => ipcRenderer.invoke('netease:playlist-detail', id),
   // 国内天气服务（v2.8.0）

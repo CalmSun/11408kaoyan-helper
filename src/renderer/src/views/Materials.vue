@@ -707,6 +707,34 @@ if (typeof document !== 'undefined') {
   border-radius: 8px;
 }
 
+/* v3.1.0：全屏时视频铺满整个屏幕 */
+.video-wrap:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  justify-content: center;
+  align-items: center;
+  gap: 0;
+}
+
+.video-wrap:fullscreen .video-player {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 0;
+}
+
+.video-wrap:fullscreen .video-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  z-index: 10;
+}
+
 .video-controls {
   display: flex;
   align-items: center;

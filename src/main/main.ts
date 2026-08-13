@@ -1034,6 +1034,44 @@ ipcMain.handle('netease:logout', async () => {
   return { success: true }
 })
 
+/** v3.1.0：通过 Cookie 字符串登录（用户从浏览器复制 Cookie 粘贴） */
+ipcMain.handle('netease:set-cookie', async (_e, cookieStr: string) => {
+  try {
+    if (!cookieStr || typeof cookieStr !== 'string') {
+      return { success: false, message: 'Cookie 不能为空' }
+    }
+    // 解析 Cookie 字符串：key1=value1; key2=value2; ...
+    cookieStr.split(';').forEach(pair => {
+      const idx = pair.indexOf('=')
+      if (idx > 0) {
+        const k = pair.substring(0, idx).trim()
+        const v = pair.substring(idx + 1).trim()
+        if (k && v) neteaseCookies.set(k, v)
+      }
+    })
+    saveNeteaseCookies()
+    // 验证登录状态
+    const data = await neteaseRequest('/w/nuser/account/get', {}) as {
+      code?: number
+      profile?: { userId?: number; nickname?: string; avatarUrl?: string }
+    }
+    if (data.code === 200 && data.profile) {
+      return {
+        success: true,
+        loggedIn: true,
+        user: {
+          id: data.profile.userId || 0,
+          nickname: data.profile.nickname || '',
+          avatar: data.profile.avatarUrl || ''
+        }
+      }
+    }
+    return { success: true, loggedIn: false, user: null, message: 'Cookie 已保存但登录验证失败，请检查 Cookie 是否有效' }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
 // ── v2.9.2：用户歌单 ──
 
 /** 获取用户歌单列表 */
