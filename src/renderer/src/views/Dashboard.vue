@@ -209,12 +209,7 @@
           </div>
           <span>单词词典</span>
         </div>
-        <div class="quick-item" @click="goToPlan">
-          <div class="quick-icon plan-icon">
-            <el-icon :size="32"><List /></el-icon>
-          </div>
-          <span>每日计划</span>
-        </div>
+        <!-- v3.2.5：移除「每日计划」快捷入口（计划功能仍在学习页可达） -->
         <div class="quick-item" @click="goToStatistics">
           <div class="quick-icon stat-icon">
             <el-icon :size="32"><DataLine /></el-icon>

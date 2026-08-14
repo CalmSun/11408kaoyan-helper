@@ -1657,9 +1657,9 @@ onUnmounted(() => {
 /* v3.1.2：歌单网格自适应列数 */
 .user-playlists-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 12px;
-  max-height: 420px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  max-height: 460px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -1697,7 +1697,7 @@ onUnmounted(() => {
 }
 
 .playlist-grid-name {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--mo-text-1);
   margin-top: 6px;
   overflow: hidden;
@@ -1709,7 +1709,7 @@ onUnmounted(() => {
 }
 
 .playlist-grid-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--mo-text-3);
   margin-top: 2px;
 }
