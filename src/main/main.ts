@@ -1426,30 +1426,28 @@ ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
 // v3.1.3：网易云歌曲评论
 ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize = 20, sortType = 1) => {
   try {
-    const data = await neteaseSmartRequest('/comment/new', {
+    // /comment/music 接口使用 limit/offset 分页，直接返回 comments/hotComments
+    const offset = (pageNo - 1) * pageSize
+    const data = await neteaseSmartRequest('/comment/music', {
       id,
-      type: 0, // 0=歌曲
-      sortType, // 0=推荐 1=最新 2=最热
-      pageNo,
-      pageSize,
-      cursor: pageNo > 1 ? String(Date.now()) : ''
+      limit: pageSize,
+      offset
     }) as {
-      data?: {
-        comments?: Array<{
-          commentId: number; content: string; time: number; likedCount: number
-          user?: { nickname: string; avatarUrl?: string; userId?: number }
-          beReplied?: Array<{ content: string; user?: { nickname: string } }>
-        }>
-        hotComments?: Array<{
-          commentId: number; content: string; time: number; likedCount: number
-          user?: { nickname: string; avatarUrl?: string; userId?: number }
-        }>
-        totalCount?: number
-      }
+      comments?: Array<{
+        commentId: number; content: string; time: number; likedCount: number
+        user?: { nickname: string; avatarUrl?: string; userId?: number }
+        beReplied?: Array<{ content: string; user?: { nickname: string } }>
+      }>
+      hotComments?: Array<{
+        commentId: number; content: string; time: number; likedCount: number
+        user?: { nickname: string; avatarUrl?: string; userId?: number }
+      }>
+      total?: number
       code?: number
     }
-    const d = data.data
-    if (!d) return { success: false, comments: [], hotComments: [], total: 0, message: '获取评论失败' }
+    if (!data || data.code !== 200) {
+      return { success: false, comments: [], hotComments: [], total: 0, message: '获取评论失败' }
+    }
     const mapComment = (c: any) => ({
       commentId: c.commentId,
       content: c.content,
@@ -1463,9 +1461,9 @@ ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize =
     })
     return {
       success: true,
-      comments: (d.comments || []).map(mapComment),
-      hotComments: (d.hotComments || []).map(mapComment),
-      total: d.totalCount || 0
+      comments: (data.comments || []).map(mapComment),
+      hotComments: (data.hotComments || []).map(mapComment),
+      total: data.total || 0
     }
   } catch (err) {
     return { success: false, comments: [], hotComments: [], total: 0, message: String(err) }
@@ -1476,14 +1474,15 @@ ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize =
 
 ipcMain.handle('netease:hot-search', async () => {
   try {
-    const data = await neteaseGetRequest('/search/hot') as {
-      result?: { hots?: Array<{ first: string; second?: number; third?: number; iconUrl?: string }> }
+    // 使用 /search/hot/detail 获取更详细的热搜信息
+    const data = await neteaseGetRequest('/search/hot/detail') as {
+      data?: Array<{ searchWord: string; score: number; content?: string; iconUrl?: string }>
       code?: number
     }
-    const hots = (data.result?.hots || []).map((h, i) => ({
+    const hots = (data.data || []).map((h, i) => ({
       rank: i + 1,
-      keyword: h.first,
-      score: h.second || 0,
+      keyword: h.searchWord,
+      score: h.score || 0,
       iconUrl: h.iconUrl || ''
     }))
     return { success: true, hots }

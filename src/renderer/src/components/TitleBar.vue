@@ -231,11 +231,6 @@
         <el-icon :size="14"><Search /></el-icon>
       </button>
 
-      <!-- v2.9.0：音乐播放页面入口 -->
-      <button class="mini-btn music-page-btn" v-if="!transparent" title="音乐播放页面" @click="goMusic">
-        <el-icon :size="14"><Headset /></el-icon>
-      </button>
-
       <!-- v3.1.3：网易云心动模式按钮 -->
       <button
         class="mini-btn heartbeat-btn"

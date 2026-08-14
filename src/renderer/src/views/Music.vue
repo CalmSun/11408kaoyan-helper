@@ -94,7 +94,6 @@
               <el-icon><ChatDotRound /></el-icon>
             </button>
             <div class="volume-control">
-              <el-icon><Microphone /></el-icon>
               <el-slider
                 v-model="volumeValue"
                 :min="0"
@@ -1433,7 +1432,7 @@ onUnmounted(() => {
 
 /* v3.1.3：评论抽屉 */
 .comments-drawer {
-  padding: 0 16px 16px;
+  padding: 0 20px 20px;
   height: 100%;
   overflow-y: auto;
 }
@@ -1441,19 +1440,21 @@ onUnmounted(() => {
 .comments-song-info {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--mo-surface);
-  border-radius: 10px;
-  margin-bottom: 12px;
+  gap: 14px;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--mo-surface), var(--mo-bg-2));
+  border-radius: 12px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .comments-song-cover {
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
   object-fit: cover;
   flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 .comments-song-cover.placeholder {
@@ -1470,7 +1471,7 @@ onUnmounted(() => {
 }
 
 .comments-song-name {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--mo-text-1);
   white-space: nowrap;
@@ -1479,30 +1480,33 @@ onUnmounted(() => {
 }
 
 .comments-song-artist {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--mo-text-3);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 .comments-total {
   font-size: 12px;
   color: var(--mo-text-3);
   flex-shrink: 0;
+  background: var(--mo-surface);
+  padding: 4px 10px;
+  border-radius: 999px;
 }
 
 .comments-sort {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 
 .sort-btn {
-  padding: 4px 14px;
+  padding: 6px 16px;
   border-radius: 999px;
   border: 1px solid var(--mo-border);
   background: transparent;
   color: var(--mo-text-3);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -1510,32 +1514,39 @@ onUnmounted(() => {
 .sort-btn:hover {
   color: var(--mo-text-1);
   border-color: var(--mo-primary);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .sort-btn.active {
   background: var(--mo-primary);
   border-color: var(--mo-primary);
   color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
 .comments-section-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--mo-text-2);
-  margin: 12px 0 8px;
-  padding-left: 8px;
+  margin: 16px 0 10px;
+  padding-left: 10px;
   border-left: 3px solid var(--mo-primary);
 }
 
 .hot-comments {
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .comment-item {
   display: flex;
-  gap: 10px;
-  padding: 10px 0;
+  gap: 12px;
+  padding: 14px 0;
   border-bottom: 1px solid var(--mo-border);
+  transition: background 0.2s;
+}
+
+.comment-item:hover {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .comment-item:last-child {
@@ -1543,11 +1554,12 @@ onUnmounted(() => {
 }
 
 .comment-avatar {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
+  border: 2px solid var(--mo-surface);
 }
 
 .comment-avatar.placeholder {
@@ -1556,7 +1568,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   color: var(--mo-text-3);
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .comment-body {
@@ -1568,38 +1580,39 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .comment-nickname {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--mo-primary);
 }
 
 .comment-like {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--mo-text-3);
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .comment-content {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--mo-text-1);
-  line-height: 1.6;
+  line-height: 1.7;
   word-break: break-word;
 }
 
 .comment-reply {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--mo-text-2);
   background: var(--mo-surface);
-  padding: 6px 8px;
-  border-radius: 6px;
-  margin-top: 6px;
-  line-height: 1.5;
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-top: 8px;
+  line-height: 1.6;
+  border-left: 3px solid var(--mo-primary);
 }
 
 .reply-to {
@@ -1608,22 +1621,22 @@ onUnmounted(() => {
 }
 
 .comment-time {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--mo-text-3);
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 .comments-loading,
 .comments-empty {
   text-align: center;
-  padding: 30px 0;
+  padding: 40px 0;
   color: var(--mo-text-3);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .comments-load-more {
   text-align: center;
-  padding: 16px 0;
+  padding: 20px 0;
 }
 
 /* v3.1.5：热搜列表 */
