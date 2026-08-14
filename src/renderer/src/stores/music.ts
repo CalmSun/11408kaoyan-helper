@@ -808,16 +808,35 @@ export const useMusicStore = defineStore('music', () => {
   const cloudDriveLoading = ref(false)
   const cloudDriveCount = ref(0)
 
-  async function fetchCloudDrive(pageSize = 50, pageNo = 0): Promise<void> {
+  // v3.2.3：云盘全量加载——首页拿到 count 后循环拉取剩余分页，逐页累加展示
+  async function fetchCloudDrive(pageSize = 100, pageNo = 0): Promise<void> {
     const api = window.electronAPI
     if (!api?.neteaseCloudDrive) return
     cloudDriveLoading.value = true
     try {
-      const res = await api.neteaseCloudDrive(pageSize, pageNo)
-      if (res.success && res.songs) {
-        cloudDriveList.value = res.songs as CloudDriveSong[]
-        cloudDriveCount.value = Number(res.count || 0)
+      // 第一页：拿到总数 count
+      const first = await api.neteaseCloudDrive(pageSize, pageNo)
+      if (!first.success || !first.songs) {
+        cloudDriveList.value = []
+        cloudDriveCount.value = Number(first.count || 0)
+        return
       }
+      const all: CloudDriveSong[] = [...(first.songs as CloudDriveSong[])]
+      const total = Number(first.count || all.length)
+      cloudDriveCount.value = total
+      cloudDriveList.value = [...all] // 先展示第一页
+      // 循环拉取剩余分页
+      let loaded = all.length
+      let page = pageNo + 1
+      while (loaded < total && page < pageNo + 100) { // 安全上限 100 页
+        const next = await api.neteaseCloudDrive(pageSize, page)
+        if (!next.success || !next.songs || next.songs.length === 0) break
+        all.push(...(next.songs as CloudDriveSong[]))
+        cloudDriveList.value = [...all] // 逐页刷新，用户可见进度
+        loaded += next.songs.length
+        page++
+      }
+      cloudDriveCount.value = all.length
     } catch { /* ignore */ }
     cloudDriveLoading.value = false
   }

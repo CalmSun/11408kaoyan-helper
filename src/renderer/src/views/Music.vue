@@ -192,6 +192,7 @@
               placeholder="搜索歌曲、歌手..."
               clearable
               @keyup.enter="doSearch"
+              @clear="onSearchClear"
             >
               <template #prefix>
                 <el-icon><Search /></el-icon>
@@ -231,8 +232,8 @@
             未找到相关歌曲
           </div>
 
-          <!-- v3.2.2：热搜榜列表（在搜索卡片内，搜索功能下方） -->
-          <div class="hotsearch-inline">
+          <!-- v3.2.2：热搜榜列表（v3.2.3：搜索时隐藏，清除搜索后恢复显示） -->
+          <div class="hotsearch-inline" v-show="!music.searchResults.length && !music.searchLoading && !music.searchKeyword">
             <h4 class="subsection-title">
               <el-icon><TrendCharts /></el-icon>
               热搜榜
@@ -413,8 +414,8 @@
           </div>
         </div>
 
-        <!-- v2.9.2：我的歌单 -->
-        <div class="glass-card playlist-card" v-show="neteaseTab === 'playlists'">
+        <!-- v2.9.2：我的歌单（v3.2.3：class 调整为 myplaylists-card，避免与底部播放列表卡片样式冲突） -->
+        <div class="glass-card myplaylists-card" v-show="neteaseTab === 'playlists'">
           <h3 class="section-title">
             <el-icon><List /></el-icon>
             我的歌单
@@ -722,6 +723,14 @@ async function doSearch() {
   }
 }
 
+// v3.2.3：点击搜索框叉号——清除搜索结果并恢复热搜显示
+function onSearchClear() {
+  searchKeyword.value = ''
+  music.searchResults = []
+  music.searchKeyword = ''
+  music.searchLoading = false
+}
+
 function scrollToLyric(el: HTMLElement) {
   if (!lyricsContainer.value) return
   const container = lyricsContainer.value
@@ -1008,14 +1017,18 @@ onUnmounted(() => {
 .music-page {
   padding: 20px;
   height: 100%;
-  overflow-y: auto;
+  /* v3.2.3：整页限定在首屏，不再出现页面级滚动；各长列表卡片内部自行滚动 */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .music-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
 .page-title {
@@ -1037,17 +1050,20 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
   gap: 16px;
-  /* v3.2.2：固定左右卡片高度一致，对齐拉伸而非顶部对齐 */
+  /* v3.2.3：左右两列底部对齐——网格行拉伸 + 列高 100%，最后一格 flex:1 吸收剩余高度 */
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 
-/* v3.2.2：左右列都采用纵向 flex，保证子卡片高度可拉伸并均分 */
+/* v3.2.3：左右列高度 100%，子卡片纵向堆叠；最后一格 flex:1 使两列底部落在同一行 */
 .music-player-col,
 .music-list-col {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-height: 0;
+  height: 100%;
 }
 
 /* v3.1.0：统一卡片样式，与其他页面保持一致 */
@@ -1096,16 +1112,22 @@ onUnmounted(() => {
 /* v3.2.2：热门评论卡片：紧凑高度，不参与空间争夺 */
 .hot-comment-card {
   flex-shrink: 0;
-  max-height: 260px;
+  max-height: 220px;
   margin-bottom: 0 !important;
 }
 
-/* v3.2.2：搜索/云盘/排行榜卡片 + 播放列表卡片：占据右侧 Tab 区 + 下方播放列表区高度 */
+/* v3.2.3：右侧 Tab 内容卡片（搜索/云盘/排行榜/我的歌单）——按内容高度，不增长，避免卡片过长 */
 .search-card,
 .clouddrive-card,
 .toplist-card,
-.playlist-card,
-.hotsearch-card {
+.myplaylists-card {
+  flex: 0 1 auto;
+  min-height: 0;
+  margin-bottom: 0 !important;
+}
+
+/* v3.2.3：底部播放列表卡片——填充右侧剩余空间，与左侧歌词卡片底部对齐 */
+.playlist-card {
   flex: 1 1 auto;
   min-height: 0;
   margin-bottom: 0 !important;
@@ -1284,11 +1306,7 @@ onUnmounted(() => {
   opacity: 0.7;
 }
 
-/* 搜索卡片 */
-.search-card {
-  margin-bottom: 16px;
-}
-
+/* 搜索卡片（flex 规则见上方 .search-card，v3.2.3：不再单独设 margin-bottom） */
 .search-input-row {
   display: flex;
   gap: 8px;
@@ -1304,7 +1322,7 @@ onUnmounted(() => {
 .search-results {
   flex: 1 1 auto;
   min-height: 0;
-  max-height: 40vh;
+  max-height: 32vh;
   overflow-y: auto;
   padding-right: 4px;
   margin-bottom: 12px;
@@ -1332,7 +1350,7 @@ onUnmounted(() => {
 }
 
 .hotsearch-inline .hotsearch-list {
-  max-height: 28vh;
+  max-height: 24vh;
   overflow-y: auto;
   padding-right: 4px;
   flex: 1 1 auto;
@@ -1411,11 +1429,7 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
-/* 播放列表卡片 */
-.playlist-card {
-  flex: 1;
-}
-
+/* 播放列表卡片（底部填充格，flex 规则见上方 .playlist-card） */
 .playlist-count {
   font-size: 12px;
   color: var(--mo-text-3);
@@ -1796,10 +1810,7 @@ onUnmounted(() => {
 }
 
 /* v3.1.5：热搜列表 */
-.hotsearch-card {
-  margin-bottom: 16px;
-}
-
+/* v3.1.5：热搜列表（v3.2.3：hotsearch-card 已废弃，热搜内嵌到搜索卡片） */
 .hotsearch-list {
   max-height: 420px;
   overflow-y: auto;
@@ -1864,11 +1875,7 @@ onUnmounted(() => {
   object-fit: contain;
 }
 
-/* v3.1.5：排行榜 */
-.toplist-card {
-  margin-bottom: 16px;
-}
-
+/* v3.1.5：排行榜（flex 规则见上方 .toplist-card） */
 .toplist-list {
   max-height: 420px;
   overflow-y: auto;

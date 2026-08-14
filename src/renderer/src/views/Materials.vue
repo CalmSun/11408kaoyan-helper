@@ -119,11 +119,18 @@
             </div>
             <!-- v3.1.2：音频编码不支持警告 -->
             <div v-if="audioWarning" class="audio-warning">{{ audioWarning }}</div>
-            <!-- v3.0.0：自定义视频控制栏（v3.2.2：美化 + 缓冲进度 + 增益调节） -->
-            <div class="video-controls">
-              <button class="video-ctrl-btn" @click="toggleVideoPlay" :title="videoPlaying ? '暂停' : '播放'">
+            <!-- v3.0.0：自定义视频控制栏（v3.2.2：美化 + 缓冲进度 + 增益调节；v3.2.3：增加 -10s/+10s 前进后退 + 音量无极调节） -->
+            <div class="video-controls" @keydown.stop>
+              <button class="video-ctrl-btn" @click="toggleVideoPlay" :title="videoPlaying ? '暂停 (空格)' : '播放 (空格)'">
                 <el-icon v-if="videoPlaying">⏸</el-icon>
                 <el-icon v-else>▶</el-icon>
+              </button>
+              <!-- v3.2.3：快退 / 快进 10 秒 -->
+              <button class="video-ctrl-btn seek-btn" @click="seekRelative(-10)" title="快退 10 秒 (←)">
+                <el-icon>⏪</el-icon>
+              </button>
+              <button class="video-ctrl-btn seek-btn" @click="seekRelative(10)" title="快进 10 秒 (→)">
+                <el-icon>⏩</el-icon>
               </button>
               <span class="video-time">{{ formatTime(videoCurrent) }}</span>
               <div class="video-progress-wrap">
@@ -150,9 +157,10 @@
                 class="video-volume"
                 :min="0"
                 :max="100"
-                :step="1"
+                :step="0.1"
                 v-model="videoVolume"
                 @input="onVolumeChange"
+                title="音量 (↑/↓)"
               />
               <!-- v3.2.2：数字增益（提升音量） -->
               <select class="video-gain" :value="videoGain" @change="(e) => { videoGain = Number((e.target as HTMLSelectElement).value); applyVolumeAndGain() }">
@@ -210,7 +218,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
   View, Warning, ArrowRight, Loading
@@ -333,7 +341,56 @@ function countFilesInFolder(folder: MaterialNode): number {
 
 onMounted(() => {
   restoreFolder()
+  // v3.2.3：视频键盘快捷键——仅当预览中的文件是视频时生效
+  window.addEventListener('keydown', onVideoKeydown)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onVideoKeydown)
+})
+
+// v3.2.3：视频键盘快捷键：←/→ 快退快进 5 秒，↑/↓ 音量 ±5，空格 播放/暂停
+function onVideoKeydown(e: KeyboardEvent) {
+  // 仅在视频预览态生效
+  if (!currentFile.value || !isVideo(currentFile.value.ext || '')) return
+  // 输入框/文本域/下拉中不拦截，避免影响搜索等
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+  if (e.target instanceof HTMLElement && e.target.isContentEditable) return
+  switch (e.key) {
+    case 'ArrowLeft':
+      e.preventDefault()
+      seekRelative(-5)
+      break
+    case 'ArrowRight':
+      e.preventDefault()
+      seekRelative(5)
+      break
+    case 'ArrowUp':
+      e.preventDefault()
+      changeVolumeStep(5)
+      break
+    case 'ArrowDown':
+      e.preventDefault()
+      changeVolumeStep(-5)
+      break
+    case ' ':
+    case 'Spacebar':
+      e.preventDefault()
+      toggleVideoPlay()
+      break
+  }
+}
+
+// v3.2.3：音量按步进调整（用于键盘 ↑/↓，无极范围 0~100）
+function changeVolumeStep(step: number) {
+  let v = videoVolume.value + step
+  if (v < 0) v = 0
+  if (v > 100) v = 100
+  videoVolume.value = v
+  if (v > 0) videoMuted.value = false
+  applyVolumeAndGain()
+}
 
 // v3.0.0：切换文件时重置视频状态
 watch(() => currentFile.value, () => {
@@ -574,6 +631,17 @@ function onVideoSeek(e: Event) {
     videoEl.value.currentTime = val
     videoCurrent.value = val
   }
+}
+
+// v3.2.3：相对快进/快退（秒），自动夹紧到 [0, duration]
+function seekRelative(delta: number) {
+  if (!videoEl.value) return
+  const dur = videoDuration.value || videoEl.value.duration || 0
+  let next = (videoEl.value.currentTime || videoCurrent.value) + delta
+  if (next < 0) next = 0
+  if (dur && next > dur) next = dur
+  videoEl.value.currentTime = next
+  videoCurrent.value = next
 }
 
 function onVideoSpeedChange() {
@@ -1007,6 +1075,12 @@ if (typeof document !== 'undefined') {
   transform: translateY(-1px);
 }
 
+/* v3.2.3：快退/快进按钮——略紧凑 */
+.video-ctrl-btn.seek-btn {
+  padding: 6px 7px;
+  font-size: 14px;
+}
+
 .video-time {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.78);
@@ -1101,9 +1175,9 @@ if (typeof document !== 'undefined') {
   color: #fff;
 }
 
-/* v3.2.2：音量滑块：改白色主题 */
+/* v3.2.2：音量滑块：改白色主题（v3.2.3：加宽到 96px，配合 step=0.1 无极调节） */
 .video-volume {
-  width: 72px;
+  width: 96px;
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
