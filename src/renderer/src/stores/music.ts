@@ -91,6 +91,44 @@ export const useMusicStore = defineStore('music', () => {
     }
   })
 
+  // v3.1.9：音频播放错误处理（在线歌曲 URL 过期时自动刷新重试）
+  let urlRefreshRetryCount = 0
+  let isRefreshingUrl = false
+
+  audio.addEventListener('error', async () => {
+    const track = currentTrack.value
+    if (!track || track.source !== 'online' || !track.id) {
+      isPlaying.value = false
+      return
+    }
+    if (isRefreshingUrl || urlRefreshRetryCount >= 2) {
+      isPlaying.value = false
+      urlRefreshRetryCount = 0
+      return
+    }
+    isRefreshingUrl = true
+    urlRefreshRetryCount++
+    try {
+      const api = window.electronAPI
+      if (api?.neteaseSongUrl) {
+        const res = await api.neteaseSongUrl([track.id])
+        const urlInfo = res.urls?.find(u => u.id === track.id)
+        if (urlInfo?.url) {
+          // 更新播放列表中的 URL
+          const idx = currentIndex.value
+          if (playlist.value[idx]) {
+            playlist.value[idx] = { ...playlist.value[idx], url: urlInfo.url }
+          }
+          audio.src = urlInfo.url
+          await audio.play()
+          isPlaying.value = true
+          urlRefreshRetryCount = 0
+        }
+      }
+    } catch { /* ignore */ }
+    isRefreshingUrl = false
+  })
+
   // v2.9.0：监听播放进度
   audio.addEventListener('timeupdate', () => {
     currentTime.value = audio.currentTime
@@ -256,6 +294,7 @@ export const useMusicStore = defineStore('music', () => {
     if (!track) return
     audio.src = track.url
     loadLyric()
+    urlRefreshRetryCount = 0
   }
 
   async function play() {
@@ -265,7 +304,33 @@ export const useMusicStore = defineStore('music', () => {
       await audio.play()
       isPlaying.value = true
     } catch {
-      isPlaying.value = false
+      // v3.1.9：播放失败时，若是在线歌曲尝试刷新 URL 后重试
+      const track = currentTrack.value
+      if (track.source === 'online' && track.id && !isRefreshingUrl && urlRefreshRetryCount < 2) {
+        isRefreshingUrl = true
+        urlRefreshRetryCount++
+        try {
+          const api = window.electronAPI
+          if (api?.neteaseSongUrl) {
+            const res = await api.neteaseSongUrl([track.id])
+            const urlInfo = res.urls?.find(u => u.id === track.id)
+            if (urlInfo?.url) {
+              const idx = currentIndex.value
+              if (playlist.value[idx]) {
+                playlist.value[idx] = { ...playlist.value[idx], url: urlInfo.url }
+              }
+              audio.src = urlInfo.url
+              await audio.play()
+              isPlaying.value = true
+              urlRefreshRetryCount = 0
+            }
+          }
+        } catch { /* ignore */ }
+        isRefreshingUrl = false
+      }
+      if (!isPlaying.value) {
+        isPlaying.value = false
+      }
     }
   }
 
@@ -508,6 +573,30 @@ export const useMusicStore = defineStore('music', () => {
         return { success: true, message: `登录成功：${res.user.nickname}` }
       }
       return { success: false, message: res.message || 'Cookie 无效或已过期' }
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
+  /** v3.1.9：手机号登录 */
+  async function loginPhone(phone: string, password: string, countrycode = '86'): Promise<{ success: boolean; message: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseLoginPhone) return { success: false, message: 'API 不可用' }
+    try {
+      const res = await api.neteaseLoginPhone(phone, password, countrycode)
+      if (res.success && res.loggedIn && res.user) {
+        neteaseLoggedIn.value = true
+        neteaseUser.value = {
+          id: res.user.id,
+          nickname: res.user.nickname,
+          avatar: res.user.avatar,
+          signature: '',
+          level: 0
+        }
+        await fetchUserPlaylists()
+        return { success: true, message: `登录成功：${res.user.nickname}` }
+      }
+      return { success: false, message: res.message || '登录失败，请检查手机号和密码' }
     } catch (err) {
       return { success: false, message: String(err) }
     }
@@ -789,6 +878,14 @@ export const useMusicStore = defineStore('music', () => {
   // v3.1.8：批量缓存歌曲喜欢状态，供列表项展示
   const likedSongIds = ref<Set<number>>(new Set())
 
+  // v3.1.9：更新喜欢状态时创建新 Set 触发 Vue 响应式
+  function setLiked(songId: number, liked: boolean) {
+    const next = new Set(likedSongIds.value)
+    if (liked) next.add(songId)
+    else next.delete(songId)
+    likedSongIds.value = next
+  }
+
   /** 获取歌曲是否已喜欢 */
   async function checkSongLikeStatus(songId: number): Promise<boolean> {
     const api = window.electronAPI
@@ -797,8 +894,7 @@ export const useMusicStore = defineStore('music', () => {
       const res = await api.neteaseSongLikeStatus(songId)
       if (res.success) {
         currentLiked.value = res.liked
-        if (res.liked) likedSongIds.value.add(songId)
-        else likedSongIds.value.delete(songId)
+        setLiked(songId, res.liked)
         return res.liked
       }
     } catch { /* ignore */ }
@@ -815,8 +911,7 @@ export const useMusicStore = defineStore('music', () => {
       const res = await api.neteaseLike(songId, isLiked)
       if (res.success) {
         currentLiked.value = res.liked
-        if (res.liked) likedSongIds.value.add(songId)
-        else likedSongIds.value.delete(songId)
+        setLiked(songId, res.liked)
         return true
       }
     } catch { /* ignore */ }
@@ -838,9 +933,11 @@ export const useMusicStore = defineStore('music', () => {
     try {
       const res = await api.neteaseSongLikeStatus(uncached.join(','))
       if (res.success && res.likedMap) {
+        const next = new Set(likedSongIds.value)
         for (const [id, liked] of Object.entries(res.likedMap)) {
-          if (liked) likedSongIds.value.add(Number(id))
+          if (liked) next.add(Number(id))
         }
+        likedSongIds.value = next
       }
     } catch { /* ignore */ }
   }
@@ -1074,6 +1171,7 @@ export const useMusicStore = defineStore('music', () => {
     // v2.9.2：网易云登录与歌单方法
     checkLoginStatus,
     setNeteaseCookie,
+    loginPhone,
     getQrKey,
     checkQrLogin,
     logoutNetease,

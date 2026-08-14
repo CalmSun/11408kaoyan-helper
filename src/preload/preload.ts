@@ -42,6 +42,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseLoginStatus: () => ipcRenderer.invoke('netease:login-status'),
   neteaseLogout: () => ipcRenderer.invoke('netease:logout'),
   neteaseSetCookie: (cookie: string) => ipcRenderer.invoke('netease:set-cookie', cookie),
+  // v3.1.9：手机号登录
+  neteaseLoginPhone: (phone: string, password: string, countrycode?: string) => ipcRenderer.invoke('netease:login-phone', phone, password, countrycode),
   neteaseUserPlaylist: (uid: number, limit?: number, offset?: number) => ipcRenderer.invoke('netease:user-playlist', uid, limit, offset),
   neteasePlaylistDetail: (id: number) => ipcRenderer.invoke('netease:playlist-detail', id),
   // v3.1.3：网易云歌曲评论

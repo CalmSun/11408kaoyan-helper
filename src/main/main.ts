@@ -1347,6 +1347,56 @@ ipcMain.handle('netease:set-cookie', async (_e, cookieStr: string) => {
   }
 })
 
+// ── v3.1.9：手机号登录 ──
+
+ipcMain.handle('netease:login-phone', async (_e, phone: string, password: string, countrycode = '86') => {
+  try {
+    if (!phone || !password) {
+      return { success: false, message: '手机号和密码不能为空' }
+    }
+    const md5Password = crypto.createHash('md5').update(password, 'utf8').digest('hex')
+    const data = await neteasePlainRequest('/w/login/cellphone', {
+      type: '1',
+      https: 'true',
+      phone,
+      countrycode,
+      remember: 'true',
+      password: md5Password
+    }) as { code?: number; msg?: string; message?: string; profile?: { userId?: number; nickname?: string; avatarUrl?: string } }
+
+    if (data.code === 200 && data.profile) {
+      // 验证登录状态
+      const accountData = await neteaseSmartRequest('/w/nuser/account/get', {}) as {
+        code?: number
+        profile?: { userId?: number; nickname?: string; avatarUrl?: string; signature?: string; level?: number }
+      }
+      if (accountData.code === 200 && accountData.profile) {
+        return {
+          success: true,
+          loggedIn: true,
+          user: {
+            id: accountData.profile.userId || data.profile.userId || 0,
+            nickname: accountData.profile.nickname || data.profile.nickname || '',
+            avatar: accountData.profile.avatarUrl || data.profile.avatarUrl || ''
+          }
+        }
+      }
+      return {
+        success: true,
+        loggedIn: true,
+        user: {
+          id: data.profile.userId || 0,
+          nickname: data.profile.nickname || '',
+          avatar: data.profile.avatarUrl || ''
+        }
+      }
+    }
+    return { success: false, message: data.msg || data.message || `登录失败 (code=${data.code})` }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
 // ── v2.9.2：用户歌单 ──
 
 /** 获取用户歌单列表 */

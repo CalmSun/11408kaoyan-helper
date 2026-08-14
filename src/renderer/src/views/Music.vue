@@ -452,39 +452,80 @@
       </div>
     </div>
 
-    <!-- v3.1.0：网易云 Cookie 登录对话框 -->
+    <!-- v3.1.0：网易云登录对话框（v3.1.9 增加扫码/手机号登录） -->
     <el-dialog v-model="showLoginDialog" title="网易云音乐登录" width="480px" :close-on-click-modal="false">
-      <div class="cookie-login-box">
-        <div class="cookie-tip">
-          <el-icon><InfoFilled /></el-icon>
-          <span>请从浏览器登录 <b>music.163.com</b> 后，按 F12 打开开发者工具，在 Application → Cookies 中复制全部 Cookie 粘贴到下方。</span>
-        </div>
-        <el-input
-          v-model="cookieInput"
-          type="textarea"
-          :rows="5"
-          placeholder="粘贴网易云 Cookie，例如：MUSIC_U=xxx; __csrf=xxx; NMTID=xxx; ..."
-          resize="vertical"
-        />
-        <div class="cookie-actions">
-          <el-button type="primary" :loading="cookieLogging" @click="handleCookieLogin">
-            登录
-          </el-button>
-          <el-button @click="showLoginDialog = false">取消</el-button>
-        </div>
-        <div class="cookie-help">
-          <details>
-            <summary>如何获取 Cookie？</summary>
-            <ol>
-              <li>在浏览器中打开 <b>https://music.163.com</b> 并登录账号</li>
-              <li>按 F12 打开开发者工具，切换到 Application（应用）标签</li>
-              <li>左侧找到 Cookies → https://music.163.com</li>
-              <li>全选所有 Cookie 行，复制 Name 和 Value，格式为 <code>key=value; key2=value2</code></li>
-              <li>粘贴到上方输入框，点击登录</li>
-            </ol>
-          </details>
-        </div>
-      </div>
+      <el-tabs v-model="loginTab" class="login-tabs">
+        <!-- 扫码登录 -->
+        <el-tab-pane label="扫码登录" name="qr">
+          <div class="qr-login-box">
+            <div v-if="music.qrImage" class="qr-image-box">
+              <img :src="music.qrImage" alt="二维码" class="qr-image" />
+              <div class="qr-status" :class="{ 'success': music.qrStatus === 803, 'expired': music.qrStatus === 800 }">
+                {{ qrStatusText }}
+              </div>
+            </div>
+            <div v-else class="qr-placeholder">
+              <el-button type="primary" @click="startQrLogin">获取二维码</el-button>
+            </div>
+            <div class="qr-tip">
+              <el-icon><InfoFilled /></el-icon>
+              <span>使用网易云音乐 App 扫描上方二维码登录</span>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- 手机号登录 -->
+        <el-tab-pane label="手机号登录" name="phone">
+          <div class="phone-login-box">
+            <el-input v-model="phoneInput" placeholder="手机号" maxlength="11" clearable>
+              <template #prepend>
+                <el-select v-model="countrycode" style="width: 70px">
+                  <el-option label="+86" value="86" />
+                </el-select>
+              </template>
+            </el-input>
+            <el-input v-model="phonePassword" type="password" placeholder="密码" show-password @keyup.enter="handlePhoneLogin" />
+            <el-button type="primary" :loading="phoneLogging" @click="handlePhoneLogin" style="width: 100%">
+              登录
+            </el-button>
+          </div>
+        </el-tab-pane>
+
+        <!-- Cookie 登录 -->
+        <el-tab-pane label="Cookie 登录" name="cookie">
+          <div class="cookie-login-box">
+            <div class="cookie-tip">
+              <el-icon><InfoFilled /></el-icon>
+              <span>请从浏览器登录 <b>music.163.com</b> 后，按 F12 打开开发者工具，在 Application → Cookies 中复制全部 Cookie 粘贴到下方。</span>
+            </div>
+            <el-input
+              v-model="cookieInput"
+              type="textarea"
+              :rows="5"
+              placeholder="粘贴网易云 Cookie，例如：MUSIC_U=xxx; __csrf=xxx; NMTID=xxx; ..."
+              resize="vertical"
+            />
+            <div class="cookie-actions">
+              <el-button type="primary" :loading="cookieLogging" @click="handleCookieLogin">
+                登录
+              </el-button>
+              <el-button @click="showLoginDialog = false">取消</el-button>
+            </div>
+            <div class="cookie-help">
+              <details>
+                <summary>如何获取 Cookie？</summary>
+                <ol>
+                  <li>在浏览器中打开 <b>https://music.163.com</b> 并登录账号</li>
+                  <li>按 F12 打开开发者工具，切换到 Application（应用）标签</li>
+                  <li>左侧找到 Cookies → https://music.163.com</li>
+                  <li>全选所有 Cookie 行，复制 Name 和 Value，格式为 <code>key=value; key2=value2</code></li>
+                  <li>粘贴到上方输入框，点击登录</li>
+                </ol>
+              </details>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </el-dialog>
 
     <!-- v3.1.8：歌曲评论对话框 -->
@@ -578,6 +619,7 @@ function handleProgressChange() {
 watch(() => music.neteaseLoggedIn, (logged) => {
   if (logged) {
     showLoginDialog.value = false
+    stopQrPolling()
   }
 })
 
@@ -627,6 +669,75 @@ async function handleCookieLogin() {
     }
   } finally {
     cookieLogging.value = false
+  }
+}
+
+// v3.1.9：扫码登录
+const loginTab = ref<'qr' | 'phone' | 'cookie'>('qr')
+let qrPollTimer: ReturnType<typeof setInterval> | null = null
+
+const qrStatusText = computed(() => {
+  switch (music.qrStatus) {
+    case 801: return '等待扫码...'
+    case 802: return '已扫码，请在手机上确认'
+    case 803: return '登录成功！'
+    case 800: return '二维码已过期，请重新获取'
+    default: return ''
+  }
+})
+
+async function startQrLogin() {
+  await music.getQrKey()
+  if (music.qrKey) {
+    startQrPolling()
+  }
+}
+
+function startQrPolling() {
+  stopQrPolling()
+  qrPollTimer = setInterval(async () => {
+    const code = await music.checkQrLogin()
+    if (code === 803 || code === 800) {
+      stopQrPolling()
+    }
+  }, 2000)
+}
+
+function stopQrPolling() {
+  if (qrPollTimer) {
+    clearInterval(qrPollTimer)
+    qrPollTimer = null
+  }
+}
+
+// v3.1.9：手机号登录
+const phoneInput = ref('')
+const phonePassword = ref('')
+const countrycode = ref('86')
+const phoneLogging = ref(false)
+
+async function handlePhoneLogin() {
+  if (!phoneInput.value.trim()) {
+    ElMessage.warning('请输入手机号')
+    return
+  }
+  if (!phonePassword.value) {
+    ElMessage.warning('请输入密码')
+    return
+  }
+  phoneLogging.value = true
+  try {
+    const res = await music.loginPhone(phoneInput.value.trim(), phonePassword.value, countrycode.value)
+    if (res.success) {
+      ElMessage.success(res.message)
+      showLoginDialog.value = false
+      phoneInput.value = ''
+      phonePassword.value = ''
+    } else {
+      ElMessage.error(res.message)
+    }
+  } finally {
+    phoneLogging.value = false
   }
 }
 
@@ -723,6 +834,8 @@ async function handleSongLike(song: { id: number; name: string }) {
 // 切换歌曲时检查喜欢状态 + 获取热门评论
 watch(() => music.currentTrack?.id, (newId) => {
   if (newId && music.currentTrack?.source === 'online') {
+    // v3.1.9：先重置喜欢状态，避免显示上一首的状态
+    music.currentLiked = false
     music.checkSongLikeStatus(newId)
     music.fetchSongComments(newId, 1, 20, 1)
   } else {
@@ -773,7 +886,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  // 无定时器需要清理
+  stopQrPolling()
 })
 </script>
 
@@ -1383,6 +1496,64 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* v3.1.9：登录对话框 */
+.login-tabs {
+  min-height: 280px;
+}
+
+/* 扫码登录 */
+.qr-login-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0;
+}
+
+.qr-image-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.qr-image {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  border: 1px solid var(--mo-border);
+}
+
+.qr-status {
+  font-size: 13px;
+  color: var(--mo-text-2);
+}
+.qr-status.success { color: var(--el-color-success, #67c23a); }
+.qr-status.expired { color: var(--el-color-danger, #f56c6c); }
+
+.qr-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.qr-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--mo-text-3);
+}
+
+/* 手机号登录 */
+.phone-login-box {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 0;
 }
 
 .cookie-tip {
