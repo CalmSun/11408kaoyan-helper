@@ -1476,7 +1476,7 @@ ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize =
 
 ipcMain.handle('netease:hot-search', async () => {
   try {
-    const data = await neteaseGetRequest('/search/hot') as {
+    const data = await neteaseSmartRequest('/search/hot', { type: 1111 }) as {
       result?: { hots?: Array<{ first: string; second?: number; third?: number; iconUrl?: string }> }
       code?: number
     }
@@ -1568,9 +1568,7 @@ ipcMain.handle('netease:toplist-detail', async (_e, id: number) => {
 
 ipcMain.handle('netease:user-detail', async (_e, uid: number) => {
   try {
-    const data = await neteaseSmartRequest('/user/detail', {
-      uid
-    }) as {
+    const data = await neteaseSmartRequest(`/v1/user/detail/${uid}`, {}) as {
       profile?: {
         userId?: number; nickname?: string; avatarUrl?: string; signature?: string
         level?: number; gender?: number; birthday?: number; province?: number; city?: number
@@ -1648,14 +1646,16 @@ ipcMain.handle('netease:user-account', async () => {
 
 ipcMain.handle('netease:like', async (_e, songId: number, like: boolean = true) => {
   try {
-    const data = await neteaseSmartRequest('/like', {
-      id: songId,
-      like: like
+    const data = await neteaseSmartRequest('/radio/like', {
+      alg: 'itembased',
+      trackId: songId,
+      like: like,
+      time: '3'
     }) as { code?: number }
     if (data.code === 200) return { success: true, liked: like }
-    return { success: false, message: '操作失败' }
+    return { success: false, liked: false, message: '操作失败' }
   } catch (err) {
-    return { success: false, message: String(err) }
+    return { success: false, liked: false, message: String(err) }
   }
 })
 
@@ -1663,7 +1663,9 @@ ipcMain.handle('netease:like', async (_e, songId: number, like: boolean = true) 
 
 ipcMain.handle('netease:song-like-status', async (_e, songId: number) => {
   try {
-    const data = await neteaseGetRequest('/song/like/check', { ids: songId.toString() }) as { data?: { [key: string]: boolean } }
+    const data = await neteaseSmartRequest('/song/like/check', {
+      trackIds: songId.toString()
+    }) as { data?: { [key: string]: boolean } }
     return { success: true, liked: !!data.data?.[songId] }
   } catch (err) {
     return { success: false, liked: false }

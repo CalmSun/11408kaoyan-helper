@@ -277,8 +277,22 @@
             <img v-if="music.neteaseUser.avatar" :src="music.neteaseUser.avatar" class="ncm-user-avatar" />
             <div class="ncm-user-info">
               <div class="ncm-user-name">{{ music.neteaseUser.nickname }}</div>
-              <div class="ncm-user-level" v-if="music.neteaseUserDetail?.level">Lv.{{ music.neteaseUserDetail.level }}</div>
-              <div class="ncm-user-sig" v-if="music.neteaseUserDetail?.signature">{{ music.neteaseUserDetail.signature }}</div>
+              <div class="ncm-user-level" v-if="userLevel">Lv.{{ userLevel }}</div>
+              <div class="ncm-user-sig" v-if="userSignature">{{ userSignature }}</div>
+            </div>
+          </div>
+          <div class="ncm-user-account" v-if="music.neteaseUserAccount">
+            <div class="ncm-acct-row" v-if="music.neteaseUserAccount.vipType > 0">
+              <span class="ncm-acct-label">会员</span>
+              <span class="ncm-acct-val vip">黑胶VIP</span>
+            </div>
+            <div class="ncm-acct-row" v-if="music.neteaseUserAccount.createDays > 0">
+              <span class="ncm-acct-label">注册天数</span>
+              <span class="ncm-acct-val">{{ music.neteaseUserAccount.createDays }} 天</span>
+            </div>
+            <div class="ncm-acct-row" v-if="music.neteaseUserAccount.createTime > 0">
+              <span class="ncm-acct-label">注册时间</span>
+              <span class="ncm-acct-val">{{ formatCreateTime(music.neteaseUserAccount.createTime) }}</span>
             </div>
           </div>
           <div class="ncm-user-stats" v-if="music.neteaseUserDetail">
@@ -286,6 +300,9 @@
             <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.follows }}</span><span class="ncm-stat-label">关注</span></div>
             <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.playlistCount }}</span><span class="ncm-stat-label">歌单</span></div>
             <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.listenSongs }}</span><span class="ncm-stat-label">听歌</span></div>
+          </div>
+          <div class="ncm-user-loading" v-else-if="music.userDetailLoading || music.userAccountLoading">
+            账号信息加载中…
           </div>
           <div class="ncm-user-actions">
             <button class="ncm-action-btn" @click="goToMusic">音乐播放</button>
@@ -545,11 +562,24 @@ async function handleHeartbeat() {
   }
 }
 
-// v3.1.5：网易云用户详情加载
+// v3.1.5：网易云用户详情加载（同时加载账号信息）
 async function loadNeteaseUserDetail() {
   if (music.neteaseUser?.id) {
-    await music.fetchUserDetail(music.neteaseUser.id)
+    await Promise.all([
+      music.fetchUserDetail(music.neteaseUser.id),
+      music.fetchUserAccount()
+    ])
   }
+}
+
+// v3.1.6：等级/签名优先取详情，缺失时回退到登录态基础信息
+const userLevel = computed(() => music.neteaseUserDetail?.level || music.neteaseUser?.level || 0)
+const userSignature = computed(() => music.neteaseUserDetail?.signature || music.neteaseUser?.signature || '')
+
+// v3.1.6：格式化账号注册时间
+function formatCreateTime(ts: number): string {
+  if (!ts) return ''
+  return dayjs(ts).format('YYYY-MM-DD')
 }
 
 // v3.1.5：退出网易云登录
@@ -576,17 +606,17 @@ function onVolumeInput(e: Event) {
   music.setVolume(Number(target.value) / 100)
 }
 
-// v3.1.5：监听网易云登录状态变化，自动加载用户详情
+// v3.1.5：监听网易云登录状态变化，自动加载用户详情与账号信息
 watch(() => music.neteaseLoggedIn, (logged) => {
-  if (logged && music.neteaseUser?.id && !music.neteaseUserDetail) {
+  if (logged && music.neteaseUser?.id && (!music.neteaseUserDetail || !music.neteaseUserAccount)) {
     loadNeteaseUserDetail()
   }
 })
 
 onMounted(() => {
   initWeather()
-  // v3.1.5：如果已登录网易云，加载用户详情
-  if (music.neteaseLoggedIn && music.neteaseUser?.id) {
+  // v3.1.5：如果已登录网易云，加载用户详情与账号信息
+  if (music.neteaseLoggedIn && music.neteaseUser?.id && (!music.neteaseUserDetail || !music.neteaseUserAccount)) {
     loadNeteaseUserDetail()
   }
 })
@@ -1371,6 +1401,48 @@ onMounted(() => {
   border-bottom: 1px solid var(--mo-border);
   margin-bottom: 12px;
   text-align: center;
+}
+
+/* v3.1.6：账号信息（VIP/注册天数等） */
+.ncm-user-account {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--mo-border);
+  border-bottom: 1px solid var(--mo-border);
+  margin-bottom: 12px;
+}
+
+.ncm-acct-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+}
+
+.ncm-acct-label {
+  color: var(--mo-text-3);
+}
+
+.ncm-acct-val {
+  color: var(--mo-text-1);
+  font-weight: 500;
+}
+
+.ncm-acct-val.vip {
+  color: #d4a017;
+  font-weight: 600;
+}
+
+.ncm-user-loading {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  text-align: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--mo-border);
+  border-bottom: 1px solid var(--mo-border);
+  margin-bottom: 12px;
 }
 
 .ncm-stat {

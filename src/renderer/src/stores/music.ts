@@ -448,7 +448,7 @@ export const useMusicStore = defineStore('music', () => {
     cover: string
     playCount: number
     trackCount: number
-    creator: string
+    creator?: string
   }
 
   interface NetEasePlaylistTrack {
@@ -561,6 +561,8 @@ export const useMusicStore = defineStore('music', () => {
     currentPlaylistTracks.value = []
     qrKey.value = ''
     qrStatus.value = 0
+    neteaseUserDetail.value = null
+    neteaseUserAccount.value = null
   }
 
   /** 获取用户歌单列表 */

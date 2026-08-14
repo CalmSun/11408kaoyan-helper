@@ -1,6 +1,6 @@
 {
   "name": "kaoyan-helper",
-  "version": "3.1.6",
+  "version": "3.1.7",
   "description": "考研助手桌面应用 - 你的专属备考伙伴",
   "main": "dist/main/main.js",
   "author": "Kaoyan Helper",
