@@ -53,7 +53,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseUserDetail: (uid: number) => ipcRenderer.invoke('netease:user-detail', uid),
   neteaseUserAccount: () => ipcRenderer.invoke('netease:user-account'),
   neteaseLike: (songId: number, like?: boolean) => ipcRenderer.invoke('netease:like', songId, like),
-  neteaseSongLikeStatus: (songId: number) => ipcRenderer.invoke('netease:song-like-status', songId),
+  neteaseSongLikeStatus: (songId: number | string) => ipcRenderer.invoke('netease:song-like-status', songId),
   neteaseIntelligenceList: (songId: number, playlistId: number) => ipcRenderer.invoke('netease:intelligence-list', songId, playlistId),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),

@@ -1426,30 +1426,26 @@ ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
 // v3.1.3：网易云歌曲评论
 ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize = 20, sortType = 1) => {
   try {
-    const data = await neteaseSmartRequest('/comment/new', {
-      id,
-      type: 0, // 0=歌曲
-      sortType, // 0=推荐 1=最新 2=最热
-      pageNo,
-      pageSize,
-      cursor: pageNo > 1 ? String(Date.now()) : ''
+    const offset = (pageNo - 1) * pageSize
+    const data = await neteaseSmartRequest(`/v1/resource/comments/R_SO_4_${id}`, {
+      rid: id,
+      limit: pageSize,
+      offset,
+      beforeTime: pageNo > 1 ? String(Date.now()) : '0'
     }) as {
-      data?: {
-        comments?: Array<{
-          commentId: number; content: string; time: number; likedCount: number
-          user?: { nickname: string; avatarUrl?: string; userId?: number }
-          beReplied?: Array<{ content: string; user?: { nickname: string } }>
-        }>
-        hotComments?: Array<{
-          commentId: number; content: string; time: number; likedCount: number
-          user?: { nickname: string; avatarUrl?: string; userId?: number }
-        }>
-        totalCount?: number
-      }
+      hotComments?: Array<{
+        commentId: number; content: string; time: number; likedCount: number
+        user?: { nickname: string; avatarUrl?: string; userId?: number }
+        beReplied?: Array<{ content: string; user?: { nickname: string } }>
+      }>
+      comments?: Array<{
+        commentId: number; content: string; time: number; likedCount: number
+        user?: { nickname: string; avatarUrl?: string; userId?: number }
+        beReplied?: Array<{ content: string; user?: { nickname: string } }>
+      }>
+      total?: number
       code?: number
     }
-    const d = data.data
-    if (!d) return { success: false, comments: [], hotComments: [], total: 0, message: '获取评论失败' }
     const mapComment = (c: any) => ({
       commentId: c.commentId,
       content: c.content,
@@ -1461,11 +1457,14 @@ ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize =
       repliedContent: c.beReplied?.[0]?.content || '',
       repliedNickname: c.beReplied?.[0]?.user?.nickname || ''
     })
+    const allComments = [...(data.hotComments || []), ...(data.comments || [])]
+    const hot = sortType === 2 ? allComments : (data.hotComments || [])
+    const regular = sortType === 2 ? allComments : (data.comments || [])
     return {
       success: true,
-      comments: (d.comments || []).map(mapComment),
-      hotComments: (d.hotComments || []).map(mapComment),
-      total: d.totalCount || 0
+      comments: regular.map(mapComment),
+      hotComments: hot.map(mapComment),
+      total: data.total || 0
     }
   } catch (err) {
     return { success: false, comments: [], hotComments: [], total: 0, message: String(err) }
@@ -1659,16 +1658,19 @@ ipcMain.handle('netease:like', async (_e, songId: number, like: boolean = true) 
   }
 })
 
-// ── v3.1.5：当前播放歌曲是否已喜欢 ──
+// ── v3.1.5：歌曲是否已喜欢（支持单个或批量，传入逗号分隔的 ID 字符串可批量查询） ──
 
-ipcMain.handle('netease:song-like-status', async (_e, songId: number) => {
+ipcMain.handle('netease:song-like-status', async (_e, songId: number | string) => {
   try {
+    const ids = String(songId)
     const data = await neteaseSmartRequest('/song/like/check', {
-      trackIds: songId.toString()
+      trackIds: ids
     }) as { data?: { [key: string]: boolean } }
-    return { success: true, liked: !!data.data?.[songId] }
+    const likedMap = data.data || {}
+    const firstId = ids.split(',')[0]
+    return { success: true, liked: !!likedMap[firstId], likedMap }
   } catch (err) {
-    return { success: false, liked: false }
+    return { success: false, liked: false, likedMap: {} }
   }
 })
 

@@ -786,6 +786,8 @@ export const useMusicStore = defineStore('music', () => {
 
   const currentLiked = ref(false)
   const likingSongId = ref<number | null>(null)
+  // v3.1.8：批量缓存歌曲喜欢状态，供列表项展示
+  const likedSongIds = ref<Set<number>>(new Set())
 
   /** 获取歌曲是否已喜欢 */
   async function checkSongLikeStatus(songId: number): Promise<boolean> {
@@ -795,6 +797,8 @@ export const useMusicStore = defineStore('music', () => {
       const res = await api.neteaseSongLikeStatus(songId)
       if (res.success) {
         currentLiked.value = res.liked
+        if (res.liked) likedSongIds.value.add(songId)
+        else likedSongIds.value.delete(songId)
         return res.liked
       }
     } catch { /* ignore */ }
@@ -811,6 +815,8 @@ export const useMusicStore = defineStore('music', () => {
       const res = await api.neteaseLike(songId, isLiked)
       if (res.success) {
         currentLiked.value = res.liked
+        if (res.liked) likedSongIds.value.add(songId)
+        else likedSongIds.value.delete(songId)
         return true
       }
     } catch { /* ignore */ }
@@ -819,6 +825,85 @@ export const useMusicStore = defineStore('music', () => {
 
   async function likeSong(songId: number, like: boolean): Promise<boolean> {
     return await toggleLikeSong(songId, !like)
+  }
+
+  // v3.1.8：列表项喜欢功能
+
+  /** 批量检查歌曲喜欢状态（用于搜索结果/歌单列表渲染时） */
+  async function checkSongsLiked(songIds: number[]): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseSongLikeStatus || !songIds.length) return
+    const uncached = songIds.filter(id => !likedSongIds.value.has(id) && id > 0)
+    if (!uncached.length) return
+    try {
+      const res = await api.neteaseSongLikeStatus(uncached.join(','))
+      if (res.success && res.likedMap) {
+        for (const [id, liked] of Object.entries(res.likedMap)) {
+          if (liked) likedSongIds.value.add(Number(id))
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  /** 从缓存判断歌曲是否已喜欢 */
+  function isSongLiked(songId: number): boolean {
+    return likedSongIds.value.has(songId)
+  }
+
+  /** 切换任意歌曲的喜欢状态（用于列表项按钮） */
+  async function toggleSongLike(songId: number): Promise<boolean> {
+    const wasLiked = likedSongIds.value.has(songId)
+    const success = await toggleLikeSong(songId, wasLiked)
+    return success
+  }
+
+  // ── v3.1.8：歌曲评论 ──
+
+  interface NetEaseComment {
+    commentId: number
+    content: string
+    time: number
+    likedCount: number
+    nickname: string
+    avatar: string
+    userId: number
+    repliedContent: string
+    repliedNickname: string
+  }
+
+  const currentHotComment = ref<NetEaseComment | null>(null)
+  const songComments = ref<NetEaseComment[]>([])
+  const commentsLoading = ref(false)
+  const commentsTotal = ref(0)
+  const currentCommentSongId = ref(0)
+
+  /** 获取歌曲评论（含热门评论） */
+  async function fetchSongComments(songId: number, pageNo = 1, pageSize = 20, sortType = 1): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseComments || !songId) return
+    commentsLoading.value = true
+    currentCommentSongId.value = songId
+    try {
+      const res = await api.neteaseComments(songId, pageNo, pageSize, sortType)
+      if (res.success) {
+        if (pageNo === 1) {
+          currentHotComment.value = res.hotComments?.[0] || null
+          songComments.value = [...(res.hotComments || []), ...(res.comments || [])]
+        } else {
+          songComments.value.push(...(res.comments || []))
+        }
+        commentsTotal.value = res.total || 0
+      }
+    } catch { /* ignore */ }
+    commentsLoading.value = false
+  }
+
+  /** 清空评论数据 */
+  function clearComments(): void {
+    currentHotComment.value = null
+    songComments.value = []
+    commentsTotal.value = 0
+    currentCommentSongId.value = 0
   }
 
   // ── v3.1.3：心动模式（一键播放喜欢歌单的随机歌曲） ──
@@ -1024,6 +1109,18 @@ export const useMusicStore = defineStore('music', () => {
     likingSongId,
     checkSongLikeStatus,
     toggleLikeSong,
-    likeSong
+    likeSong,
+    // v3.1.8：列表项喜欢 + 歌曲评论
+    likedSongIds,
+    checkSongsLiked,
+    isSongLiked,
+    toggleSongLike,
+    currentHotComment,
+    songComments,
+    commentsLoading,
+    commentsTotal,
+    currentCommentSongId,
+    fetchSongComments,
+    clearComments
   }
 })

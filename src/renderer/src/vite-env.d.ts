@@ -159,7 +159,7 @@ interface ElectronAPI {
     message?: string
   }>
   neteaseLike: (songId: number, like?: boolean) => Promise<{ success: boolean; liked: boolean; message?: string }>
-  neteaseSongLikeStatus: (songId: number) => Promise<{ success: boolean; liked: boolean }>
+  neteaseSongLikeStatus: (songId: number | string) => Promise<{ success: boolean; liked: boolean; likedMap: Record<string, boolean> }>
   neteaseIntelligenceList: (songId: number, playlistId: number) => Promise<{
     success: boolean
     songs?: { id: number; name: string; artist: string; album: string; cover: string; duration: number; recommended: boolean }[]

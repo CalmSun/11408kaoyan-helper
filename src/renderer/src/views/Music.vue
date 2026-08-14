@@ -115,6 +115,42 @@
             </div>
           </div>
         </div>
+
+        <!-- v3.1.8：热门评论卡片 -->
+        <div class="glass-card hot-comment-card" v-if="music.currentTrack?.source === 'online'">
+          <h3 class="section-title">
+            <el-icon><ChatDotRound /></el-icon>
+            热门评论
+            <el-button size="small" text style="margin-left: auto" @click="openCommentsDialog" v-if="music.currentHotComment">
+              查看全部评论
+            </el-button>
+          </h3>
+          <div v-if="music.commentsLoading" class="search-loading">
+            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+          </div>
+          <div v-else-if="music.currentHotComment" class="hot-comment-item">
+            <img v-if="music.currentHotComment.avatar" :src="music.currentHotComment.avatar" class="comment-avatar" />
+            <div v-else class="comment-avatar placeholder"><el-icon><User /></el-icon></div>
+            <div class="comment-body">
+              <div class="comment-header">
+                <span class="comment-nickname">{{ music.currentHotComment.nickname }}</span>
+                <span class="comment-likes" v-if="music.currentHotComment.likedCount > 0">
+                  <el-icon><StarFilled /></el-icon> {{ music.currentHotComment.likedCount }}
+                </span>
+              </div>
+              <div class="comment-content">{{ music.currentHotComment.content }}</div>
+              <div class="comment-reply" v-if="music.currentHotComment.repliedContent">
+                <span class="reply-arrow">↳</span>
+                <span class="reply-user">{{ music.currentHotComment.repliedNickname }}：</span>
+                <span>{{ music.currentHotComment.repliedContent }}</span>
+              </div>
+              <div class="comment-time">{{ formatCommentTime(music.currentHotComment.time) }}</div>
+            </div>
+          </div>
+          <div v-else class="search-empty">
+            暂无热门评论
+          </div>
+        </div>
       </div>
 
       <!-- 右侧：搜索 + 我的歌单 + 播放列表 -->
@@ -176,6 +212,9 @@
                 <el-button size="small" circle @click="music.addOnlineSong(song)">
                   <el-icon><Plus /></el-icon>
                 </el-button>
+                <el-button size="small" circle :type="music.isSongLiked(song.id) ? 'danger' : 'default'" @click="handleSongLike(song)">
+                  <el-icon><StarFilled v-if="music.isSongLiked(song.id)" /><Star v-else /></el-icon>
+                </el-button>
               </div>
             </div>
           </div>
@@ -206,7 +245,6 @@
               <span class="hotsearch-rank" :class="{ 'top3': item.rank <= 3 }">{{ item.rank }}</span>
               <div class="hotsearch-info">
                 <div class="hotsearch-keyword">{{ item.keyword }}</div>
-                <div class="hotsearch-score" v-if="item.score > 0">{{ item.score }} 热度</div>
               </div>
               <el-icon class="hotsearch-icon" v-if="item.iconUrl"><img :src="item.iconUrl" class="hotsearch-badge" /></el-icon>
             </div>
@@ -293,6 +331,9 @@
                   <el-button size="small" circle @click="music.addOnlineSong(track)">
                     <el-icon><Plus /></el-icon>
                   </el-button>
+                  <el-button size="small" circle :type="music.isSongLiked(track.id) ? 'danger' : 'default'" @click="handleSongLike(track)">
+                    <el-icon><StarFilled v-if="music.isSongLiked(track.id)" /><Star v-else /></el-icon>
+                  </el-button>
                 </div>
               </div>
             </div>
@@ -366,6 +407,9 @@
                   </el-button>
                   <el-button size="small" circle @click="music.addOnlineSong(track)">
                     <el-icon><Plus /></el-icon>
+                  </el-button>
+                  <el-button size="small" circle :type="music.isSongLiked(track.id) ? 'danger' : 'default'" @click="handleSongLike(track)">
+                    <el-icon><StarFilled v-if="music.isSongLiked(track.id)" /><Star v-else /></el-icon>
                   </el-button>
                 </div>
               </div>
@@ -442,6 +486,46 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- v3.1.8：歌曲评论对话框 -->
+    <el-dialog v-model="showCommentsDialog" :title="`歌曲评论（${music.commentsTotal} 条）`" width="640px" :close-on-click-modal="true" class="comments-dialog">
+      <div class="comments-toolbar">
+        <el-radio-group v-model="commentsSortType" @change="(v: number) => switchCommentSort(v)">
+          <el-radio-button :value="2">最热</el-radio-button>
+          <el-radio-button :value="1">最新</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div v-if="music.commentsLoading && music.songComments.length === 0" class="search-loading">
+        <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+      </div>
+      <div v-else-if="music.songComments.length > 0" class="comments-list">
+        <div v-for="c in music.songComments" :key="c.commentId" class="comment-item">
+          <img v-if="c.avatar" :src="c.avatar" class="comment-avatar" />
+          <div v-else class="comment-avatar placeholder"><el-icon><User /></el-icon></div>
+          <div class="comment-body">
+            <div class="comment-header">
+              <span class="comment-nickname">{{ c.nickname }}</span>
+              <span class="comment-likes" v-if="c.likedCount > 0">
+                <el-icon><StarFilled /></el-icon> {{ c.likedCount }}
+              </span>
+            </div>
+            <div class="comment-content">{{ c.content }}</div>
+            <div class="comment-reply" v-if="c.repliedContent">
+              <span class="reply-arrow">↳</span>
+              <span class="reply-user">{{ c.repliedNickname }}：</span>
+              <span>{{ c.repliedContent }}</span>
+            </div>
+            <div class="comment-time">{{ formatCommentTime(c.time) }}</div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="search-empty">
+        暂无评论
+      </div>
+      <div class="comments-footer" v-if="music.songComments.length < music.commentsTotal">
+        <el-button :loading="music.commentsLoading" @click="loadMoreComments">加载更多</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -450,9 +534,9 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useMusicStore } from '@/stores/music'
 import {
   Headset, FolderOpened, Document, Delete, Search,
-  VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, StarFilled,
+  VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, StarFilled, Star,
   List, Plus, Close, User, InfoFilled, Loading,
-  TrendCharts, Trophy
+  TrendCharts, Trophy, ChatDotRound
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -504,10 +588,13 @@ function formatTime(sec: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function doSearch() {
+async function doSearch() {
   const kw = searchKeyword.value.trim()
-  if (kw) {
-    music.searchOnline(kw, 30)
+  if (!kw) return
+  await music.searchOnline(kw, 30)
+  // v3.1.8：搜索完成后批量检查喜欢状态
+  if (music.searchResults.length) {
+    music.checkSongsLiked(music.searchResults.map(s => s.id))
   }
 }
 
@@ -580,12 +667,20 @@ function searchFromHot(keyword: string) {
 async function openToplistDetail(id: number) {
   viewingToplistId.value = id
   await music.fetchToplistDetail(id)
+  // v3.1.8：批量检查喜欢状态
+  if (music.currentToplistDetail.length) {
+    music.checkSongsLiked(music.currentToplistDetail.map(t => t.id))
+  }
 }
 
 // v2.9.2：打开歌单详情
 async function openPlaylist(id: number) {
   viewingPlaylistId.value = id
   await music.fetchPlaylistDetail(id)
+  // v3.1.8：批量检查喜欢状态
+  if (music.currentPlaylistTracks.length) {
+    music.checkSongsLiked(music.currentPlaylistTracks.map(t => t.id))
+  }
 }
 
 // v3.1.0：监听登录对话框显示
@@ -608,14 +703,70 @@ async function handleToggleLike() {
   }
 }
 
-// 切换歌曲时检查喜欢状态
+// v3.1.8：列表项喜欢按钮
+async function handleSongLike(song: { id: number; name: string }) {
+  if (!song?.id) return
+  if (!music.neteaseLoggedIn) {
+    ElMessage.warning('请先登录网易云账号')
+    showLoginDialog.value = true
+    return
+  }
+  const wasLiked = music.isSongLiked(song.id)
+  const success = await music.toggleSongLike(song.id)
+  if (success) {
+    ElMessage.success(wasLiked ? `已取消喜欢：${song.name}` : `已喜欢：${song.name}`)
+  } else {
+    ElMessage.warning('操作失败，请检查是否已登录')
+  }
+}
+
+// 切换歌曲时检查喜欢状态 + 获取热门评论
 watch(() => music.currentTrack?.id, (newId) => {
   if (newId && music.currentTrack?.source === 'online') {
     music.checkSongLikeStatus(newId)
+    music.fetchSongComments(newId, 1, 20, 1)
   } else {
     music.currentLiked = false
+    music.clearComments()
   }
 })
+
+// ── v3.1.8：歌曲评论 ──
+
+const showCommentsDialog = ref(false)
+const commentsPage = ref(1)
+const commentsSortType = ref(1) // 1=最新 2=最热
+
+async function openCommentsDialog() {
+  const track = music.currentTrack
+  if (!track?.id) return
+  showCommentsDialog.value = true
+  commentsPage.value = 1
+  commentsSortType.value = 2 // 默认看最热
+  await music.fetchSongComments(track.id, 1, 20, 2)
+}
+
+async function loadMoreComments() {
+  const track = music.currentTrack
+  if (!track?.id) return
+  commentsPage.value++
+  await music.fetchSongComments(track.id, commentsPage.value, 20, commentsSortType.value)
+}
+
+async function switchCommentSort(type: number) {
+  const track = music.currentTrack
+  if (!track?.id) return
+  commentsSortType.value = type
+  commentsPage.value = 1
+  await music.fetchSongComments(track.id, 1, 20, type)
+}
+
+function formatCommentTime(ts: number): string {
+  if (!ts) return ''
+  const d = new Date(ts)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 
 onMounted(() => {
   music.checkLoginStatus()
@@ -1419,5 +1570,127 @@ onUnmounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* v3.1.8：热门评论卡片 */
+.hot-comment-card {
+  margin-top: 16px;
+}
+
+.hot-comment-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.comment-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.comment-avatar.placeholder {
+  background: var(--mo-bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mo-text-3);
+}
+
+.comment-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.comment-nickname {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mo-text-2);
+}
+
+.comment-likes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: #ff6b6b;
+}
+
+.comment-content {
+  font-size: 13px;
+  color: var(--mo-text-1);
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.comment-reply {
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--mo-bg-2);
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--mo-text-2);
+  line-height: 1.5;
+}
+
+.reply-arrow {
+  margin-right: 4px;
+  color: var(--mo-text-3);
+}
+
+.reply-user {
+  font-weight: 600;
+  color: var(--mo-text-2);
+}
+
+.comment-time {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--mo-text-3);
+}
+
+/* v3.1.8：评论对话框 */
+.comments-toolbar {
+  margin-bottom: 16px;
+}
+
+.comments-list {
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.comments-list::-webkit-scrollbar {
+  width: 6px;
+}
+.comments-list::-webkit-scrollbar-thumb {
+  background: var(--mo-border);
+  border-radius: 3px;
+}
+
+.comment-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--mo-border);
+}
+
+.comment-item:last-child {
+  border-bottom: none;
+}
+
+.comments-footer {
+  text-align: center;
+  padding-top: 16px;
 }
 </style>
