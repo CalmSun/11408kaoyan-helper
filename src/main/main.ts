@@ -1529,23 +1529,74 @@ ipcMain.handle('netease:comments', async (_e, id: number, limit = 20, offset = 0
   }
 })
 
-/** 获取用户账号信息 */
+/** v3.3.0：获取用户账号信息（增强：包含账号绑定、VIP信息等） */
 ipcMain.handle('netease:user-account', async () => {
   try {
     const data = await neteaseSmartRequest('/user/account', {}) as {
       code?: number
-      account?: { id?: number; userName?: string }
-      profile?: { userId?: number; nickname?: string; avatarUrl?: string; signature?: string; level?: number }
+      account?: {
+        id?: number
+        userName?: string
+        type?: number
+        status?: number
+        whitelistAuthority?: boolean
+        createTime?: number
+        tokenVersion?: number
+        ban?: number
+        viptype?: number
+        anonimousUser?: boolean
+      }
+      profile?: {
+        userId?: number
+        nickname?: string
+        avatarUrl?: string
+        signature?: string
+        level?: number
+        birthday?: number
+        gender?: number
+        followed?: boolean
+        vipType?: number
+        followeds?: number
+        follows?: number
+        playlistCount?: number
+        listenSongs?: number
+        city?: number
+        province?: number
+        description?: string
+        detailDescription?: string
+        expertTags?: string[]
+        experts?: Record<string, string>
+        mutual?: boolean
+        authStatus?: number
+        accountStatus?: number
+        djStatus?: number
+        followedUsers?: number
+      }
     }
     if (data.code === 200 && data.account && data.profile) {
       return {
         success: true,
         user: {
           id: data.account.id || 0,
+          userName: data.account.userName || '',
           nickname: data.profile.nickname || '',
           avatar: data.profile.avatarUrl || '',
           signature: data.profile.signature || '',
-          level: data.profile.level || 0
+          level: data.profile.level || 0,
+          vipType: data.account.viptype || data.profile.vipType || 0,
+          gender: data.profile.gender || 0,
+          birthday: data.profile.birthday || 0,
+          followeds: data.profile.followeds || 0,
+          follows: data.profile.follows || 0,
+          playlistCount: data.profile.playlistCount || 0,
+          listenSongs: data.profile.listenSongs || 0,
+          description: data.profile.description || '',
+          expertTags: data.profile.expertTags || [],
+          djStatus: data.profile.djStatus || 0,
+          authStatus: data.profile.authStatus || 0,
+          createTime: data.account.createTime || 0,
+          city: data.profile.city || 0,
+          province: data.profile.province || 0
         }
       }
     }
@@ -1555,16 +1606,32 @@ ipcMain.handle('netease:user-account', async () => {
   }
 })
 
-/** 喜欢/取消喜欢歌曲 */
+/** v3.3.0：喜欢/取消喜欢歌曲（参考 ncm-api-rs like 方法） */
 ipcMain.handle('netease:like-song', async (_e, id: number, like: boolean) => {
   try {
-    const data = await neteaseSmartRequest('/resource/like', {
-      id,
-      like
+    const data = await neteaseSmartRequest('/radio/like', {
+      trackId: id,
+      like,
+      time: 25
     }) as { code?: number }
     return { success: data.code === 200 }
   } catch (err) {
     return { success: false, message: String(err) }
+  }
+})
+
+/** v3.3.0：获取用户喜欢的音乐列表（likelist） */
+ipcMain.handle('netease:likelist', async (_e, uid: number) => {
+  try {
+    const data = await neteaseSmartRequest('/getplay/get/like', {
+      uid
+    }) as { code?: number; ids?: number[] }
+    if (data.code === 200 && data.ids) {
+      return { success: true, ids: data.ids }
+    }
+    return { success: false, ids: [], message: '获取喜欢列表失败' }
+  } catch (err) {
+    return { success: false, ids: [], message: String(err) }
   }
 })
 

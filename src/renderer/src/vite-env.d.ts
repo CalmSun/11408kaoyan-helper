@@ -157,32 +157,42 @@ interface ElectronAPI {
     songs?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]
     message?: string
   }>
+  // v3.3.0：增强版用户账号信息
   neteaseUserAccount: () => Promise<{
     success: boolean
-    loggedIn?: boolean
-    account?: {
+    user?: {
       id: number
       userName: string
-      vipType: number
-      createTime: number
-      status: number
-    } | null
-    profile?: {
-      userId: number
       nickname: string
       avatar: string
       signature: string
+      level: number
+      vipType: number
       gender: number
       birthday: number
-      province: number
+      followeds: number
+      follows: number
+      playlistCount: number
+      listenSongs: number
+      description: string
+      expertTags: string[]
+      djStatus: number
+      authStatus: number
+      createTime: number
       city: number
-      vipType: number
+      province: number
     } | null
     message?: string
   }>
   neteaseLikeSong: (id: number, like?: boolean) => Promise<{
     success: boolean
     code?: number
+    message?: string
+  }>
+  // v3.3.0：获取用户喜欢的音乐列表
+  neteaseLikelist: (uid: number) => Promise<{
+    success: boolean
+    ids?: number[]
     message?: string
   }>
   // 国内天气服务（v2.8.0）

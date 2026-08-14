@@ -83,37 +83,20 @@
             <button class="ctrl-btn" title="下一首" @click="music.next()">
               <el-icon><DArrowRight /></el-icon>
             </button>
-            </div>
-            <!-- v3.2.0：评论和喜欢按钮 -->
+          </div>
+          <!-- v3.3.0：喜欢按钮（取代评论和音量） -->
+          <div class="player-extra-controls">
             <button 
               v-if="music.currentTrack?.source === 'online'" 
               class="ctrl-btn" 
-              title="查看评论" 
-              @click="showComments = true; loadComments()"
-            >
-              <el-icon><ChatLineRound /></el-icon>
-            </button>
-            <button 
-              v-if="music.currentTrack?.source === 'online'" 
-              class="ctrl-btn" 
-              :class="{ active: isCurrentSongLiked }"
+              :class="{ active: isCurrentSongLiked, 'like-active': isCurrentSongLiked }"
               :title="isCurrentSongLiked ? '取消喜欢' : '喜欢这首歌曲'"
               @click="toggleLikeSong"
-              :loading="music.likingLoading"
+              :disabled="music.likingLoading"
             >
               <el-icon><Star /></el-icon>
             </button>
-            <div class="volume-control">
-              <el-slider
-                v-model="volumeValue"
-                :min="0"
-                :max="1"
-                :step="0.01"
-                :show-tooltip="false"
-                class="volume-slider"
-                @input="music.setVolume(volumeValue)"
-              />
-            </div>
+            <span v-else class="like-hint">本地文件不支持喜欢</span>
           </div>
         </div>
 
@@ -428,114 +411,7 @@
       </div>
     </el-dialog>
 
-    <!-- v3.2.0：歌曲评论抽屉 -->
-    <el-drawer
-      v-model="showComments"
-      title="歌曲评论"
-      :size="500"
-      direction="rtl"
-      destroy-on-close
-    >
-      <div class="comments-drawer">
-        <div class="comments-header">
-          <div class="comments-title">
-            {{ music.currentTrack?.name }}
-            <span class="comments-count">{{ music.commentsTotal }} 条评论</span>
-          </div>
-          <el-button
-            size="small"
-            :loading="music.commentsLoading"
-            @click="music.toggleCommentsSort()"
-          >
-            {{ music.commentsSortType === 1 ? '最热' : '最新' }}
-          </el-button>
-        </div>
-
-        <!-- 热门评论 -->
-        <div v-if="music.hotComments.length > 0" class="comments-section">
-          <h3 class="section-title">热门评论</h3>
-          <div class="comment-list">
-            <div
-              v-for="comment in music.hotComments"
-              :key="comment.id"
-              class="comment-item"
-            >
-              <img :src="comment.avatar" class="comment-avatar" />
-              <div class="comment-content">
-                <div class="comment-user">
-                  <span class="comment-nickname">{{ comment.nickname }}</span>
-                  <el-tag v-if="comment.vipType > 0" size="mini" type="warning">VIP</el-tag>
-                </div>
-                <div class="comment-text">{{ comment.content }}</div>
-                <div class="comment-meta">
-                  <span class="comment-time">{{ formatCommentTime(comment.time) }}</span>
-                  <span class="comment-likes">
-                    <el-icon><Star /></el-icon>{{ comment.likedCount }}
-                  </span>
-                </div>
-                <!-- 回复 -->
-                <div v-if="comment.replies.length > 0" class="comment-replies">
-                  <div
-                    v-for="reply in comment.replies"
-                    :key="reply.userId"
-                    class="comment-reply"
-                  >
-                    <span class="reply-user">{{ reply.nickname }}：</span>
-                    <span class="reply-content">{{ reply.content }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 最新评论 -->
-        <div v-if="music.songComments.length > 0" class="comments-section">
-          <h3 class="section-title">最新评论</h3>
-          <div class="comment-list">
-            <div
-              v-for="comment in music.songComments"
-              :key="comment.id"
-              class="comment-item"
-            >
-              <img :src="comment.avatar" class="comment-avatar" />
-              <div class="comment-content">
-                <div class="comment-user">
-                  <span class="comment-nickname">{{ comment.nickname }}</span>
-                  <el-tag v-if="comment.vipType > 0" size="mini" type="warning">VIP</el-tag>
-                </div>
-                <div class="comment-text">{{ comment.content }}</div>
-                <div class="comment-meta">
-                  <span class="comment-time">{{ formatCommentTime(comment.time) }}</span>
-                  <span class="comment-likes">
-                    <el-icon><Star /></el-icon>{{ comment.likedCount }}
-                  </span>
-                </div>
-                <!-- 回复 -->
-                <div v-if="comment.replies.length > 0" class="comment-replies">
-                  <div
-                    v-for="reply in comment.replies"
-                    :key="reply.userId"
-                    class="comment-reply"
-                  >
-                    <span class="reply-user">{{ reply.nickname }}：</span>
-                    <span class="reply-content">{{ reply.content }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="!music.commentsLoading && music.hotComments.length === 0 && music.songComments.length === 0" class="comments-empty">
-          暂无评论
-        </div>
-
-        <div v-if="music.commentsLoading" class="comments-loading">
-          <el-icon class="is-loading"><Loading /></el-icon> 加载中...
-        </div>
-      </div>
-    </el-drawer>
+    <!-- v3.3.0：评论功能已移除 -->
 </template>
 
 <script setup lang="ts">
@@ -545,7 +421,7 @@ import {
   Headset, FolderOpened, Document, Delete, Search,
   VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort,
   List, Plus, Close, User, InfoFilled, Loading, Trophy,
-  ChatLineRound, Star
+  Star
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -553,7 +429,6 @@ const music = useMusicStore()
 
 const searchKeyword = ref('')
 const progressValue = ref(0)
-const volumeValue = ref(music.volume)
 const lyricsContainer = ref<HTMLElement | null>(null)
 const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime 覆盖
 
@@ -564,8 +439,6 @@ const cookieInput = ref('')
 const cookieLogging = ref(false)
 const viewingPlaylistId = ref(0)
 const viewingToplistId = ref(0)
-// v3.2.0：评论和喜欢功能
-const showComments = ref(false)
 
 // v3.1.8：进度更新节流（减少 timeupdate 频繁触发导致的页面重渲染卡顿）
 let lastProgressUpdate = 0
@@ -590,10 +463,6 @@ function handleProgressInput(val: number | number[]) {
 function handleProgressChange() {
   isDraggingProgress.value = false
 }
-
-watch(() => music.volume, (v) => {
-  volumeValue.value = v
-})
 
 // v3.1.0：登录成功后关闭对话框
 watch(() => music.neteaseLoggedIn, (logged) => {
@@ -628,16 +497,10 @@ watch(() => music.currentLyricIndex, (idx) => {
 
 // v3.1.5：切换到歌单 Tab 时加载
 
-// v3.2.0：评论和喜欢功能
+// v3.3.0：喜欢功能（评论功能已移除）
 const isCurrentSongLiked = computed(() => {
   return music.currentTrack?.id ? music.isSongLiked(music.currentTrack.id) : false
 })
-
-async function loadComments(): Promise<void> {
-  if (music.currentTrack?.id) {
-    await music.fetchSongComments(music.currentTrack.id)
-  }
-}
 
 async function toggleLikeSong(): Promise<void> {
   if (music.currentTrack?.id) {
@@ -647,24 +510,6 @@ async function toggleLikeSong(): Promise<void> {
     } else {
       ElMessage.error('操作失败，请重试')
     }
-  }
-}
-
-function formatCommentTime(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  
-  if (diff < 60000) {
-    return '刚刚'
-  } else if (diff < 3600000) {
-    return `${Math.floor(diff / 60000)}分钟前`
-  } else if (diff < 86400000) {
-    return `${Math.floor(diff / 3600000)}小时前`
-  } else if (diff < 2592000000) {
-    return `${Math.floor(diff / 86400000)}天前`
-  } else {
-    return date.toLocaleDateString()
   }
 }
 
@@ -928,16 +773,29 @@ onUnmounted(() => {
   opacity: 0.9;
 }
 
-.volume-control {
+/* v3.3.0：额外控制区（喜欢按钮取代音量） */
+.player-extra-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-left: 12px;
-  color: var(--mo-text-3);
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
 }
 
-.volume-slider {
-  width: 80px;
+.ctrl-btn.like-active {
+  background: #e74c3c;
+  border-color: #e74c3c;
+  color: #fff;
+}
+
+.ctrl-btn.like-active:hover {
+  background: #c0392b;
+  border-color: #c0392b;
+}
+
+.like-hint {
+  font-size: 12px;
+  color: var(--mo-text-3);
 }
 
 /* 歌词卡片 */
@@ -1461,135 +1319,5 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
-/* v3.2.0：评论抽屉样式 */
-.comments-drawer {
-  padding: 0 20px;
-}
-
-.comments-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--mo-border);
-}
-
-.comments-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--mo-text-1);
-}
-
-.comments-count {
-  font-size: 12px;
-  color: var(--mo-text-3);
-  font-weight: 400;
-  margin-left: 8px;
-}
-
-.comments-section {
-  margin-bottom: 20px;
-}
-
-.comments-section .section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--mo-text-1);
-  margin: 0 0 12px 0;
-}
-
-.comment-list {
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.comment-item {
-  display: flex;
-  gap: 10px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--mo-border);
-}
-
-.comment-item:last-child {
-  border-bottom: none;
-}
-
-.comment-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.comment-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.comment-user {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.comment-nickname {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--mo-text-1);
-}
-
-.comment-text {
-  font-size: 13px;
-  color: var(--mo-text-2);
-  line-height: 1.5;
-  margin-bottom: 8px;
-}
-
-.comment-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-  color: var(--mo-text-3);
-}
-
-.comment-likes {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.comment-replies {
-  margin-top: 8px;
-  padding: 8px;
-  background: var(--mo-bg-2);
-  border-radius: 6px;
-}
-
-.comment-reply {
-  font-size: 12px;
-  color: var(--mo-text-2);
-  line-height: 1.4;
-}
-
-.reply-user {
-  color: var(--mo-primary);
-  font-weight: 600;
-}
-
-.comments-empty {
-  text-align: center;
-  padding: 40px 0;
-  color: var(--mo-text-3);
-  font-size: 13px;
-}
-
-.comments-loading {
-  text-align: center;
-  padding: 20px;
-  color: var(--mo-text-3);
-}
+/* v3.3.0：评论样式已移除 */
 </style>

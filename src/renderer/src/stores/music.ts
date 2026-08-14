@@ -473,6 +473,18 @@ export const useMusicStore = defineStore('music', () => {
     avatar: string
     signature: string
     level: number
+    // v3.3.0：账号信息增强
+    userName?: string // 手机/邮箱绑定
+    vipType?: number // VIP 类型 (0:普通, 5:黑胶VIP, 10:SVIP)
+    gender?: number
+    birthday?: number
+    description?: string
+    expertTags?: string[] // 音乐达人标签
+    djStatus?: number // 电台主播状态
+    authStatus?: number // 认证状态
+    createTime?: number // 账号创建时间
+    city?: number
+    province?: number
   }
 
   interface NetEasePlaylist {
@@ -538,6 +550,10 @@ export const useMusicStore = defineStore('music', () => {
           level: 0
         }
         await fetchUserPlaylists()
+        // v3.3.0：登录后自动同步喜欢列表
+        await fetchLikedList(res.user.id)
+        // v3.3.0：登录后刷新账号信息（获取完整字段）
+        await fetchUserAccount()
         return { success: true, message: `登录成功：${res.user.nickname}` }
       }
       return { success: false, message: res.message || 'Cookie 无效或已过期' }
@@ -574,6 +590,10 @@ export const useMusicStore = defineStore('music', () => {
           // 登录成功，刷新用户信息
           await checkLoginStatus()
           await fetchUserPlaylists()
+          // v3.3.0：同步喜欢列表
+          if (neteaseUser.value?.id) {
+            await fetchLikedList(neteaseUser.value.id)
+          }
         }
         return res.code || 0
       }
@@ -922,6 +942,7 @@ export const useMusicStore = defineStore('music', () => {
     likingLoading.value = true
     try {
       const res = await api.neteaseLikeSong(songId, like)
+      likingLoading.value = false
       if (res.success) {
         if (like) {
           likedSongs.value.add(songId)
@@ -930,9 +951,22 @@ export const useMusicStore = defineStore('music', () => {
         }
         return true
       }
-    } catch { /* ignore */ }
-    likingLoading.value = false
+    } catch {
+      likingLoading.value = false
+    }
     return false
+  }
+
+  // v3.3.0：获取用户喜欢的音乐列表（登录后自动同步）
+  async function fetchLikedList(uid: number): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseLikelist) return
+    try {
+      const res = await api.neteaseLikelist(uid)
+      if (res.success && res.ids) {
+        likedSongs.value = new Set(res.ids)
+      }
+    } catch { /* ignore */ }
   }
 
   // v3.2.0：检查歌曲是否被喜欢
@@ -940,21 +974,49 @@ export const useMusicStore = defineStore('music', () => {
     return likedSongs.value.has(songId)
   }
 
-  // v3.2.0：获取用户账号信息
+  // v3.3.0：获取用户账号信息（增强版：包含绑定信息、VIP、达人等）
   async function fetchUserAccount(): Promise<void> {
     const api = window.electronAPI
     if (!api?.neteaseUserAccount) return
     try {
       const res = await api.neteaseUserAccount()
       if (res.success && res.user) {
-        // 更新用户信息
+        // 更新用户信息（增强字段）
         neteaseUser.value = {
           id: res.user.id,
           nickname: res.user.nickname,
           avatar: res.user.avatar,
-          signature: res.user.signature || ''
+          signature: res.user.signature || '',
+          level: res.user.level || 0,
+          userName: res.user.userName || '',
+          vipType: res.user.vipType || 0,
+          gender: res.user.gender || 0,
+          birthday: res.user.birthday || 0,
+          description: res.user.description || '',
+          expertTags: res.user.expertTags || [],
+          djStatus: res.user.djStatus || 0,
+          authStatus: res.user.authStatus || 0,
+          createTime: res.user.createTime || 0,
+          city: res.user.city || 0,
+          province: res.user.province || 0
         }
         neteaseLoggedIn.value = true
+        // 同时更新用户详情
+        if (res.user.followeds !== undefined) {
+          neteaseUserDetail.value = {
+            id: res.user.id,
+            nickname: res.user.nickname,
+            avatar: res.user.avatar,
+            signature: res.user.signature || '',
+            level: res.user.level || 0,
+            gender: res.user.gender || 0,
+            birthday: res.user.birthday || 0,
+            followeds: res.user.followeds || 0,
+            follows: res.user.follows || 0,
+            playlistCount: res.user.playlistCount || 0,
+            listenSongs: res.user.listenSongs || 0
+          }
+        }
       }
     } catch { /* ignore */ }
   }
@@ -1064,6 +1126,7 @@ export const useMusicStore = defineStore('music', () => {
     toggleCommentsSort,
     likeSong,
     isSongLiked,
+    fetchLikedList,
     fetchUserAccount,
     startIntelligenceMode
   }

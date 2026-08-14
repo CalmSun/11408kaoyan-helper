@@ -261,7 +261,7 @@
       <el-popover
         v-if="!transparent && music.neteaseLoggedIn && music.neteaseUser"
         placement="bottom"
-        :width="280"
+        :width="320"
         trigger="click"
         popper-class="titlebar-popover"
       >
@@ -273,20 +273,63 @@
           </div>
         </template>
         <div class="ncm-user-panel">
+          <!-- 用户头像与基本信息 -->
           <div class="ncm-user-header">
             <img v-if="music.neteaseUser.avatar" :src="music.neteaseUser.avatar" class="ncm-user-avatar" />
             <div class="ncm-user-info">
-              <div class="ncm-user-name">{{ music.neteaseUser.nickname }}</div>
-              <div class="ncm-user-level" v-if="music.neteaseUserDetail?.level">Lv.{{ music.neteaseUserDetail.level }}</div>
-              <div class="ncm-user-sig" v-if="music.neteaseUserDetail?.signature">{{ music.neteaseUserDetail.signature }}</div>
+              <div class="ncm-user-name">
+                {{ music.neteaseUser.nickname }}
+                <el-tag v-if="(music.neteaseUser.vipType || 0) > 0" size="small" type="warning" class="ncm-vip-tag">
+                  {{ music.neteaseUser.vipType === 11 ? 'SVIP' : music.neteaseUser.vipType === 5 ? '黑胶VIP' : 'VIP' }}
+                </el-tag>
+              </div>
+              <div class="ncm-user-level" v-if="music.neteaseUserDetail?.level || music.neteaseUser.level">
+                Lv.{{ music.neteaseUserDetail?.level || music.neteaseUser.level }}
+              </div>
+              <div class="ncm-user-sig" v-if="music.neteaseUser.signature || music.neteaseUserDetail?.signature">
+                {{ music.neteaseUser.signature || music.neteaseUserDetail?.signature }}
+              </div>
             </div>
           </div>
+
+          <!-- v3.3.0：账号信息区 -->
+          <div class="ncm-account-info">
+            <div class="ncm-account-title">
+              <el-icon><User /></el-icon> 账号信息
+            </div>
+            <div class="ncm-account-row">
+              <span class="ncm-account-label">用户 ID</span>
+              <span class="ncm-account-value">{{ music.neteaseUser.id }}</span>
+            </div>
+            <div class="ncm-account-row" v-if="music.neteaseUser.userName">
+              <span class="ncm-account-label">账号绑定</span>
+              <span class="ncm-account-value">{{ maskAccountName(music.neteaseUser.userName) }}</span>
+            </div>
+            <div class="ncm-account-row" v-if="music.neteaseUser.expertTags && music.neteaseUser.expertTags.length > 0">
+              <span class="ncm-account-label">达人标签</span>
+              <span class="ncm-account-value ncm-expert-tags">
+                <el-tag v-for="tag in music.neteaseUser.expertTags" :key="tag" size="small" type="success" class="ncm-tag">{{ tag }}</el-tag>
+              </span>
+            </div>
+            <div class="ncm-account-row" v-if="music.neteaseUser.djStatus">
+              <span class="ncm-account-label">电台主播</span>
+              <span class="ncm-account-value"><el-tag size="small" type="primary">认证主播</el-tag></span>
+            </div>
+            <div class="ncm-account-row" v-if="music.neteaseUser.createTime">
+              <span class="ncm-account-label">注册时间</span>
+              <span class="ncm-account-value">{{ formatDate(music.neteaseUser.createTime) }}</span>
+            </div>
+          </div>
+
+          <!-- 用户统计数据 -->
           <div class="ncm-user-stats" v-if="music.neteaseUserDetail">
             <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.followeds }}</span><span class="ncm-stat-label">粉丝</span></div>
             <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.follows }}</span><span class="ncm-stat-label">关注</span></div>
             <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.playlistCount }}</span><span class="ncm-stat-label">歌单</span></div>
             <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.listenSongs }}</span><span class="ncm-stat-label">听歌</span></div>
           </div>
+
+          <!-- 操作按钮 -->
           <div class="ncm-user-actions">
             <button class="ncm-action-btn" @click="goToMusic">音乐播放</button>
             <button class="ncm-action-btn" @click="refreshUserAccount">刷新信息</button>
@@ -337,7 +380,7 @@ import {
   type WeatherCity
 } from '@/utils/weather'
 import { ElMessage } from 'element-plus'
-import { Reading, Sunny, Moon, UserFilled, Folder, List, Search, Headset } from '@element-plus/icons-vue'
+import { Reading, Sunny, Moon, UserFilled, Folder, List, Search, Headset, User } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 interface Props {
@@ -565,10 +608,43 @@ async function loadNeteaseUserDetail() {
   }
 }
 
-// v3.2.0：刷新用户账号信息
+// v3.3.0：刷新用户账号信息（含喜欢列表同步）
 async function refreshUserAccount() {
   await music.fetchUserAccount()
+  if (music.neteaseUser?.id) {
+    await music.fetchLikedList(music.neteaseUser.id)
+    await music.fetchUserDetail(music.neteaseUser.id)
+  }
   ElMessage.success('用户信息已刷新')
+}
+
+// v3.3.0：账号名称脱敏（手机/邮箱中间部分隐藏）
+function maskAccountName(name: string): string {
+  if (!name) return ''
+  // 手机号：保留前3后4
+  if (/^\d{11}$/.test(name)) {
+    return name.slice(0, 3) + '****' + name.slice(7)
+  }
+  // 邮箱：保留前2字符和@后部分
+  if (name.includes('@')) {
+    const [local, domain] = name.split('@')
+    if (local.length > 2) {
+      return local.slice(0, 2) + '***@' + domain
+    }
+    return name
+  }
+  // 其他：保留首尾，中间用*替代
+  if (name.length > 4) {
+    return name.slice(0, 2) + '***' + name.slice(-2)
+  }
+  return name
+}
+
+// v3.3.0：格式化日期（时间戳 → 年月日）
+function formatDate(timestamp: number): string {
+  if (!timestamp) return ''
+  const d = new Date(timestamp)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 // v3.1.5：退出网易云登录
@@ -595,18 +671,22 @@ function onVolumeInput(e: Event) {
   music.setVolume(Number(target.value) / 100)
 }
 
-// v3.1.5：监听网易云登录状态变化，自动加载用户详情
+// v3.3.0：监听网易云登录状态变化，自动加载用户详情和账号信息
 watch(() => music.neteaseLoggedIn, (logged) => {
-  if (logged && music.neteaseUser?.id && !music.neteaseUserDetail) {
+  if (logged && music.neteaseUser?.id) {
     loadNeteaseUserDetail()
+    music.fetchUserAccount()
+    music.fetchLikedList(music.neteaseUser.id)
   }
 })
 
 onMounted(() => {
   initWeather()
-  // v3.1.5：如果已登录网易云，加载用户详情
+  // v3.3.0：如果已登录网易云，加载用户详情和账号信息
   if (music.neteaseLoggedIn && music.neteaseUser?.id) {
     loadNeteaseUserDetail()
+    music.fetchUserAccount()
+    music.fetchLikedList(music.neteaseUser.id)
   }
 })
 </script>
@@ -1444,5 +1524,68 @@ onMounted(() => {
   background: var(--mo-danger);
   border-color: var(--mo-danger);
   color: #fff;
+}
+
+/* v3.3.0：VIP 标签 */
+.ncm-vip-tag {
+  margin-left: 6px;
+  transform: scale(0.85);
+  transform-origin: left center;
+}
+
+/* v3.3.0：账号信息区 */
+.ncm-account-info {
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--mo-bg-2);
+  border-radius: 8px;
+  border: 1px solid var(--mo-border);
+}
+
+.ncm-account-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mo-text-1);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--mo-border);
+}
+
+.ncm-account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.ncm-account-label {
+  color: var(--mo-text-3);
+  flex-shrink: 0;
+}
+
+.ncm-account-value {
+  color: var(--mo-text-1);
+  font-weight: 500;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.ncm-expert-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ncm-tag {
+  transform: scale(0.9);
+  transform-origin: right center;
 }
 </style>
