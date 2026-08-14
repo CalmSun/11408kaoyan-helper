@@ -1452,19 +1452,18 @@ ipcMain.handle('netease:user-detail', async (_e, uid) => {
 })
 
 /** 获取歌曲评论 */
-ipcMain.handle('netease:comments', async (_e, id: number, type = 0, limit = 20, offset = 0, sortType = 2) => {
+ipcMain.handle('netease:comments', async (_e, id: number, limit = 20, offset = 0) => {
   try {
     const data = await neteaseSmartRequest('/comment/music', {
       id,
-      type,
       limit,
-      offset,
-      sortType // 1=最新, 2=最热
+      offset
     }) as {
       code?: number
+      total?: number
       comments?: Array<{
-        user: { userId: number; nickname: string; avatarUrl: string; vipType: number }
         commentId: number
+        user: { userId: number; nickname: string; avatarUrl: string; vipType: number }
         content: string
         time: number
         likedCount: number
@@ -1474,10 +1473,9 @@ ipcMain.handle('netease:comments', async (_e, id: number, type = 0, limit = 20, 
           content: string
         }>
       }>
-      total?: number
       hotComments?: Array<{
-        user: { userId: number; nickname: string; avatarUrl: string; vipType: number }
         commentId: number
+        user: { userId: number; nickname: string; avatarUrl: string; vipType: number }
         content: string
         time: number
         likedCount: number
@@ -1488,43 +1486,85 @@ ipcMain.handle('netease:comments', async (_e, id: number, type = 0, limit = 20, 
         }>
       }>
     }
-    const hotComments = (data.hotComments || []).map(c => ({
-      id: c.commentId,
-      userId: c.user.userId,
-      nickname: c.user.nickname,
-      avatar: c.user.avatarUrl,
-      vipType: c.user.vipType,
-      content: c.content,
-      time: c.time,
-      likedCount: c.likedCount,
-      liked: c.liked,
-      replies: (c.beReplied || []).map(r => ({
-        userId: r.user.userId,
-        nickname: r.user.nickname,
-        avatar: r.user.avatarUrl,
-        content: r.content
+    if (data.code === 200) {
+      const hotComments = (data.hotComments || []).map(c => ({
+        id: c.commentId,
+        userId: c.user.userId,
+        nickname: c.user.nickname,
+        avatar: c.user.avatarUrl,
+        vipType: c.user.vipType,
+        content: c.content,
+        time: c.time,
+        likedCount: c.likedCount,
+        liked: c.liked,
+        replies: (c.beReplied || []).map(r => ({
+          userId: r.user.userId,
+          nickname: r.user.nickname,
+          avatar: r.user.avatarUrl,
+          content: r.content
+        }))
       }))
-    }))
-    const comments = (data.comments || []).map(c => ({
-      id: c.commentId,
-      userId: c.user.userId,
-      nickname: c.user.nickname,
-      avatar: c.user.avatarUrl,
-      vipType: c.user.vipType,
-      content: c.content,
-      time: c.time,
-      likedCount: c.likedCount,
-      liked: c.liked,
-      replies: (c.beReplied || []).map(r => ({
-        userId: r.user.userId,
-        nickname: r.user.nickname,
-        avatar: r.user.avatarUrl,
-        content: r.content
+      const comments = (data.comments || []).map(c => ({
+        id: c.commentId,
+        userId: c.user.userId,
+        nickname: c.user.nickname,
+        avatar: c.user.avatarUrl,
+        vipType: c.user.vipType,
+        content: c.content,
+        time: c.time,
+        likedCount: c.likedCount,
+        liked: c.liked,
+        replies: (c.beReplied || []).map(r => ({
+          userId: r.user.userId,
+          nickname: r.user.nickname,
+          avatar: r.user.avatarUrl,
+          content: r.content
+        }))
       }))
-    }))
-    return { success: true, hotComments, comments, total: data.total || 0 }
+      return { success: true, hotComments, comments, total: data.total || 0 }
+    }
+    return { success: false, comments: [], hotComments: [], total: 0, message: '获取评论失败' }
   } catch (err) {
-    return { success: false, hotComments: [], comments: [], total: 0, message: String(err) }
+    return { success: false, comments: [], hotComments: [], total: 0, message: String(err) }
+  }
+})
+
+/** 获取用户账号信息 */
+ipcMain.handle('netease:user-account', async () => {
+  try {
+    const data = await neteaseSmartRequest('/user/account', {}) as {
+      code?: number
+      account?: { id?: number; userName?: string }
+      profile?: { userId?: number; nickname?: string; avatarUrl?: string; signature?: string; level?: number }
+    }
+    if (data.code === 200 && data.account && data.profile) {
+      return {
+        success: true,
+        user: {
+          id: data.account.id || 0,
+          nickname: data.profile.nickname || '',
+          avatar: data.profile.avatarUrl || '',
+          signature: data.profile.signature || '',
+          level: data.profile.level || 0
+        }
+      }
+    }
+    return { success: false, user: null, message: '未登录或获取用户信息失败' }
+  } catch (err) {
+    return { success: false, user: null, message: String(err) }
+  }
+})
+
+/** 喜欢/取消喜欢歌曲 */
+ipcMain.handle('netease:like-song', async (_e, id: number, like: boolean) => {
+  try {
+    const data = await neteaseSmartRequest('/resource/like', {
+      id,
+      like
+    }) as { code?: number }
+    return { success: data.code === 200 }
+  } catch (err) {
+    return { success: false, message: String(err) }
   }
 })
 
@@ -1556,74 +1596,6 @@ ipcMain.handle('netease:intelligence-list', async (_e, songId: number, playlistI
     return { success: true, songs }
   } catch (err) {
     return { success: false, songs: [], message: String(err) }
-  }
-})
-
-/** 获取用户账号信息 */
-ipcMain.handle('netease:user-account', async () => {
-  try {
-    const data = await neteaseSmartRequest('/user/account', {}) as {
-      code?: number
-      profile?: {
-        userId: number
-        nickname: string
-        avatarUrl: string
-        signature: string
-        gender: number
-        birthday: number
-        province: number
-        city: number
-        vipType: number
-      }
-      account?: {
-        id: number
-        userName: string
-        vipType: number
-        createTime: number
-        status: number
-      }
-    }
-    if (data.code !== 200 || !data.profile) {
-      return { success: true, loggedIn: false, account: null, profile: null }
-    }
-    return {
-      success: true,
-      loggedIn: true,
-      account: data.account ? {
-        id: data.account.id,
-        userName: data.account.userName,
-        vipType: data.account.vipType,
-        createTime: data.account.createTime,
-        status: data.account.status
-      } : null,
-      profile: {
-        userId: data.profile.userId,
-        nickname: data.profile.nickname,
-        avatar: data.profile.avatarUrl,
-        signature: data.profile.signature,
-        gender: data.profile.gender,
-        birthday: data.profile.birthday,
-        province: data.profile.province,
-        city: data.profile.city,
-        vipType: data.profile.vipType
-      }
-    }
-  } catch (err) {
-    return { success: false, message: String(err) }
-  }
-})
-
-/** 喜欢/取消喜欢歌曲 */
-ipcMain.handle('netease:like-song', async (_e, id: number, like = true) => {
-  try {
-    const data = await neteaseSmartRequest('/resource/like', {
-      id,
-      type: 0, // 歌曲类型
-      t: like ? 1 : 0 // 1=喜欢, 0=取消喜欢
-    }) as { code?: number }
-    return { success: data.code === 200, code: data.code }
-  } catch (err) {
-    return { success: false, message: String(err) }
   }
 })
 

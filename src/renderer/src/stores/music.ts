@@ -946,13 +946,13 @@ export const useMusicStore = defineStore('music', () => {
     if (!api?.neteaseUserAccount) return
     try {
       const res = await api.neteaseUserAccount()
-      if (res.success && res.loggedIn && res.profile) {
+      if (res.success && res.user) {
         // 更新用户信息
         neteaseUser.value = {
-          id: res.profile.userId,
-          nickname: res.profile.nickname,
-          avatar: res.profile.avatar,
-          signature: res.profile.signature || ''
+          id: res.user.id,
+          nickname: res.user.nickname,
+          avatar: res.user.avatar,
+          signature: res.user.signature || ''
         }
         neteaseLoggedIn.value = true
       }
