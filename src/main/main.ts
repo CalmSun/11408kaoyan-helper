@@ -1238,15 +1238,38 @@ ipcMain.handle('netease:lyric', async (_e, id: number) => {
 
 // ── v2.9.2：二维码登录 ──
 
-/** v3.0.0：获取二维码登录 key（新版 /api/login/qr/key） */
+/** v3.0.0：获取二维码登录 key（新版 /api/login/qr/key）
+ *  v3.2.0：修复二维码不显示问题
+ *  - 同时尝试 /api/login/qrcode/unikey 与 /api/login/qr/key
+ *  - 兼容 qrimg 字段缺少 data URI 前缀的情况
+ *  - qrimg 为空时使用 qrurl 通过在线服务生成二维码
+ */
 ipcMain.handle('netease:qr-key', async () => {
   try {
-    const data = await neteaseGetRequest('/login/qr/key') as { data?: { unikey?: string }; code?: number }
-    const key = data.data?.unikey || ''
+    let key = ''
+    // 优先尝试新版 unikey 接口，失败降级到旧版 qr/key
+    try {
+      const data1 = await neteaseGetRequest('/login/qrcode/unikey') as { data?: { unikey?: string; code?: number } }
+      key = data1.data?.unikey || ''
+    } catch { /* fallthrough */ }
+    if (!key) {
+      const data2 = await neteaseGetRequest('/login/qr/key') as { data?: { unikey?: string }; code?: number }
+      key = data2.data?.unikey || ''
+    }
     if (!key) return { success: false, key: '', qrimg: '', message: '获取二维码 key 失败' }
     // 同时获取二维码图片（base64），前端无需第三方二维码服务
-    const createData = await neteaseGetRequest('/login/qr/create', { key, qrimg: 'true' }) as { data?: { qrimg?: string; qrurl?: string } }
-    return { success: true, key, qrimg: createData.data?.qrimg || '', qrurl: createData.data?.qrurl || '' }
+    const createData = await neteaseGetRequest('/login/qr/create', { key, qrimg: 'true', qr: 'true' }) as { data?: { qrimg?: string; qrurl?: string } }
+    let qrimg = createData.data?.qrimg || ''
+    const qrurl = createData.data?.qrurl || ''
+    // v3.2.0：兼容 qrimg 缺少 data URI 前缀的情况（部分 API 节点只返回 base64）
+    if (qrimg && !qrimg.startsWith('data:')) {
+      qrimg = `data:image/png;base64,${qrimg}`
+    }
+    // v3.2.0：qrimg 为空但有 qrurl，通过二维码生成服务回退
+    if (!qrimg && qrurl) {
+      qrimg = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrurl)}`
+    }
+    return { success: true, key, qrimg, qrurl }
   } catch (err) {
     return { success: false, key: '', qrimg: '', message: String(err) }
   }
@@ -1708,30 +1731,51 @@ ipcMain.handle('netease:like', async (_e, songId: number, like: boolean = true) 
   }
 })
 
-// ── v3.1.5：歌曲是否已喜欢（支持单个或批量，传入逗号分隔的 ID 字符串可批量查询） ──
+// ── v3.1.5：歌曲是否已喜欢（支持单个或批量，传入逗号分隔的 ID 字符串可批量查询）
+//  v3.2.0：修复歌曲喜爱状态检查 bug
+//  - 兼容两种响应格式：数组 [{songId,liked:1/0}] 与对象 {"id": true/false}
+//  - 修复参数名与响应字段映射，确保已喜爱歌曲正确返回 true ──
 
 ipcMain.handle('netease:song-like-status', async (_e, songId: number | string) => {
   try {
     const ids = String(songId)
     const data = await neteaseSmartRequest('/song/like/check', {
       trackIds: ids
-    }) as { data?: { [key: string]: boolean } }
-    const likedMap = data.data || {}
+    }) as { code?: number; data?: Array<{ songId?: number; liked?: number | boolean }> | { [key: string]: number | boolean } }
     const firstId = ids.split(',')[0]
+    const likedMap: Record<string, boolean> = {}
+    // 兼容两种响应格式
+    if (Array.isArray(data.data)) {
+      // 数组格式：[{ songId: 123, liked: 1 }]
+      for (const item of data.data) {
+        if (item && item.songId !== undefined) {
+          likedMap[String(item.songId)] = !!item.liked
+        }
+      }
+    } else if (data.data && typeof data.data === 'object') {
+      // 对象格式：{"123": true, "456": false} 或 {"123": 1, "456": 0}
+      for (const [k, v] of Object.entries(data.data)) {
+        likedMap[k] = !!v
+      }
+    }
     return { success: true, liked: !!likedMap[firstId], likedMap }
   } catch (err) {
     return { success: false, liked: false, likedMap: {} }
   }
 })
 
-// ── v3.1.5：心动模式（官方 intelligence list API） ──
+// ── v3.1.5：心动模式（官方 intelligence list API）
+//  v3.2.0：修复 API 参数错误
+//  - 旧参数 { songId, type: 'fromSong', id: playlistId } 错误
+//  - 新参数 { id: songId, pid: playlistId, sid: songId }（对齐 ncm-api-rs）
+//  - 实际请求体由服务端构建：{ songId, type: 'fromPlayOne', playlistId, startMusicId, count } ──
 
 ipcMain.handle('netease:intelligence-list', async (_e, songId: number, playlistId: number) => {
   try {
     const data = await neteaseSmartRequest('/playmode/intelligence/list', {
-      songId,
-      type: 'fromSong',
-      id: playlistId
+      id: songId,
+      pid: playlistId,
+      sid: songId
     }) as {
       data?: Array<{
         songInfo?: {
@@ -1759,6 +1803,23 @@ ipcMain.handle('netease:intelligence-list', async (_e, songId: number, playlistI
     return { success: true, songs }
   } catch (err) {
     return { success: false, songs: [], message: String(err) }
+  }
+})
+
+// ── v3.2.0：评论点赞（/api/v1/comment/{like|unlike}） ──
+
+ipcMain.handle('netease:comment-like', async (_e, songId: number, commentId: number, like: boolean) => {
+  try {
+    const path = like ? '/v1/comment/like' : '/v1/comment/unlike'
+    // threadId 格式：R_SO_4_{songId}（歌曲资源类型前缀）
+    const data = await neteaseSmartRequest(path, {
+      threadId: `R_SO_4_${songId}`,
+      commentId: String(commentId)
+    }) as { code?: number }
+    if (data.code === 200) return { success: true, liked: like }
+    return { success: false, liked: !like, message: '评论点赞失败' }
+  } catch (err) {
+    return { success: false, liked: !like, message: String(err) }
   }
 })
 

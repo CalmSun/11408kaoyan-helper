@@ -681,7 +681,11 @@ export const useMusicStore = defineStore('music', () => {
     playlistLoading.value = false
   }
 
-  /** 播放整个歌单（替换当前播放列表） */
+  /** 播放整个歌单（替换当前播放列表）
+   *  v3.2.0：修复点击"播放全部"后原歌曲仍播放的问题
+   *  - 替换列表前先暂停并释放旧 URL
+   *  - 替换后调用 loadCurrent() 设置新的 audio.src 再 play()
+   */
   async function playPlaylist(tracks: NetEasePlaylistTrack[]): Promise<void> {
     if (!tracks.length) return
     const api = window.electronAPI
@@ -709,9 +713,18 @@ export const useMusicStore = defineStore('music', () => {
         }
       }
       if (allTracks.length) {
+        // v3.2.0：先暂停当前播放，避免新旧音频叠加
+        pause()
+        // 释放旧列表中的 blob URL
+        playlist.value.forEach(t => revokeIfBlob(t.url))
+        // 替换播放列表
         playlist.value = allTracks
         currentIndex.value = 0
-        play()
+        // v3.2.0：关键修复 - 必须调用 loadCurrent() 设置新的 audio.src
+        loadCurrent()
+        // 重置 URL 刷新重试计数
+        urlRefreshRetryCount = 0
+        await play()
       }
     } catch { /* ignore */ }
   }
@@ -924,18 +937,23 @@ export const useMusicStore = defineStore('music', () => {
 
   // v3.1.8：列表项喜欢功能
 
-  /** 批量检查歌曲喜欢状态（用于搜索结果/歌单列表渲染时） */
+  /** 批量检查歌曲喜欢状态（用于搜索结果/歌单列表渲染时）
+   *  v3.2.0：移除缓存过滤，每次都全量检查确保状态正确
+   *  - 修复已喜爱歌曲显示为未喜爱的 bug
+   *  - 同时处理添加和移除（用户可能在他处取消喜爱）
+   */
   async function checkSongsLiked(songIds: number[]): Promise<void> {
     const api = window.electronAPI
     if (!api?.neteaseSongLikeStatus || !songIds.length) return
-    const uncached = songIds.filter(id => !likedSongIds.value.has(id) && id > 0)
-    if (!uncached.length) return
+    const validIds = songIds.filter(id => id > 0)
+    if (!validIds.length) return
     try {
-      const res = await api.neteaseSongLikeStatus(uncached.join(','))
+      const res = await api.neteaseSongLikeStatus(validIds.join(','))
       if (res.success && res.likedMap) {
         const next = new Set(likedSongIds.value)
         for (const [id, liked] of Object.entries(res.likedMap)) {
           if (liked) next.add(Number(id))
+          else next.delete(Number(id))
         }
         likedSongIds.value = next
       }
@@ -1003,6 +1021,60 @@ export const useMusicStore = defineStore('music', () => {
     currentCommentSongId.value = 0
   }
 
+  // ── v3.2.0：评论点赞 ──
+
+  // 已点赞评论 ID 缓存（响应式 Set）
+  const likedCommentIds = ref<Set<number>>(new Set())
+  const likingCommentId = ref<number | null>(null)
+
+  /** 判断评论是否已点赞 */
+  function isCommentLiked(commentId: number): boolean {
+    return likedCommentIds.value.has(commentId)
+  }
+
+  /** 更新评论点赞状态（创建新 Set 触发响应式） */
+  function setCommentLiked(commentId: number, liked: boolean) {
+    const next = new Set(likedCommentIds.value)
+    if (liked) next.add(commentId)
+    else next.delete(commentId)
+    likedCommentIds.value = next
+  }
+
+  /** 切换评论点赞状态
+   *  v3.2.0：调用 /comment/like 接口
+   *  - 成功后更新本地缓存与 likedCount
+   */
+  async function toggleCommentLike(commentId: number, currentLiked: boolean): Promise<boolean> {
+    const api = window.electronAPI
+    if (!api?.neteaseCommentLike) return false
+    const songId = currentCommentSongId.value
+    if (!songId || !commentId) return false
+    likingCommentId.value = commentId
+    const nextState = !currentLiked
+    try {
+      const res = await api.neteaseCommentLike(songId, commentId, nextState)
+      if (res.success) {
+        setCommentLiked(commentId, nextState)
+        // 更新评论列表中的 likedCount
+        const delta = nextState ? 1 : -1
+        const updateComment = (c: NetEaseComment) => {
+          if (c.commentId === commentId) {
+            c.likedCount = Math.max(0, c.likedCount + delta)
+          }
+        }
+        songComments.value.forEach(updateComment)
+        if (currentHotComment.value && currentHotComment.value.commentId === commentId) {
+          currentHotComment.value = {
+            ...currentHotComment.value,
+            likedCount: Math.max(0, currentHotComment.value.likedCount + delta)
+          }
+        }
+        return true
+      }
+    } catch { /* ignore */ }
+    return false
+  }
+
   // ── v3.1.3：心动模式（一键播放喜欢歌单的随机歌曲） ──
 
   const heartbeatMode = ref(false)
@@ -1028,13 +1100,14 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   /**
-   * v3.1.5：开启心动模式（优先使用官方 intelligence list API，降级为随机播放喜欢的歌单）
+   * v3.1.5：开启心动模式（使用官方 intelligence list API）
+   * v3.2.0：修复 intelligence list API 参数错误，并支持无当前曲目时自动选取
    * 1. 确保已登录并获取用户歌单
    * 2. 找到"我喜欢的音乐"歌单
-   * 3. 优先使用 /playmode/intelligence/list 获取智能推荐列表
-   * 4. 降级：获取歌单全部歌曲并随机打乱
-   * 5. 批量获取播放地址并替换播放列表
-   * 6. 开启随机播放模式
+   * 3. 获取当前播放歌曲 ID（若无则取歌单第一首作为起始种子）
+   * 4. 调用 /playmode/intelligence/list 获取智能推荐列表
+   * 5. 降级：获取歌单全部歌曲并随机打乱
+   * 6. 批量获取播放地址并替换播放列表
    */
   async function startHeartbeatMode(): Promise<{ success: boolean; message: string }> {
     const api = window.electronAPI
@@ -1055,13 +1128,28 @@ export const useMusicStore = defineStore('music', () => {
       return { success: false, message: '未找到喜欢的歌单' }
     }
 
-    // v3.1.5：优先使用官方 intelligence list API
+    // v3.2.0：获取种子歌曲 ID（当前播放曲目或歌单第一首）
+    let seedSongId = currentTrack.value?.id || 0
+    let likedPlaylistTracks: NetEasePlaylistTrack[] = []
+    if (!seedSongId) {
+      // 无当前曲目时，获取歌单第一首作为种子
+      const detailRes = await api.neteasePlaylistDetail(likedPlaylist.id)
+      if (detailRes.success && detailRes.tracks?.length) {
+        likedPlaylistTracks = detailRes.tracks as NetEasePlaylistTrack[]
+        seedSongId = likedPlaylistTracks[0].id
+      }
+    }
+    if (!seedSongId) {
+      return { success: false, message: '无法确定种子歌曲，请先播放一首歌曲' }
+    }
+
+    // v3.2.0：调用官方 intelligence list API（参数已修复）
     let tracks: NetEasePlaylistTrack[] = []
     let usedIntelligenceApi = false
 
-    if (api.neteaseIntelligenceList && currentTrack.value?.id) {
+    if (api.neteaseIntelligenceList) {
       try {
-        const intelRes = await api.neteaseIntelligenceList(currentTrack.value.id, likedPlaylist.id)
+        const intelRes = await api.neteaseIntelligenceList(seedSongId, likedPlaylist.id)
         if (intelRes.success && intelRes.songs?.length) {
           tracks = intelRes.songs as NetEasePlaylistTrack[]
           usedIntelligenceApi = true
@@ -1071,12 +1159,14 @@ export const useMusicStore = defineStore('music', () => {
 
     // 降级：获取歌单详情并随机打乱
     if (!tracks.length) {
-      const detailRes = await api.neteasePlaylistDetail(likedPlaylist.id)
-      if (!detailRes.success || !detailRes.tracks?.length) {
-        return { success: false, message: '获取歌单歌曲失败' }
+      if (!likedPlaylistTracks.length) {
+        const detailRes = await api.neteasePlaylistDetail(likedPlaylist.id)
+        if (!detailRes.success || !detailRes.tracks?.length) {
+          return { success: false, message: '获取歌单歌曲失败' }
+        }
+        likedPlaylistTracks = detailRes.tracks as NetEasePlaylistTrack[]
       }
-      const allTracks = detailRes.tracks as NetEasePlaylistTrack[]
-      const shuffled = shuffleArray(allTracks)
+      const shuffled = shuffleArray(likedPlaylistTracks)
       tracks = shuffled.slice(0, 100)
     }
 
@@ -1105,16 +1195,14 @@ export const useMusicStore = defineStore('music', () => {
         return { success: false, message: '未获取到可用的播放地址' }
       }
       // 替换播放列表并播放
+      pause()
       playlist.value.forEach(t => revokeIfBlob(t.url))
       playlist.value = allTracks
       currentIndex.value = 0
-      // 开启随机播放模式
-      if (!shuffle.value) {
-        shuffle.value = true
-        setStorage('musicShuffle', true)
-      }
-      heartbeatMode.value = true
+      // v3.2.0：调用 loadCurrent() 设置新的 audio.src
       loadCurrent()
+      urlRefreshRetryCount = 0
+      heartbeatMode.value = true
       await play()
       const modeHint = usedIntelligenceApi ? '智能推荐' : '随机播放'
       return { success: true, message: `心动模式已开启（${modeHint}）：${likedPlaylist.name}（${allTracks.length}首）` }
@@ -1219,6 +1307,11 @@ export const useMusicStore = defineStore('music', () => {
     commentsTotal,
     currentCommentSongId,
     fetchSongComments,
-    clearComments
+    clearComments,
+    // v3.2.0：评论点赞
+    likedCommentIds,
+    likingCommentId,
+    isCommentLiked,
+    toggleCommentLike
   }
 })

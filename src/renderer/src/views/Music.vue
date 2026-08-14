@@ -134,9 +134,18 @@
             <div class="comment-body">
               <div class="comment-header">
                 <span class="comment-nickname">{{ music.currentHotComment.nickname }}</span>
-                <span class="comment-likes" v-if="music.currentHotComment.likedCount > 0">
-                  <el-icon><StarFilled /></el-icon> {{ music.currentHotComment.likedCount }}
-                </span>
+                <!-- v3.2.0：热门评论点赞按钮 -->
+                <button
+                  class="comment-like-btn"
+                  :class="{ liked: music.isCommentLiked(music.currentHotComment.commentId) }"
+                  :disabled="music.likingCommentId === music.currentHotComment.commentId"
+                  @click="handleCommentLike(music.currentHotComment)"
+                  title="点赞"
+                >
+                  <el-icon v-if="music.isCommentLiked(music.currentHotComment.commentId)"><StarFilled /></el-icon>
+                  <el-icon v-else><Star /></el-icon>
+                  <span v-if="music.currentHotComment.likedCount > 0" class="comment-like-count">{{ music.currentHotComment.likedCount }}</span>
+                </button>
               </div>
               <div class="comment-content">{{ music.currentHotComment.content }}</div>
               <div class="comment-reply" v-if="music.currentHotComment.repliedContent">
@@ -546,9 +555,18 @@
           <div class="comment-body">
             <div class="comment-header">
               <span class="comment-nickname">{{ c.nickname }}</span>
-              <span class="comment-likes" v-if="c.likedCount > 0">
-                <el-icon><StarFilled /></el-icon> {{ c.likedCount }}
-              </span>
+              <!-- v3.2.0：评论点赞按钮 -->
+              <button
+                class="comment-like-btn"
+                :class="{ liked: music.isCommentLiked(c.commentId) }"
+                :disabled="music.likingCommentId === c.commentId"
+                @click="handleCommentLike(c)"
+                title="点赞"
+              >
+                <el-icon v-if="music.isCommentLiked(c.commentId)"><StarFilled /></el-icon>
+                <el-icon v-else><Star /></el-icon>
+                <span v-if="c.likedCount > 0" class="comment-like-count">{{ c.likedCount }}</span>
+              </button>
             </div>
             <div class="comment-content">{{ c.content }}</div>
             <div class="comment-reply" v-if="c.repliedContent">
@@ -828,6 +846,23 @@ async function handleSongLike(song: { id: number; name: string }) {
     ElMessage.success(wasLiked ? `已取消喜欢：${song.name}` : `已喜欢：${song.name}`)
   } else {
     ElMessage.warning('操作失败，请检查是否已登录')
+  }
+}
+
+// v3.2.0：评论点赞
+async function handleCommentLike(comment: { commentId: number; likedCount: number }) {
+  if (!comment?.commentId) return
+  if (!music.neteaseLoggedIn) {
+    ElMessage.warning('请先登录网易云账号')
+    showLoginDialog.value = true
+    return
+  }
+  const wasLiked = music.isCommentLiked(comment.commentId)
+  const success = await music.toggleCommentLike(comment.commentId, wasLiked)
+  if (success) {
+    ElMessage.success(wasLiked ? '已取消点赞' : '已点赞')
+  } else {
+    ElMessage.warning('点赞失败，请检查是否已登录')
   }
 }
 
@@ -1788,12 +1823,41 @@ onUnmounted(() => {
   color: var(--mo-text-2);
 }
 
-.comment-likes {
+/* v3.2.0：评论点赞按钮 */
+.comment-like-btn {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--mo-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--mo-text-3);
   font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.comment-like-btn:hover:not(:disabled) {
   color: #ff6b6b;
+  border-color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.comment-like-btn.liked {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.comment-like-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.comment-like-count {
+  font-variant-numeric: tabular-nums;
 }
 
 .comment-content {
