@@ -162,6 +162,8 @@ interface ElectronAPI {
     songs?: { id: number; name: string; artist: string; album: string; cover: string; duration: number; recommended: boolean }[]
     message?: string
   }>
+  // v3.2.1：喜欢音乐列表
+  neteaseLikelist: (uid?: number) => Promise<{ success: boolean; ids: number[]; message?: string }>
   // v3.2.0：评论点赞
   neteaseCommentLike: (songId: number, commentId: number, like: boolean) => Promise<{ success: boolean; liked: boolean; message?: string }>
   // 国内天气服务（v2.8.0）

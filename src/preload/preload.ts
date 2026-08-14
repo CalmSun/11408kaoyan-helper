@@ -57,6 +57,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseLike: (songId: number, like?: boolean) => ipcRenderer.invoke('netease:like', songId, like),
   neteaseSongLikeStatus: (songId: number | string) => ipcRenderer.invoke('netease:song-like-status', songId),
   neteaseIntelligenceList: (songId: number, playlistId: number) => ipcRenderer.invoke('netease:intelligence-list', songId, playlistId),
+  // v3.2.1：喜欢音乐列表（一次性拉取用户已喜欢歌曲 ID）
+  neteaseLikelist: (uid?: number) => ipcRenderer.invoke('netease:likelist', uid),
   // v3.2.0：评论点赞
   neteaseCommentLike: (songId: number, commentId: number, like: boolean) => ipcRenderer.invoke('netease:comment-like', songId, commentId, like),
   // 国内天气服务（v2.8.0）

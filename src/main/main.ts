@@ -1246,52 +1246,64 @@ ipcMain.handle('netease:lyric', async (_e, id: number) => {
  */
 ipcMain.handle('netease:qr-key', async () => {
   try {
+    // 真实接口：/api/login/qrcode/unikey，返回 { code, unikey }（unikey 在顶层）
+    // v3.2.1：修复二维码不显示——原实现读取 data.data?.unikey（响应实际在顶层），且调用了不存在的 /login/qr/create
     let key = ''
-    // 优先尝试新版 unikey 接口，失败降级到旧版 qr/key
+    // 兼容 GET/POST 与将 unikey 包裹在 data 下的节点
     try {
-      const data1 = await neteaseGetRequest('/login/qrcode/unikey') as { data?: { unikey?: string; code?: number } }
-      key = data1.data?.unikey || ''
+      const data1 = await neteaseGetRequest('/login/qrcode/unikey') as { unikey?: string; code?: number; data?: { unikey?: string } }
+      key = data1.unikey || data1.data?.unikey || ''
     } catch { /* fallthrough */ }
     if (!key) {
-      const data2 = await neteaseGetRequest('/login/qr/key') as { data?: { unikey?: string }; code?: number }
-      key = data2.data?.unikey || ''
+      // GET 未取到时尝试 POST（部分节点要求 POST 且需传 type=3）
+      try {
+        const data1b = await neteasePlainRequest('/login/qrcode/unikey', { type: 3 }) as { unikey?: string; data?: { unikey?: string } }
+        key = data1b.unikey || data1b.data?.unikey || ''
+      } catch { /* fallthrough */ }
     }
     if (!key) return { success: false, key: '', qrimg: '', message: '获取二维码 key 失败' }
-    // 同时获取二维码图片（base64），前端无需第三方二维码服务
-    const createData = await neteaseGetRequest('/login/qr/create', { key, qrimg: 'true', qr: 'true' }) as { data?: { qrimg?: string; qrurl?: string } }
-    let qrimg = createData.data?.qrimg || ''
-    const qrurl = createData.data?.qrurl || ''
-    // v3.2.0：兼容 qrimg 缺少 data URI 前缀的情况（部分 API 节点只返回 base64）
-    if (qrimg && !qrimg.startsWith('data:')) {
-      qrimg = `data:image/png;base64,${qrimg}`
-    }
-    // v3.2.0：qrimg 为空但有 qrurl，通过二维码生成服务回退
-    if (!qrimg && qrurl) {
-      qrimg = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrurl)}`
-    }
+    // v3.2.1：网易云音乐不返回二维码图片 base64，需自行生成
+    // qrurl 由 unikey 本地构造（对齐 ncm-api-rs login_qr_create 实现）
+    const qrurl = `https://music.163.com/login?codekey=${key}`
+    // 通过在线二维码生成服务生成图片（应用本身已可访问外网加载封面等资源）
+    const qrimg = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrurl)}`
     return { success: true, key, qrimg, qrurl }
   } catch (err) {
     return { success: false, key: '', qrimg: '', message: String(err) }
   }
 })
 
-/** v3.0.0：检查二维码登录状态（新版 /api/login/qr/check）
- *  801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期 */
+/** v3.0.0：检查二维码登录状态
+ *  v3.2.1：修复——真实接口为 /api/login/qrcode/client/login（原 /login/qr/check 不存在）
+ *  801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期
+ *  登录成功时 cookie 主要通过 Set-Cookie 响应头返回（请求辅助函数已自动入库） */
 ipcMain.handle('netease:qr-check', async (_e, key: string) => {
-  try {
-    const data = await neteaseGetRequest('/login/qr/check', { key }) as { code?: number; message?: string; cookie?: string }
-    // 登录成功时，cookie 可能在响应体或 Set-Cookie 头中
-    if (data.code === 803 && data.cookie) {
-      // 解析 cookie 字符串并存储
-      data.cookie.split(';').forEach(pair => {
-        const [k, ...v] = pair.trim().split('=')
-        if (k && v.length) neteaseCookies.set(k, v.join('='))
-      })
+  const tryParse = (data: { code?: number; message?: string; cookie?: string }) => {
+    const code = data?.code || 0
+    if (code === 803) {
+      // 兼容响应体中携带 cookie 字符串的情况
+      if (data?.cookie) {
+        String(data.cookie).split(';').forEach(pair => {
+          const [k, ...v] = pair.trim().split('=')
+          if (k && v.length) neteaseCookies.set(k, v.join('='))
+        })
+      }
+      // Set-Cookie 响应头已被 neteaseGetRequest/neteasePlainRequest 解析入库，这里持久化
       saveNeteaseCookies()
     }
-    return { success: true, code: data.code || 0, message: data.message || '', cookie: data.cookie || '' }
-  } catch (err) {
-    return { success: false, code: 0, message: String(err), cookie: '' }
+    return { success: true, code, message: data?.message || '', cookie: data?.cookie || '' }
+  }
+  // 真实接口：/api/login/qrcode/client/login，兼容 GET/POST
+  try {
+    const data = await neteaseGetRequest('/login/qrcode/client/login', { key, type: '3' }) as { code?: number; message?: string; cookie?: string }
+    return tryParse(data)
+  } catch {
+    try {
+      const data = await neteasePlainRequest('/login/qrcode/client/login', { key, type: 3 }) as { code?: number; message?: string; cookie?: string }
+      return tryParse(data)
+    } catch (err) {
+      return { success: false, code: 0, message: String(err), cookie: '' }
+    }
   }
 })
 
@@ -1764,18 +1776,59 @@ ipcMain.handle('netease:song-like-status', async (_e, songId: number | string) =
   }
 })
 
+// ── v3.2.1：喜欢音乐列表（/api/song/like/get，对齐 ncm-api-rs likelist）
+//   原实现使用不存在的 /song/like/check 导致已喜爱歌曲状态始终为 false。
+//   正确做法：一次性拉取当前用户已喜欢的全部歌曲 ID，前端按集合成员判断 ──
+
+ipcMain.handle('netease:likelist', async (_e, uid?: number) => {
+  try {
+    let userId = Number(uid) || 0
+    if (!userId) {
+      // 未传 uid 时从登录态获取
+      const acc = await neteaseSmartRequest('/w/nuser/account/get', {}) as {
+        code?: number
+        profile?: { userId?: number }
+        account?: { id?: number }
+      }
+      if (acc.code === 200 && acc.profile) {
+        userId = acc.profile.userId || acc.account?.id || 0
+      }
+    }
+    if (!userId) return { success: false, ids: [], message: '未登录' }
+    const data = await neteaseSmartRequest('/song/like/get', { uid: userId }) as {
+      code?: number
+      ids?: number[]
+      data?: { ids?: number[] } | number[]
+    }
+    // 兼容多种响应结构：{ ids: [] } | { data: { ids: [] } } | { data: [] }
+    let ids: number[] = []
+    if (Array.isArray(data.ids)) {
+      ids = data.ids
+    } else if (Array.isArray(data.data)) {
+      ids = data.data
+    } else if (data.data && Array.isArray((data.data as { ids?: number[] }).ids)) {
+      ids = (data.data as { ids: number[] }).ids
+    }
+    return { success: true, ids: ids.map(Number).filter(id => id > 0) }
+  } catch (err) {
+    return { success: false, ids: [], message: String(err) }
+  }
+})
+
 // ── v3.1.5：心动模式（官方 intelligence list API）
-//  v3.2.0：修复 API 参数错误
-//  - 旧参数 { songId, type: 'fromSong', id: playlistId } 错误
-//  - 新参数 { id: songId, pid: playlistId, sid: songId }（对齐 ncm-api-rs）
-//  - 实际请求体由服务端构建：{ songId, type: 'fromPlayOne', playlistId, startMusicId, count } ──
+//  v3.2.1：修复 API 参数错误
+//  - 旧实现把查询参数 {id,pid,sid} 当作请求体发送，与服务端期望不符
+//  - 正确请求体（对齐 NeteaseCloudMusicApiEnhanced playmode_intelligence_list）：
+//    { songId, type: 'fromPlayOne', playlistId, startMusicId, count } ──
 
 ipcMain.handle('netease:intelligence-list', async (_e, songId: number, playlistId: number) => {
   try {
     const data = await neteaseSmartRequest('/playmode/intelligence/list', {
-      id: songId,
-      pid: playlistId,
-      sid: songId
+      songId: songId,
+      type: 'fromPlayOne',
+      playlistId: playlistId,
+      startMusicId: songId,
+      count: 1
     }) as {
       data?: Array<{
         songInfo?: {

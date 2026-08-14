@@ -544,6 +544,8 @@ export const useMusicStore = defineStore('music', () => {
       if (res.success && res.loggedIn && res.user) {
         neteaseLoggedIn.value = true
         neteaseUser.value = res.user
+        // v3.2.1：登录成功后拉取已喜欢歌曲列表（非阻塞，供卡片/列表初始点亮）
+        fetchLikelist(true)
         return true
       }
       neteaseLoggedIn.value = false
@@ -570,6 +572,8 @@ export const useMusicStore = defineStore('music', () => {
           level: 0
         }
         await fetchUserPlaylists()
+        // v3.2.1：登录成功后拉取已喜欢歌曲列表
+        fetchLikelist(true)
         return { success: true, message: `登录成功：${res.user.nickname}` }
       }
       return { success: false, message: res.message || 'Cookie 无效或已过期' }
@@ -594,6 +598,8 @@ export const useMusicStore = defineStore('music', () => {
           level: 0
         }
         await fetchUserPlaylists()
+        // v3.2.1：登录成功后拉取已喜欢歌曲列表
+        fetchLikelist(true)
         return { success: true, message: `登录成功：${res.user.nickname}` }
       }
       return { success: false, message: res.message || '登录失败，请检查手机号和密码' }
@@ -652,6 +658,10 @@ export const useMusicStore = defineStore('music', () => {
     qrStatus.value = 0
     neteaseUserDetail.value = null
     neteaseUserAccount.value = null
+    // v3.2.1：退出登录时清空已喜欢歌曲缓存
+    likelistLoaded = false
+    likedSongIds.value = new Set()
+    currentLiked.value = false
   }
 
   /** 获取用户歌单列表 */
@@ -890,6 +900,8 @@ export const useMusicStore = defineStore('music', () => {
   const likingSongId = ref<number | null>(null)
   // v3.1.8：批量缓存歌曲喜欢状态，供列表项展示
   const likedSongIds = ref<Set<number>>(new Set())
+  // v3.2.1：likelist 是否已拉取（避免对空集合用户的重复请求）
+  let likelistLoaded = false
 
   // v3.1.9：更新喜欢状态时创建新 Set 触发 Vue 响应式
   function setLiked(songId: number, liked: boolean) {
@@ -899,19 +911,34 @@ export const useMusicStore = defineStore('music', () => {
     likedSongIds.value = next
   }
 
-  /** 获取歌曲是否已喜欢 */
-  async function checkSongLikeStatus(songId: number): Promise<boolean> {
+  /** v3.2.1：一次性拉取当前用户已喜欢歌曲 ID 列表
+   *  - 替代旧 /song/like/check（该接口不存在，导致已喜爱状态始终为 false）
+   *  - 使用 /song/like/get（likelist）返回用户全部已喜欢歌曲 ID
+   *  - 拉取后重建 likedSongIds 触发列表项与卡片响应式刷新
+   */
+  async function fetchLikelist(force = false): Promise<void> {
     const api = window.electronAPI
-    if (!api?.neteaseSongLikeStatus) return false
+    if (!api?.neteaseLikelist) return
+    if (likelistLoaded && !force) return
     try {
-      const res = await api.neteaseSongLikeStatus(songId)
-      if (res.success) {
-        currentLiked.value = res.liked
-        setLiked(songId, res.liked)
-        return res.liked
+      const uid = neteaseUser.value?.id || 0
+      const res = await api.neteaseLikelist(uid)
+      if (res.success && Array.isArray(res.ids)) {
+        likedSongIds.value = new Set(res.ids.map(Number).filter(id => id > 0))
       }
+      likelistLoaded = true
     } catch { /* ignore */ }
-    return false
+  }
+
+  /** 获取当前播放歌曲是否已喜欢
+   *  v3.2.1：改用 likelist 判断（确保已喜爱歌曲初始即为点亮状态）
+   */
+  async function checkSongLikeStatus(songId: number): Promise<boolean> {
+    if (!songId) return false
+    await fetchLikelist()
+    const liked = likedSongIds.value.has(songId)
+    currentLiked.value = liked
+    return liked
   }
 
   /** 切换歌曲喜欢状态 */
@@ -938,26 +965,12 @@ export const useMusicStore = defineStore('music', () => {
   // v3.1.8：列表项喜欢功能
 
   /** 批量检查歌曲喜欢状态（用于搜索结果/歌单列表渲染时）
-   *  v3.2.0：移除缓存过滤，每次都全量检查确保状态正确
-   *  - 修复已喜爱歌曲显示为未喜爱的 bug
-   *  - 同时处理添加和移除（用户可能在他处取消喜爱）
+   *  v3.2.1：改用 likelist 判断——拉取一次后列表项通过 isSongLiked 响应式读取
    */
   async function checkSongsLiked(songIds: number[]): Promise<void> {
-    const api = window.electronAPI
-    if (!api?.neteaseSongLikeStatus || !songIds.length) return
-    const validIds = songIds.filter(id => id > 0)
-    if (!validIds.length) return
-    try {
-      const res = await api.neteaseSongLikeStatus(validIds.join(','))
-      if (res.success && res.likedMap) {
-        const next = new Set(likedSongIds.value)
-        for (const [id, liked] of Object.entries(res.likedMap)) {
-          if (liked) next.add(Number(id))
-          else next.delete(Number(id))
-        }
-        likedSongIds.value = next
-      }
-    } catch { /* ignore */ }
+    if (!songIds?.length) return
+    await fetchLikelist()
+    // likedSongIds 已在 fetchLikelist 中重建触发响应式；列表项的 isSongLiked 会自动更新
   }
 
   /** 从缓存判断歌曲是否已喜欢 */
@@ -1042,15 +1055,20 @@ export const useMusicStore = defineStore('music', () => {
 
   /** 切换评论点赞状态
    *  v3.2.0：调用 /comment/like 接口
+   *  v3.2.1：修复点赞按钮不能再次选中——likingCommentId 未在结束时重置导致按钮永久禁用
    *  - 成功后更新本地缓存与 likedCount
+   *  - 无论成功失败，在 finally 中复位 likingCommentId
    */
   async function toggleCommentLike(commentId: number, currentLiked: boolean): Promise<boolean> {
     const api = window.electronAPI
     if (!api?.neteaseCommentLike) return false
     const songId = currentCommentSongId.value
     if (!songId || !commentId) return false
+    // 防止对同一条评论重复点击
+    if (likingCommentId.value === commentId) return false
     likingCommentId.value = commentId
     const nextState = !currentLiked
+    let ok = false
     try {
       const res = await api.neteaseCommentLike(songId, commentId, nextState)
       if (res.success) {
@@ -1069,10 +1087,14 @@ export const useMusicStore = defineStore('music', () => {
             likedCount: Math.max(0, currentHotComment.value.likedCount + delta)
           }
         }
-        return true
+        ok = true
       }
     } catch { /* ignore */ }
-    return false
+    finally {
+      // v3.2.1：必须复位，否则按钮 :disabled 永久为 true，表现为"不能选中"
+      likingCommentId.value = null
+    }
+    return ok
   }
 
   // ── v3.1.3：心动模式（一键播放喜欢歌单的随机歌曲） ──
@@ -1296,6 +1318,8 @@ export const useMusicStore = defineStore('music', () => {
     checkSongLikeStatus,
     toggleLikeSong,
     likeSong,
+    // v3.2.1：喜欢歌曲列表
+    fetchLikelist,
     // v3.1.8：列表项喜欢 + 歌曲评论
     likedSongIds,
     checkSongsLiked,
