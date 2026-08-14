@@ -231,12 +231,12 @@
         <el-icon :size="14"><Search /></el-icon>
       </button>
 
-      <!-- v3.1.3：网易云心动模式按钮 -->
+      <!-- v3.1.8：网易云心动模式（随机播放全部歌曲） -->
       <button
         class="mini-btn heartbeat-btn"
         v-if="!transparent"
         :class="{ on: music.heartbeatMode }"
-        :title="music.heartbeatMode ? '心动模式播放中' : '网易云心动模式（随机播放喜欢的歌单）'"
+        :title="music.heartbeatMode ? '心动模式播放中（随机播放全部歌曲）' : '心动模式（随机播放全部歌曲）'"
         @click="handleHeartbeat"
       >
         <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 12.5 C7 12.5 1.5 9 1.5 5 A3 3 0 0 1 7 3.5 A3 3 0 0 1 12.5 5 C12.5 9 7 12.5 7 12.5 Z" :fill="music.heartbeatMode ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>

@@ -116,28 +116,12 @@ interface ElectronAPI {
     tracks?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]
     message?: string
   }>
-  // v3.1.3：网易云歌曲评论
-  neteaseComments: (id: number, pageNo?: number, pageSize?: number, sortType?: number) => Promise<{
-    success: boolean
-    comments?: { commentId: number; content: string; time: number; likedCount: number; nickname: string; avatar: string; userId: number; repliedContent: string; repliedNickname: string }[]
-    hotComments?: { commentId: number; content: string; time: number; likedCount: number; nickname: string; avatar: string; userId: number; repliedContent: string; repliedNickname: string }[]
-    total?: number
-    message?: string
-  }>
-  // v3.1.5：热搜列表
-  neteaseHotSearch: () => Promise<{ success: boolean; hots?: { rank: number; keyword: string; score: number; iconUrl: string }[]; message?: string }>
   // v3.1.5：排行榜列表
   neteaseToplist: () => Promise<{ success: boolean; lists?: { id: number; name: string; cover: string; updateFrequency: string; description: string; playCount: number; topTracks: { name: string; artist: string }[] }[]; message?: string }>
   // v3.1.5：排行榜详情
   neteaseToplistDetail: (id: number) => Promise<{ success: boolean; playlist?: { id: number; name: string; cover: string; playCount: number; trackCount: number; description: string } | null; tracks?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]; message?: string }>
   // v3.1.5：用户详情
   neteaseUserDetail: (uid: number) => Promise<{ success: boolean; user?: { id: number; nickname: string; avatar: string; signature: string; level: number; gender: number; birthday: number; followeds: number; follows: number; playlistCount: number; listenSongs: number } | null; message?: string }>
-  // v3.1.5：心动模式智能播放
-  neteaseIntelligenceList: (songId: number, playlistId: number) => Promise<{ success: boolean; songs?: { id: number; name: string; artist: string; album: string; cover: string; duration: number; recommended?: boolean }[]; message?: string }>
-  // v3.1.7：喜欢音乐列表
-  neteaseUserLikeSongs: (uid: number, limit?: number, offset?: number) => Promise<{ success: boolean; songIds?: number[]; total?: number; message?: string }>
-  // v3.1.7：云盘歌曲
-  neteaseCloud: (limit?: number, offset?: number) => Promise<{ success: boolean; cloudSongs?: { id: number; name: string; artist: string; album: string; cover: string; size: number }[]; total?: number; message?: string }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

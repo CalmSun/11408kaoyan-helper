@@ -460,19 +460,6 @@ export const useMusicStore = defineStore('music', () => {
     duration: number
   }
 
-  // v3.1.3：网易云评论
-  interface NetEaseComment {
-    commentId: number
-    content: string
-    time: number
-    likedCount: number
-    nickname: string
-    avatar: string
-    userId: number
-    repliedContent: string
-    repliedNickname: string
-  }
-
   const neteaseLoggedIn = ref(false)
   const neteaseUser = ref<NetEaseUser | null>(null)
   const userPlaylists = ref<NetEasePlaylist[]>([])
@@ -482,14 +469,6 @@ export const useMusicStore = defineStore('music', () => {
   const qrKey = ref('')
   const qrStatus = ref<number>(0) // 0=未开始, 801=等待扫码, 802=扫码待确认, 803=登录成功, 800=过期
   const qrImage = ref('') // v3.0.0：二维码 base64 图片
-
-  // v3.1.3：歌曲评论
-  const comments = ref<NetEaseComment[]>([])
-  const hotComments = ref<NetEaseComment[]>([])
-  const commentsLoading = ref(false)
-  const commentsTotal = ref(0)
-  const currentCommentSongId = ref<number>(0)
-  const commentSortType = ref<number>(1) // 1=最新 2=最热
 
   /** 检查网易云登录状态 */
   async function checkLoginStatus(): Promise<boolean> {
@@ -674,30 +653,6 @@ export const useMusicStore = defineStore('music', () => {
     } catch { /* ignore */ }
   }
 
-  // ── v3.1.5：热搜列表 ──
-  interface HotSearchItem {
-    rank: number
-    keyword: string
-    score: number
-    iconUrl: string
-  }
-
-  const hotSearchList = ref<HotSearchItem[]>([])
-  const hotSearchLoading = ref(false)
-
-  async function fetchHotSearch(): Promise<void> {
-    const api = window.electronAPI
-    if (!api?.neteaseHotSearch) return
-    hotSearchLoading.value = true
-    try {
-      const res = await api.neteaseHotSearch()
-      if (res.success && res.hots) {
-        hotSearchList.value = res.hots
-      }
-    } catch { /* ignore */ }
-    hotSearchLoading.value = false
-  }
-
   // ── v3.1.5：排行榜 ──
   interface ToplistItem {
     id: number
@@ -773,88 +728,11 @@ export const useMusicStore = defineStore('music', () => {
     userDetailLoading.value = false
   }
 
-
-  // ── v3.1.7：云盘歌曲 ──
-  interface NetEaseCloudSong {
-    id: number
-    name: string
-    artist: string
-    album: string
-    cover: string
-    size: number
-  }
-
-  const cloudSongs = ref<NetEaseCloudSong[]>([])
-  const cloudLoading = ref(false)
-  const cloudTotal = ref(0)
-  const cloudOffset = ref(0)
-
-  async function fetchCloudSongs(pageNo = 1, pageSize = 20): Promise<void> {
-    const api = window.electronAPI
-    if (!api?.neteaseCloud || !neteaseLoggedIn.value) return
-    cloudLoading.value = true
-    try {
-      const res = await api.neteaseCloud(pageSize, (pageNo - 1) * pageSize)
-      if (res.success && res.cloudSongs) {
-        if (pageNo === 1) cloudSongs.value = res.cloudSongs
-        else cloudSongs.value = [...cloudSongs.value, ...res.cloudSongs]
-        cloudTotal.value = res.total || res.cloudSongs.length
-        cloudOffset.value = (pageNo - 1) * pageSize + res.cloudSongs.length
-      }
-    } catch { /* ignore */ }
-    cloudLoading.value = false
-  }
-
-  /** 播放云盘歌曲 */
-  async function playCloudSong(song: NetEaseCloudSong): Promise<boolean> {
-    const api = window.electronAPI
-    if (!api?.neteaseSongUrl) return false
-    try {
-      const urlRes = await api.neteaseSongUrl([song.id])
-      const urlInfo = urlRes.urls?.find(u => u.id === song.id)
-      if (!urlInfo?.url) return false
-      playlist.value.push({ name: song.name, url: urlInfo.url, source: 'online' as const, id: song.id, artist: song.artist, album: song.album, cover: song.cover })
-      currentIndex.value = playlist.value.length - 1
-      loadCurrent()
-      await play()
-      return true
-    } catch { return false }
-  }
-
-  // ── v3.1.7：我喜欢的歌单（ID列表） ──
-  const likeSongIds = ref<number[]>([])
-  const likeSongIdsLoading = ref(false)
-  const likeSongIdsTotal = ref(0)
-
-  async function fetchLikeSongIds(uid?: number, limit = 100, offset = 0): Promise<void> {
-    const api = window.electronAPI
-    const targetUid = uid ?? neteaseUser.value?.id
-    if (!targetUid || !api?.neteaseUserLikeSongs) return
-    likeSongIdsLoading.value = true
-    try {
-      const res = await api.neteaseUserLikeSongs(targetUid, limit, offset)
-      if (res.success && res.songIds) {
-        if (offset === 0) likeSongIds.value = res.songIds
-        else likeSongIds.value = [...likeSongIds.value, ...res.songIds]
-        likeSongIdsTotal.value = res.total ?? likeSongIds.value.length
-      }
-    } catch { /* ignore */ }
-    likeSongIdsLoading.value = false
-  }
-
-  // ── v3.1.3：心动模式（一键播放喜欢歌单的随机歌曲） ──
+  // ── v3.1.8：心动模式（随机播放全部歌曲） ──
+  // 顶栏心动模式：若已有播放列表则随机选曲播放全部歌曲；
+  // 未加载歌曲时若已登录网易云，则汇总全部歌单歌曲随机播放；否则提示先加载音乐。
 
   const heartbeatMode = ref(false)
-
-  /** 从用户歌单中找到"我喜欢的音乐"歌单 */
-  function findLikedPlaylist(): NetEasePlaylist | null {
-    if (!userPlaylists.value.length) return null
-    // 优先匹配名称包含"喜欢"的歌单
-    const liked = userPlaylists.value.find(p => p.name.includes('喜欢'))
-    if (liked) return liked
-    // 退而求其次：用户创建的第一个歌单（通常就是喜欢的音乐）
-    return userPlaylists.value[0]
-  }
 
   /** Fisher-Yates 随机打乱数组 */
   function shuffleArray<T>(arr: T[]): T[] {
@@ -866,133 +744,110 @@ export const useMusicStore = defineStore('music', () => {
     return result
   }
 
+  /** 批量获取播放地址并组装在线曲目（每次最多 20 首） */
+  async function resolvePlayUrls(
+    songs: { id: number; name: string; artist: string; album: string; cover: string }[]
+  ): Promise<MusicTrack[]> {
+    const api = window.electronAPI
+    if (!api?.neteaseSongUrl) return []
+    const allTracks: MusicTrack[] = []
+    for (let i = 0; i < songs.length; i += 20) {
+      const batch = songs.slice(i, i + 20)
+      const res = await api.neteaseSongUrl(batch.map(t => t.id))
+      const urlMap = new Map((res.urls || []).map(u => [u.id, u.url]))
+      for (const t of batch) {
+        const url = urlMap.get(t.id)
+        if (url) {
+          allTracks.push({
+            name: t.name,
+            url,
+            source: 'online',
+            id: t.id,
+            artist: t.artist,
+            album: t.album,
+            cover: t.cover
+          })
+        }
+      }
+    }
+    return allTracks
+  }
+
   /**
-   * v3.1.5：开启心动模式（优先使用官方 intelligence list API，降级为随机播放喜欢的歌单）
-   * 1. 确保已登录并获取用户歌单
-   * 2. 找到"我喜欢的音乐"歌单
-   * 3. 优先使用 /playmode/intelligence/list 获取智能推荐列表
-   * 4. 降级：获取歌单全部歌曲并随机打乱
-   * 5. 批量获取播放地址并替换播放列表
-   * 6. 开启随机播放模式
+   * 开启/关闭心动模式
+   * 1. 再次点击关闭心动模式；
+   * 2. 已有播放列表：开启随机播放并随机选曲开始播放；
+   * 3. 已登录网易云：汇总全部歌单歌曲（按 ID 去重）随机打乱，批量获取播放地址并替换播放列表；
+   * 4. 均不可用时提示先加载音乐。
    */
   async function startHeartbeatMode(): Promise<{ success: boolean; message: string }> {
-    const api = window.electronAPI
-    if (!api?.neteaseSongUrl || !api?.neteasePlaylistDetail) {
-      return { success: false, message: '网易云 API 不可用' }
-    }
-    // 确保已登录
-    if (!neteaseLoggedIn.value) {
-      const ok = await checkLoginStatus()
-      if (!ok) return { success: false, message: '请先登录网易云音乐' }
-    }
-    // 确保有歌单列表
-    if (!userPlaylists.value.length) {
-      await fetchUserPlaylists()
-    }
-    const likedPlaylist = findLikedPlaylist()
-    if (!likedPlaylist) {
-      return { success: false, message: '未找到喜欢的歌单' }
+    // 再次点击：关闭心动模式
+    if (heartbeatMode.value) {
+      heartbeatMode.value = false
+      return { success: true, message: '心动模式已关闭' }
     }
 
-    // v3.1.5：优先使用官方 intelligence list API
-    let tracks: NetEasePlaylistTrack[] = []
-    let usedIntelligenceApi = false
-
-    if (api.neteaseIntelligenceList && currentTrack.value?.id) {
-      try {
-        const intelRes = await api.neteaseIntelligenceList(currentTrack.value.id, likedPlaylist.id)
-        if (intelRes.success && intelRes.songs?.length) {
-          tracks = intelRes.songs as NetEasePlaylistTrack[]
-          usedIntelligenceApi = true
-        }
-      } catch { /* fallthrough to legacy method */ }
-    }
-
-    // 降级：获取歌单详情并随机打乱
-    if (!tracks.length) {
-      const detailRes = await api.neteasePlaylistDetail(likedPlaylist.id)
-      if (!detailRes.success || !detailRes.tracks?.length) {
-        return { success: false, message: '获取歌单歌曲失败' }
-      }
-      const allTracks = detailRes.tracks as NetEasePlaylistTrack[]
-      const shuffled = shuffleArray(allTracks)
-      tracks = shuffled.slice(0, 100)
-    }
-
-    try {
-      const allTracks: MusicTrack[] = []
-      for (let i = 0; i < tracks.length; i += 20) {
-        const batch = tracks.slice(i, i + 20)
-        const res = await api.neteaseSongUrl(batch.map(t => t.id))
-        const urlMap = new Map((res.urls || []).map(u => [u.id, u.url]))
-        for (const t of batch) {
-          const url = urlMap.get(t.id)
-          if (url) {
-            allTracks.push({
-              name: t.name,
-              url,
-              source: 'online',
-              id: t.id,
-              artist: t.artist,
-              album: t.album,
-              cover: t.cover
-            })
-          }
-        }
-      }
-      if (!allTracks.length) {
-        return { success: false, message: '未获取到可用的播放地址' }
-      }
-      // 替换播放列表并播放
-      playlist.value.forEach(t => revokeIfBlob(t.url))
-      playlist.value = allTracks
-      currentIndex.value = 0
-      // 开启随机播放模式
+    // 已有播放列表：直接随机播放全部歌曲
+    if (playlist.value.length > 0) {
       if (!shuffle.value) {
         shuffle.value = true
         setStorage('musicShuffle', true)
       }
       heartbeatMode.value = true
+      currentIndex.value = Math.floor(Math.random() * playlist.value.length)
       loadCurrent()
       await play()
-      const modeHint = usedIntelligenceApi ? '智能推荐' : '随机播放'
-      return { success: true, message: `心动模式已开启（${modeHint}）：${likedPlaylist.name}（${allTracks.length}首）` }
-    } catch (err) {
-      return { success: false, message: '加载歌曲失败：' + String(err) }
+      return { success: true, message: `心动模式已开启：随机播放全部 ${playlist.value.length} 首歌曲` }
     }
-  }
 
-  // ── v3.1.3：网易云歌曲评论 ──
-
-  /** 获取歌曲评论 */
-  async function fetchComments(songId: number, pageNo = 1, sortType?: number): Promise<void> {
+    // 未加载歌曲：尝试汇总网易云全部歌单
     const api = window.electronAPI
-    if (!api?.neteaseComments) return
-    if (sortType !== undefined) {
-      commentSortType.value = sortType
+    if (!api?.neteaseSongUrl || !api?.neteasePlaylistDetail) {
+      return { success: false, message: '请先选择本地音乐或登录网易云音乐' }
     }
-    commentsLoading.value = true
-    currentCommentSongId.value = songId
-    try {
-      const res = await api.neteaseComments(songId, pageNo, 20, commentSortType.value)
-      if (res.success) {
-        if (pageNo === 1) {
-          hotComments.value = res.hotComments || []
-          comments.value = res.comments || []
-        } else {
-          comments.value = [...comments.value, ...(res.comments || [])]
-        }
-        commentsTotal.value = res.total || 0
-      }
-    } catch { /* ignore */ }
-    commentsLoading.value = false
-  }
+    if (!neteaseLoggedIn.value) {
+      const ok = await checkLoginStatus()
+      if (!ok) return { success: false, message: '请先选择音乐文件或登录网易云音乐' }
+    }
+    if (userPlaylists.value.length === 0) {
+      await fetchUserPlaylists()
+    }
+    if (userPlaylists.value.length === 0) {
+      return { success: false, message: '未找到可用歌单，请先加载本地音乐' }
+    }
 
-  /** 加载更多评论 */
-  async function loadMoreComments(): Promise<void> {
-    if (commentsLoading.value || !currentCommentSongId.value) return
-    const nextPage = Math.ceil(comments.value.length / 20) + 1
-    await fetchComments(currentCommentSongId.value, nextPage)
+    // 汇总全部歌单歌曲并按歌曲 ID 去重
+    const songMap = new Map<number, { id: number; name: string; artist: string; album: string; cover: string }>()
+    for (const pl of userPlaylists.value) {
+      const res = await api.neteasePlaylistDetail(pl.id).catch(() => null)
+      if (res?.success && res.tracks) {
+        for (const t of res.tracks) {
+          if (!songMap.has(t.id)) {
+            songMap.set(t.id, { id: t.id, name: t.name, artist: t.artist, album: t.album, cover: t.cover })
+          }
+        }
+      }
+    }
+    const songs = shuffleArray(Array.from(songMap.values())).slice(0, 200)
+    if (songs.length === 0) {
+      return { success: false, message: '歌单中没有可播放的歌曲，请先加载本地音乐' }
+    }
+
+    const allTracks = await resolvePlayUrls(songs)
+    if (!allTracks.length) {
+      return { success: false, message: '未获取到可用的播放地址' }
+    }
+    playlist.value.forEach(t => revokeIfBlob(t.url))
+    playlist.value = allTracks
+    currentIndex.value = 0
+    if (!shuffle.value) {
+      shuffle.value = true
+      setStorage('musicShuffle', true)
+    }
+    heartbeatMode.value = true
+    loadCurrent()
+    await play()
+    return { success: true, message: `心动模式已开启：随机播放全部歌单（${allTracks.length} 首）` }
   }
 
   return {
@@ -1050,22 +905,9 @@ export const useMusicStore = defineStore('music', () => {
     fetchPlaylistDetail,
     playPlaylist,
     addPlaylistToQueue,
-    // v3.1.3：心动模式
+    // v3.1.8：心动模式（随机播放全部歌曲）
     heartbeatMode,
     startHeartbeatMode,
-    // v3.1.3：歌曲评论
-    comments,
-    hotComments,
-    commentsLoading,
-    commentsTotal,
-    currentCommentSongId,
-    commentSortType,
-    fetchComments,
-    loadMoreComments,
-    // v3.1.5：热搜列表
-    hotSearchList,
-    hotSearchLoading,
-    fetchHotSearch,
     // v3.1.5：排行榜
     toplistList,
     toplistLoading,
@@ -1077,17 +919,6 @@ export const useMusicStore = defineStore('music', () => {
     // v3.1.5：用户详情
     neteaseUserDetail,
     userDetailLoading,
-    fetchUserDetail,
-    // v3.1.7：云盘歌曲
-    cloudSongs,
-    cloudLoading,
-    cloudTotal,
-    fetchCloudSongs,
-    playCloudSong,
-    // v3.1.7：喜欢音乐
-    likeSongIds,
-    likeSongIdsLoading,
-    likeSongIdsTotal,
-    fetchLikeSongIds
+    fetchUserDetail
   }
 })

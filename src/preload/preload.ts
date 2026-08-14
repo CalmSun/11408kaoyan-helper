@@ -1,4 +1,4 @@
-﻿import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   exportData: (data: string) => ipcRenderer.invoke('export-data', data),
@@ -44,16 +44,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseSetCookie: (cookie: string) => ipcRenderer.invoke('netease:set-cookie', cookie),
   neteaseUserPlaylist: (uid: number, limit?: number, offset?: number) => ipcRenderer.invoke('netease:user-playlist', uid, limit, offset),
   neteasePlaylistDetail: (id: number) => ipcRenderer.invoke('netease:playlist-detail', id),
-  // v3.1.3：网易云歌曲评论
-  neteaseComments: (id: number, pageNo?: number, pageSize?: number, sortType?: number) => ipcRenderer.invoke('netease:comments', id, pageNo, pageSize, sortType),
-  // v3.1.5：热搜列表、排行榜、用户详情、心动模式
-  neteaseHotSearch: () => ipcRenderer.invoke('netease:hot-search'),
+  // v3.1.5：排行榜、用户详情
   neteaseToplist: () => ipcRenderer.invoke('netease:toplist'),
   neteaseToplistDetail: (id: number) => ipcRenderer.invoke('netease:toplist-detail', id),
   neteaseUserDetail: (uid: number) => ipcRenderer.invoke('netease:user-detail', uid),
-  neteaseIntelligenceList: (songId: number, playlistId: number) => ipcRenderer.invoke('netease:intelligence-list', songId, playlistId),
-  neteaseUserLikeSongs: (uid: number, limit?: number, offset?: number) => ipcRenderer.invoke('netease:user-like-songs', uid, limit, offset),
-  neteaseCloud: (limit?: number, offset?: number) => ipcRenderer.invoke('netease:cloud', limit, offset),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

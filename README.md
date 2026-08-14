@@ -208,6 +208,12 @@ kaoyan-helper/
 
 ## 📝 更新日志
 
+### v3.1.8
+- **移除音乐播放页多余功能**：移除歌曲评论、热搜列表、云盘和喜欢音乐功能，精简音乐播放页面，减少不必要的网络请求和页面渲染负担，同步清理前后端相关代码（store/preload/主进程 IPC handler/类型声明）
+- **顶栏心动模式改为随机播放全部歌曲**：心动模式不再依赖网易云"喜欢的歌单"和 intelligence list API，改为：已有播放列表时直接开启随机播放全部歌曲；未加载歌曲且已登录网易云时汇总全部歌单歌曲（按 ID 去重）随机打乱播放；再次点击关闭心动模式
+- **项目运行效率优化**：修复歌词滚动每次播放进度更新（timeupdate）都触发平滑滚动导致的卡顿，改为仅在歌词行索引变化时滚动；进度条更新节流（播放中最多 300ms 刷新一次 UI），降低页面重渲染频率；清理已移除功能的冗余状态和样式代码
+- **版本号升级至 3.1.8**
+
 ### v3.1.3
 - **网易云音乐 -460 风控彻底修复**：参考 NeteaseCloudMusicApi Enhanced 官方实现深度重构网易云 API 层，新增 eapi（客户端 API）加密支持，所有接口优先走 eapi（模拟官方客户端，风控更松），失败自动降级 weapi；补全完整 Cookie 体系（_ntes_nuid、NMTID、WNMCID、WEVNSM、__remember_me、deviceId、osver 等），同时设置 X-Real-IP 和 X-Forwarded-For 双 IP 头，User-Agent 升级为 Edge 124 / Android 客户端，彻底解决 code=-460 网络环境风险报错
 - **网易云音乐 API 全面重构**：参考 SPlayer-Dev/ncm-api-rs 项目重写网易云登录、搜索、歌单功能，修复 weapi 加密 secretKey 仅生成 hex 字符的 bug（改用 base62 字符集），新增 X-Real-IP 国内 IP 伪装避免 460 风控，补全 Origin 请求头，改进 Set-Cookie 解析兼容数组格式，Cookie 登录稳定性大幅提升
