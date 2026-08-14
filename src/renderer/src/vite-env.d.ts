@@ -166,6 +166,16 @@ interface ElectronAPI {
   neteaseLikelist: (uid?: number) => Promise<{ success: boolean; ids: number[]; message?: string }>
   // v3.2.0：评论点赞
   neteaseCommentLike: (songId: number, commentId: number, like: boolean) => Promise<{ success: boolean; liked: boolean; message?: string }>
+  // v3.2.2：网易云云盘歌曲
+  neteaseCloudDrive: (pageSize?: number, pageNo?: number) => Promise<{
+    success: boolean
+    songs?: {
+      id: number; name: string; artist: string; album: string; cover: string; duration: number
+      fileName?: string; fileSize?: number; addTime?: number; level?: string
+    }[]
+    count?: number
+    message?: string
+  }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

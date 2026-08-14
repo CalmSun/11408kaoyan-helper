@@ -1876,6 +1876,66 @@ ipcMain.handle('netease:comment-like', async (_e, songId: number, commentId: num
   }
 })
 
+// ── v3.2.2：网易云云盘歌曲列表（/api/v1/cloud/get） ──
+
+ipcMain.handle('netease:cloud-drive', async (_e, pageSize = 50, pageNo = 0) => {
+  try {
+    const data = await neteaseSmartRequest('/v1/cloud/get', {
+      limit: pageSize,
+      offset: pageNo * pageSize
+    }) as {
+      code?: number
+      count?: number
+      data?: Array<{
+        songId?: number
+        album?: string
+        albumId?: number
+        artist?: string
+        bitrate?: number
+        cover?: number | string
+        fileName?: string
+        fileSize?: number
+        level?: string
+        playTime?: number
+        simpleSong?: {
+          id: number
+          name?: string
+          ar?: Array<{ name: string; id?: number }>
+          al?: { name?: string; picUrl?: string; id?: number }
+          dt?: number
+        }
+        addTime?: number
+        version?: number
+      }>
+    }
+    const count = Number(data.count || 0)
+    const list = (data.data || []).map(item => {
+      const ss = item.simpleSong
+      const id = Number(item.songId || ss?.id || 0)
+      const name = ss?.name || item.fileName || String(id)
+      const artist = ss?.ar?.map(a => a.name).join(' / ') || item.artist || ''
+      const album = ss?.al?.name || item.album || ''
+      const cover = ss?.al?.picUrl || (item.cover ? String(item.cover) : '')
+      const duration = Number(ss?.dt || item.playTime || 0)
+      return {
+        id,
+        name,
+        artist,
+        album,
+        cover,
+        duration,
+        fileName: item.fileName || '',
+        fileSize: Number(item.fileSize || 0),
+        addTime: Number(item.addTime || 0),
+        level: item.level || ''
+      }
+    })
+    return { success: true, songs: list, count }
+  } catch (err) {
+    return { success: false, songs: [], count: 0, message: String(err) }
+  }
+})
+
 // ── 国内天气服务（v2.8.0：中国天气网数据源，主进程代理避免跨域） ──
 
 const gbkDecoder = new TextDecoder('gbk')

@@ -86,40 +86,64 @@
             :src="currentFile.url"
             class="pdf-viewer"
           />
-          <!-- 视频播放（v3.0.0：支持音量调节/全屏/进度拖动，Range 协议加速加载） -->
+          <!-- 视频播放（v3.0.0：支持音量调节/全屏/进度拖动，Range 协议加速加载；v3.2.2：美化 UI + 修复音量过低 + 增强无声检测） -->
           <div v-else-if="isVideo(currentFile.ext)" class="video-wrap" ref="videoWrap">
-            <video
-              ref="videoEl"
-              :src="currentFile.url"
-              class="video-player"
-              preload="metadata"
-              @timeupdate="onVideoTimeUpdate"
-              @loadedmetadata="onVideoLoaded"
-              @ended="videoPlaying = false"
-              @error="onVideoError"
-              @click="toggleVideoPlay"
-            />
+            <div class="video-stage">
+              <video
+                ref="videoEl"
+                :src="currentFile.url"
+                class="video-player"
+                preload="metadata"
+                playsinline
+                @timeupdate="onVideoTimeUpdate"
+                @loadedmetadata="onVideoLoaded"
+                @ended="videoPlaying = false"
+                @error="onVideoError"
+                @click="toggleVideoPlay"
+                @waiting="videoLoading = true"
+                @playing="videoLoading = false; videoPlaying = true"
+                @canplay="videoLoading = false"
+                @pause="videoPlaying = false"
+              />
+              <!-- v3.2.2：加载中的 spinner 遮罩 -->
+              <div v-if="videoLoading" class="video-loading-mask">
+                <el-icon class="is-loading" :size="40"><Loading /></el-icon>
+                <span>视频加载中...</span>
+              </div>
+              <!-- v3.2.2：居中播放按钮（暂停态显示） -->
+              <div v-if="!videoPlaying && !videoLoading" class="video-center-play" @click.stop="toggleVideoPlay">
+                <div class="center-play-btn">
+                  <el-icon :size="40"><VideoPlay /></el-icon>
+                </div>
+              </div>
+            </div>
             <!-- v3.1.2：音频编码不支持警告 -->
             <div v-if="audioWarning" class="audio-warning">{{ audioWarning }}</div>
-            <!-- v3.0.0：自定义视频控制栏（含音量+全屏） -->
+            <!-- v3.0.0：自定义视频控制栏（v3.2.2：美化 + 缓冲进度 + 增益调节） -->
             <div class="video-controls">
-              <button class="video-ctrl-btn" @click="toggleVideoPlay">
-                <el-icon>{{ videoPlaying ? '⏸' : '▶' }}</el-icon>
+              <button class="video-ctrl-btn" @click="toggleVideoPlay" :title="videoPlaying ? '暂停' : '播放'">
+                <el-icon v-if="videoPlaying">⏸</el-icon>
+                <el-icon v-else>▶</el-icon>
               </button>
               <span class="video-time">{{ formatTime(videoCurrent) }}</span>
-              <input
-                type="range"
-                class="video-progress"
-                :min="0"
-                :max="videoDuration || 100"
-                :step="0.1"
-                :value="videoCurrent"
-                @input="onVideoSeek"
-              />
+              <div class="video-progress-wrap">
+                <div class="video-progress-buffered" :style="{ width: bufferedPercent + '%' }"></div>
+                <input
+                  type="range"
+                  class="video-progress"
+                  :min="0"
+                  :max="videoDuration || 100"
+                  :step="0.1"
+                  :value="videoCurrent"
+                  @input="onVideoSeek"
+                />
+              </div>
               <span class="video-time">{{ formatTime(videoDuration) }}</span>
               <!-- 音量控制 -->
-              <button class="video-ctrl-btn" @click="toggleMute">
-                <el-icon>{{ videoMuted || videoVolume === 0 ? '🔇' : '🔊' }}</el-icon>
+              <button class="video-ctrl-btn" @click="toggleMute" :title="videoMuted ? '取消静音' : '静音'">
+                <el-icon v-if="videoMuted || videoVolume === 0">🔇</el-icon>
+                <el-icon v-else-if="videoVolume < 50">🔉</el-icon>
+                <el-icon v-else>🔊</el-icon>
               </button>
               <input
                 type="range"
@@ -130,6 +154,14 @@
                 v-model="videoVolume"
                 @input="onVolumeChange"
               />
+              <!-- v3.2.2：数字增益（提升音量） -->
+              <select class="video-gain" :value="videoGain" @change="(e) => { videoGain = Number((e.target as HTMLSelectElement).value); applyVolumeAndGain() }">
+                <option :value="1">1x</option>
+                <option :value="1.5">1.5x</option>
+                <option :value="1.8">1.8x</option>
+                <option :value="2.5">2.5x</option>
+                <option :value="4">4x</option>
+              </select>
               <!-- 倍速 -->
               <select class="video-speed" v-model="videoSpeed" @change="onVideoSpeedChange">
                 <option value="0.5">0.5x</option>
@@ -139,7 +171,7 @@
                 <option value="2">2.0x</option>
               </select>
               <!-- 全屏 -->
-              <button class="video-ctrl-btn" @click="toggleFullscreen">
+              <button class="video-ctrl-btn" @click="toggleFullscreen" :title="isFullscreen ? '退出全屏' : '全屏'">
                 <el-icon>{{ isFullscreen ? '🗗' : '⛶' }}</el-icon>
               </button>
             </div>
@@ -181,7 +213,7 @@
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning, ArrowRight
+  View, Warning, ArrowRight, Loading
 } from '@element-plus/icons-vue'
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
@@ -202,14 +234,32 @@ const videoCurrent = ref(0)
 const videoDuration = ref(0)
 const videoPlaying = ref(false)
 const videoSpeed = ref(1)
-const videoVolume = ref(80)
+// v3.2.2：修复音量过低——默认 100，并叠加 Web Audio 数字增益 1.8x 解决部分视频音量太小的问题
+const videoVolume = ref(100)
 const videoMuted = ref(false)
+const videoGain = ref(1.8)
 // v3.1.2：音频编码不支持警告
 const audioWarning = ref('')
 const isFullscreen = ref(false)
+// v3.2.2：视频加载状态 + 美化（进度条缓冲显示）
+const videoBuffered = ref(0)
+const videoLoading = ref(false)
+// v3.2.2：Web Audio 增益节点（用于提升音量）
+let audioCtx: AudioContext | null = null
+let gainNode: GainNode | null = null
+let videoSourceNode: MediaElementAudioSourceNode | null = null
+// 防止重复接入
+let audioNodeAttached = false
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
+
+// v3.2.2：缓冲百分比
+const bufferedPercent = computed(() => {
+  const dur = videoDuration.value || 0
+  if (!dur) return 0
+  return Math.max(0, Math.min(100, (videoBuffered.value / dur) * 100))
+})
 
 // v2.9.2：将树扁平化为显示列表（考虑展开状态和筛选）
 const flatFiles = computed<DisplayNode[]>(() => {
@@ -293,14 +343,56 @@ watch(() => currentFile.value, () => {
   videoSpeed.value = 1
   videoMuted.value = false
   isFullscreen.value = false
+  videoBuffered.value = 0
+  videoLoading.value = false
+  audioWarning.value = ''
   nextTick(() => {
     if (videoEl.value) {
       videoEl.value.playbackRate = 1
-      videoEl.value.volume = videoVolume.value / 100
+      // v3.2.2：基础音量默认 100，数字增益将在首次播放/加载时再次确保生效
+      videoEl.value.volume = Math.min(1, videoVolume.value / 100)
       videoEl.value.muted = false
     }
   })
 })
+
+// v3.2.2：首次播放时搭建 Web Audio 增益链路（提升视频音量）
+async function ensureAudioBoost(): Promise<void> {
+  if (!videoEl.value || audioNodeAttached) return
+  try {
+    const AC = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
+    if (!AC) return
+    audioCtx = new AC()
+    gainNode = audioCtx.createGain()
+    gainNode.gain.value = videoGain.value
+    videoSourceNode = audioCtx.createMediaElementSource(videoEl.value)
+    videoSourceNode.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+    audioNodeAttached = true
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume().catch(() => { /* ignore */ })
+    }
+  } catch {
+    audioWarning.value = '音频增益初始化失败，视频声音可能较低'
+  }
+}
+
+function applyVolumeAndGain() {
+  if (videoEl.value) {
+    const base = Math.min(1, videoVolume.value / 100)
+    videoEl.value.volume = base
+    videoEl.value.muted = videoMuted.value || videoVolume.value === 0
+  }
+  if (gainNode) {
+    // 滑块到 100 时基础音量=1 + gain=1.8 => 总增益≈1.8x；静音时增益不抬
+    const g = (videoMuted.value || videoVolume.value === 0) ? 0 : videoGain.value
+    try {
+      gainNode.gain.setTargetAtTime(g, audioCtx?.currentTime || 0, 0.01)
+    } catch {
+      gainNode.gain.value = g
+    }
+  }
+}
 
 async function restoreFolder() {
   const api = window.electronAPI
@@ -400,39 +492,76 @@ function downloadFile() {
   a.click()
 }
 
-// v2.9.2：视频控制函数
 function onVideoTimeUpdate() {
   if (videoEl.value) {
     videoCurrent.value = videoEl.value.currentTime
+    // 已缓冲长度
+    try {
+      if (videoEl.value.buffered.length > 0) {
+        videoBuffered.value = videoEl.value.buffered.end(videoEl.value.buffered.length - 1)
+      }
+    } catch { /* ignore */ }
   }
 }
 
 function onVideoLoaded() {
   if (videoEl.value) {
     videoDuration.value = videoEl.value.duration
-    // v3.1.2：确保音量设置在元数据加载后生效
-    videoEl.value.volume = videoVolume.value / 100
+    // v3.2.2：确保音量/增益生效
+    videoEl.value.volume = Math.min(1, videoVolume.value / 100)
     videoEl.value.muted = false
-    // v3.1.2：检测是否有音轨但可能无法解码
-    const el = videoEl.value as HTMLVideoElement & { audioTracks?: { length: number } }
-    if (el.audioTracks && el.audioTracks.length === 0 && videoEl.value.videoWidth > 0) {
-      audioWarning.value = '该视频可能包含不支持的音频编码（如 AC3/DTS），建议转换为 AAC/MP3 格式后播放'
+    applyVolumeAndGain()
+    // v3.1.2 + v3.2.2：更可靠的无声检测——同时检测 audioTracks 与 mozHasAudio / webkitAudioDecodedByteCount
+    const el = videoEl.value as HTMLVideoElement & {
+      audioTracks?: { length: number }
+      mozHasAudio?: boolean
+      webkitAudioDecodedByteCount?: number
+    }
+    let hasAudioTrack = true
+    if (typeof (el.audioTracks as unknown) === 'object' && el.audioTracks) {
+      hasAudioTrack = el.audioTracks.length > 0
+    } else if (typeof el.mozHasAudio === 'boolean') {
+      hasAudioTrack = el.mozHasAudio
+    }
+    const videoOk = videoEl.value.videoWidth > 0
+    if (videoOk && !hasAudioTrack) {
+      audioWarning.value = '该视频未检测到音轨或使用了不支持的音频编码（如 AC3/DTS/E-AC3），建议用格式工厂/HandBrake 转码为 H.264 + AAC(MP4)'
     } else {
       audioWarning.value = ''
     }
+    // 页面内非用户交互直接播放可能被浏览器策略拦截；此处只尝试一次并吞异常
+    videoEl.value.play().then(() => {
+      videoPlaying.value = true
+      ensureAudioBoost()
+      applyVolumeAndGain()
+    }).catch(() => {
+      videoPlaying.value = false
+    })
   }
 }
 
-// v3.1.2：视频加载错误处理
+// v3.1.2 + v3.2.2：视频加载错误处理，区分编码/音轨问题和普通加载失败
 function onVideoError() {
-  audioWarning.value = '视频加载失败，可能是编码格式不支持，建议转换为 MP4(H.264+AAC) 格式'
+  const code = videoEl.value?.error?.code || 0
+  if (code === 3 || code === 4) {
+    audioWarning.value = '视频加载/解码失败，可能使用了浏览器不支持的编码，建议转码为 MP4(H.264 + AAC) 后重试'
+  } else {
+    audioWarning.value = '视频加载失败，请检查文件是否损坏或格式是否支持'
+  }
 }
 
-function toggleVideoPlay() {
+async function toggleVideoPlay() {
   if (!videoEl.value) return
+  // v3.2.2：播放前搭建 Web Audio 增益（需用户手势）
+  await ensureAudioBoost()
   if (videoEl.value.paused) {
-    videoEl.value.play()
-    videoPlaying.value = true
+    try {
+      await videoEl.value.play()
+      videoPlaying.value = true
+      applyVolumeAndGain()
+    } catch {
+      videoPlaying.value = false
+    }
   } else {
     videoEl.value.pause()
     videoPlaying.value = false
@@ -453,23 +582,18 @@ function onVideoSpeedChange() {
   }
 }
 
-// v3.0.0：音量控制
+// v3.0.0：音量控制（v3.2.2：叠加 Web Audio 数字增益）
 function onVolumeChange() {
-  if (videoEl.value) {
-    videoEl.value.volume = videoVolume.value / 100
-    videoEl.value.muted = videoVolume.value === 0
-    videoMuted.value = videoVolume.value === 0
-  }
+  applyVolumeAndGain()
 }
 
 function toggleMute() {
   if (!videoEl.value) return
   videoMuted.value = !videoMuted.value
-  videoEl.value.muted = videoMuted.value
   if (!videoMuted.value && videoVolume.value === 0) {
-    videoVolume.value = 50
-    videoEl.value.volume = 0.5
+    videoVolume.value = 100
   }
+  applyVolumeAndGain()
 }
 
 // v3.0.0：全屏控制
@@ -711,29 +835,97 @@ if (typeof document !== 'undefined') {
   border-radius: 8px;
 }
 
-/* v2.9.2：视频播放区域 */
+/* v2.9.2：视频播放区域（v3.2.2 重构美化） */
 .video-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  background: #000;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+}
+
+.video-stage {
+  position: relative;
+  flex: 1;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
 }
 
 .video-player {
   width: 100%;
-  max-height: 70%;
+  height: 100%;
+  max-height: 100%;
   object-fit: contain;
   background: #000;
-  border-radius: 8px;
+  display: block;
+}
+
+/* v3.2.2：加载遮罩 */
+.video-loading-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 14px;
+  pointer-events: none;
+  z-index: 2;
+  backdrop-filter: blur(2px);
+}
+
+/* v3.2.2：居中大播放按钮（暂停态） */
+.video-center-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  z-index: 3;
+  transition: opacity 0.2s;
+}
+.video-center-play:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+.center-play-btn {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--mo-primary, #409eff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 0 0 6px rgba(255, 255, 255, 0.12);
+  transition: transform 0.15s;
+}
+.video-center-play:hover .center-play-btn {
+  transform: scale(1.05);
+  background: #fff;
 }
 
 /* v3.1.2：音频编码不支持警告 */
 .audio-warning {
+  margin: 0 12px;
   padding: 8px 12px;
   background: rgba(255, 152, 0, 0.15);
   border: 1px solid rgba(255, 152, 0, 0.4);
-  border-radius: 6px;
-  color: #ff9800;
+  border-radius: 8px;
+  color: #ffb74d;
   font-size: 12px;
   text-align: center;
 }
@@ -743,8 +935,12 @@ if (typeof document !== 'undefined') {
   width: 100vw;
   height: 100vh;
   background: #000;
+  border-radius: 0;
+  border: none;
+  padding: 0;
+  box-shadow: none;
   justify-content: center;
-  align-items: center;
+  align-items: stretch;
   gap: 0;
 }
 
@@ -758,52 +954,99 @@ if (typeof document !== 'undefined') {
 
 .video-wrap:fullscreen .video-controls {
   position: absolute;
-  bottom: 20px;
+  bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0,0,0,0.6);
+  width: calc(100% - 64px);
+  background: rgba(0, 0, 0, 0.72);
   color: #fff;
   z-index: 10;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(6px);
 }
 
+.video-wrap:fullscreen .audio-warning {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90vw;
+  margin: 0;
+  z-index: 20;
+}
+
+/* v3.0.0：自定义视频控制栏（v3.2.2 美化） */
 .video-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--mo-surface-hover);
-  border-radius: 8px;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(180deg, rgba(20, 22, 30, 0.92) 0%, rgba(10, 12, 18, 0.96) 100%);
+  color: #fff;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .video-ctrl-btn {
-  background: none;
-  border: none;
-  color: var(--mo-text-1);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
   font-size: 16px;
   cursor: pointer;
-  padding: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
 }
 
 .video-ctrl-btn:hover {
-  color: var(--mo-primary);
+  background: var(--mo-primary, #409eff);
+  border-color: transparent;
+  color: #fff;
+  transform: translateY(-1px);
 }
 
 .video-time {
   font-size: 12px;
-  color: var(--mo-text-3);
-  min-width: 40px;
+  color: rgba(255, 255, 255, 0.78);
+  min-width: 46px;
   text-align: center;
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+/* v3.2.2：双层进度条：缓冲 + 实际进度 */
+.video-progress-wrap {
+  flex: 1;
+  position: relative;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.video-progress-buffered {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 4px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 0;
+  transition: width 0.2s;
 }
 
 .video-progress {
+  position: relative;
+  z-index: 1;
   flex: 1;
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: var(--mo-bg-2);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
   cursor: pointer;
   outline: none;
@@ -812,42 +1055,63 @@ if (typeof document !== 'undefined') {
 .video-progress::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--mo-primary, #409eff);
   cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s;
+}
+.video-progress::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
 }
 
 .video-progress::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: var(--mo-primary, #409eff);
   cursor: pointer;
-  border: none;
+  border: 2px solid #fff;
 }
 
-.video-speed {
+.video-speed,
+.video-gain {
   font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--mo-border);
-  background: var(--mo-surface);
-  color: var(--mo-text-1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
   cursor: pointer;
+  flex-shrink: 0;
+  height: 28px;
+  min-width: 52px;
+}
+.video-speed:hover,
+.video-gain:hover {
+  border-color: var(--mo-primary, #409eff);
 }
 
-/* v3.0.0：音量滑块 */
+.video-speed option,
+.video-gain option {
+  background: #1a1c25;
+  color: #fff;
+}
+
+/* v3.2.2：音量滑块：改白色主题 */
 .video-volume {
-  width: 60px;
+  width: 72px;
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 2px;
   cursor: pointer;
   outline: none;
+  flex-shrink: 0;
 }
 
 .video-volume::-webkit-slider-thumb {
@@ -857,6 +1121,8 @@ if (typeof document !== 'undefined') {
   border-radius: 50%;
   background: #fff;
   cursor: pointer;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .video-volume::-moz-range-thumb {

@@ -791,6 +791,37 @@ export const useMusicStore = defineStore('music', () => {
     hotSearchLoading.value = false
   }
 
+  // ── v3.2.2：网易云云盘歌曲列表 ──
+  interface CloudDriveSong {
+    id: number
+    name: string
+    artist: string
+    album: string
+    cover: string
+    duration: number
+    fileName?: string
+    fileSize?: number
+    addTime?: number
+    level?: string
+  }
+  const cloudDriveList = ref<CloudDriveSong[]>([])
+  const cloudDriveLoading = ref(false)
+  const cloudDriveCount = ref(0)
+
+  async function fetchCloudDrive(pageSize = 50, pageNo = 0): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseCloudDrive) return
+    cloudDriveLoading.value = true
+    try {
+      const res = await api.neteaseCloudDrive(pageSize, pageNo)
+      if (res.success && res.songs) {
+        cloudDriveList.value = res.songs as CloudDriveSong[]
+        cloudDriveCount.value = Number(res.count || 0)
+      }
+    } catch { /* ignore */ }
+    cloudDriveLoading.value = false
+  }
+
   // ── v3.1.5：排行榜 ──
   interface ToplistItem {
     id: number
@@ -1296,6 +1327,11 @@ export const useMusicStore = defineStore('music', () => {
     hotSearchList,
     hotSearchLoading,
     fetchHotSearch,
+    // v3.2.2：网易云云盘
+    cloudDriveList,
+    cloudDriveLoading,
+    cloudDriveCount,
+    fetchCloudDrive,
     // v3.1.5：排行榜
     toplistList,
     toplistLoading,

@@ -164,7 +164,7 @@
 
       <!-- 右侧：搜索 + 我的歌单 + 播放列表 -->
       <div class="music-list-col">
-        <!-- v3.1.5：Tab 切换（增加热搜/排行榜） -->
+        <!-- v3.1.5：Tab 切换（v3.2.2：原热搜移到搜索卡片内，新增云盘 Tab） -->
         <div class="music-tabs">
           <button class="music-tab" :class="{ active: neteaseTab === 'search' }" @click="neteaseTab = 'search'">
             <el-icon><Search /></el-icon> 搜索
@@ -172,15 +172,15 @@
           <button class="music-tab" :class="{ active: neteaseTab === 'playlists' }" @click="neteaseTab = 'playlists'; onPlaylistTab()">
             <el-icon><List /></el-icon> 歌单
           </button>
-          <button class="music-tab" :class="{ active: neteaseTab === 'hotsearch' }" @click="neteaseTab = 'hotsearch'; onHotSearchTab()">
-            <el-icon><TrendCharts /></el-icon> 热搜
+          <button class="music-tab" :class="{ active: neteaseTab === 'clouddrive' }" @click="neteaseTab = 'clouddrive'; onCloudDriveTab()">
+            <el-icon><Folder /></el-icon> 云盘
           </button>
           <button class="music-tab" :class="{ active: neteaseTab === 'toplist' }" @click="neteaseTab = 'toplist'; onToplistTab()">
             <el-icon><Trophy /></el-icon> 排行榜
           </button>
         </div>
 
-        <!-- 网易云搜索 -->
+        <!-- 网易云搜索（v3.2.2：热搜榜列表置于搜索功能下方，同一张卡片） -->
         <div class="glass-card search-card" v-show="neteaseTab === 'search'">
           <h3 class="section-title">
             <el-icon><Search /></el-icon>
@@ -230,36 +230,100 @@
           <div v-else-if="music.searchKeyword" class="search-empty">
             未找到相关歌曲
           </div>
+
+          <!-- v3.2.2：热搜榜列表（在搜索卡片内，搜索功能下方） -->
+          <div class="hotsearch-inline">
+            <h4 class="subsection-title">
+              <el-icon><TrendCharts /></el-icon>
+              热搜榜
+              <el-button size="small" text @click="music.fetchHotSearch()" :loading="music.hotSearchLoading" style="margin-left: auto">
+                刷新
+              </el-button>
+            </h4>
+            <div v-if="music.hotSearchLoading && music.hotSearchList.length === 0" class="search-loading">
+              <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+            </div>
+            <div v-else-if="music.hotSearchList.length > 0" class="hotsearch-list">
+              <div
+                v-for="item in music.hotSearchList"
+                :key="item.rank"
+                class="hotsearch-item"
+                @click="searchFromHot(item.keyword)"
+              >
+                <span class="hotsearch-rank" :class="{ 'top3': item.rank <= 3 }">{{ item.rank }}</span>
+                <div class="hotsearch-info">
+                  <div class="hotsearch-keyword">{{ item.keyword }}</div>
+                </div>
+                <el-icon class="hotsearch-icon" v-if="item.iconUrl"><img :src="item.iconUrl" class="hotsearch-badge" /></el-icon>
+              </div>
+            </div>
+            <div v-else class="search-empty">
+              暂无热搜数据，请点击刷新重试
+            </div>
+          </div>
         </div>
 
-        <!-- v3.1.5：热搜列表 -->
-        <div class="glass-card hotsearch-card" v-show="neteaseTab === 'hotsearch'">
+        <!-- v3.2.2：云盘歌曲列表（替代原热搜显示区域） -->
+        <div class="glass-card clouddrive-card" v-show="neteaseTab === 'clouddrive'">
           <h3 class="section-title">
-            <el-icon><TrendCharts /></el-icon>
-            热搜榜
-            <el-button size="small" text @click="music.fetchHotSearch()" :loading="music.hotSearchLoading" style="margin-left: auto">
+            <el-icon><Folder /></el-icon>
+            云盘歌曲
+            <span v-if="music.cloudDriveCount" class="playlist-count">{{ music.cloudDriveCount }} 首</span>
+            <el-button size="small" text @click="music.fetchCloudDrive()" :loading="music.cloudDriveLoading" style="margin-left: auto">
               刷新
             </el-button>
           </h3>
-          <div v-if="music.hotSearchLoading && music.hotSearchList.length === 0" class="search-loading">
-            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+
+          <!-- 未登录提示 -->
+          <div v-if="!music.neteaseLoggedIn" class="playlist-empty">
+            请先登录网易云账号以查看云盘歌曲<br />
+            <el-button size="small" type="primary" @click="showLoginDialog = true" style="margin-top: 10px">
+              去登录
+            </el-button>
           </div>
-          <div v-else-if="music.hotSearchList.length > 0" class="hotsearch-list">
-            <div
-              v-for="item in music.hotSearchList"
-              :key="item.rank"
-              class="hotsearch-item"
-              @click="searchFromHot(item.keyword)"
-            >
-              <span class="hotsearch-rank" :class="{ 'top3': item.rank <= 3 }">{{ item.rank }}</span>
-              <div class="hotsearch-info">
-                <div class="hotsearch-keyword">{{ item.keyword }}</div>
-              </div>
-              <el-icon class="hotsearch-icon" v-if="item.iconUrl"><img :src="item.iconUrl" class="hotsearch-badge" /></el-icon>
+
+          <!-- 云盘歌曲列表 -->
+          <div v-else>
+            <div class="playlist-detail-actions" v-if="music.cloudDriveList.length">
+              <el-button size="small" type="primary" :loading="music.cloudDriveLoading" @click="music.playPlaylist(music.cloudDriveList)">
+                <el-icon><VideoPlay /></el-icon> 播放全部
+              </el-button>
+              <el-button size="small" :loading="music.cloudDriveLoading" @click="music.addPlaylistToQueue(music.cloudDriveList)">
+                <el-icon><Plus /></el-icon> 添加到队列
+              </el-button>
             </div>
-          </div>
-          <div v-else class="search-empty">
-            暂无热搜数据，请点击刷新重试
+            <div v-if="music.cloudDriveLoading && music.cloudDriveList.length === 0" class="search-loading">
+              <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+            </div>
+            <div v-else-if="music.cloudDriveList.length > 0" class="playlist-tracks">
+              <div
+                v-for="(track, i) in music.cloudDriveList"
+                :key="track.id"
+                class="search-item"
+              >
+                <span class="item-index">{{ i + 1 }}</span>
+                <img v-if="track.cover" :src="track.cover" class="song-cover" />
+                <div v-else class="song-cover placeholder"><el-icon><Headset /></el-icon></div>
+                <div class="song-info">
+                  <div class="song-name">{{ track.name }}</div>
+                  <div class="song-artist">{{ track.artist }} · {{ track.album }}</div>
+                </div>
+                <div class="song-actions">
+                  <el-button size="small" type="primary" circle @click="music.playOnlineSong(track)">
+                    <el-icon><VideoPlay /></el-icon>
+                  </el-button>
+                  <el-button size="small" circle @click="music.addOnlineSong(track)">
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                  <el-button size="small" circle :type="music.isSongLiked(track.id) ? 'danger' : 'default'" @click="handleSongLike(track)">
+                    <el-icon><StarFilled v-if="music.isSongLiked(track.id)" /><Star v-else /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="search-empty">
+              暂无云盘歌曲
+            </div>
           </div>
         </div>
 
@@ -595,7 +659,7 @@ import {
   Headset, FolderOpened, Document, Delete, Search,
   VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, StarFilled, Star,
   List, Plus, Close, User, InfoFilled, Loading,
-  TrendCharts, Trophy, ChatDotRound
+  TrendCharts, Trophy, ChatDotRound, Folder
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -606,8 +670,8 @@ const progressValue = ref(0)
 const lyricsContainer = ref<HTMLElement | null>(null)
 const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime 覆盖
 
-// v3.1.5：Tab 类型扩展（增加热搜/排行榜）
-const neteaseTab = ref<'search' | 'playlists' | 'hotsearch' | 'toplist'>('search')
+// v3.1.5：Tab 类型扩展（v3.2.2：原热搜 Tab 改为云盘）
+const neteaseTab = ref<'search' | 'playlists' | 'clouddrive' | 'toplist'>('search')
 const showLoginDialog = ref(false)
 const cookieInput = ref('')
 const cookieLogging = ref(false)
@@ -785,6 +849,17 @@ function onToplistTab() {
   }
 }
 
+// v3.2.2：切换到云盘 Tab 时加载
+function onCloudDriveTab() {
+  if (!music.neteaseLoggedIn) {
+    ElMessage.warning('请先登录网易云账号以查看云盘')
+    return
+  }
+  if (music.cloudDriveList.length === 0) {
+    music.fetchCloudDrive()
+  }
+}
+
 // v3.1.5：从热搜列表点击搜索
 function searchFromHot(keyword: string) {
   searchKeyword.value = keyword
@@ -918,6 +993,10 @@ function formatCommentTime(ts: number): string {
 
 onMounted(() => {
   music.checkLoginStatus()
+  // v3.2.2：热搜榜已内嵌到搜索卡片中，进入页面即预加载
+  if (music.hotSearchList.length === 0) {
+    music.fetchHotSearch()
+  }
 })
 
 onUnmounted(() => {
@@ -958,7 +1037,17 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  /* v3.2.2：固定左右卡片高度一致，对齐拉伸而非顶部对齐 */
+  align-items: stretch;
+}
+
+/* v3.2.2：左右列都采用纵向 flex，保证子卡片高度可拉伸并均分 */
+.music-player-col,
+.music-list-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
 }
 
 /* v3.1.0：统一卡片样式，与其他页面保持一致 */
@@ -970,6 +1059,9 @@ onUnmounted(() => {
   backdrop-filter: var(--glass-filter, blur(12px));
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* v3.1.2：播放器卡片限制最大宽度，避免过宽 */
@@ -997,7 +1089,31 @@ onUnmounted(() => {
 /* 播放器卡片 */
 .player-card {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+
+/* v3.2.2：热门评论卡片：紧凑高度，不参与空间争夺 */
+.hot-comment-card {
+  flex-shrink: 0;
+  max-height: 260px;
+  margin-bottom: 0 !important;
+}
+
+/* v3.2.2：搜索/云盘/排行榜卡片 + 播放列表卡片：占据右侧 Tab 区 + 下方播放列表区高度 */
+.search-card,
+.clouddrive-card,
+.toplist-card,
+.playlist-card,
+.hotsearch-card {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-bottom: 0 !important;
+}
+
+/* 音乐页 Tab 栏保持紧凑 */
+.music-tabs {
+  flex-shrink: 0;
 }
 
 .player-cover {
@@ -1133,10 +1249,12 @@ onUnmounted(() => {
 /* 歌词卡片 */
 .lyrics-card {
   flex: 1;
+  min-height: 0;
 }
 
 .lyrics-container {
-  max-height: 200px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   text-align: center;
   padding: 10px;
@@ -1184,9 +1302,41 @@ onUnmounted(() => {
 }
 
 .search-results {
-  max-height: 360px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 40vh;
   overflow-y: auto;
   padding-right: 4px;
+  margin-bottom: 12px;
+}
+
+/* v3.2.2：搜索卡片内嵌热搜榜 */
+.hotsearch-inline {
+  border-top: 1px dashed var(--mo-border);
+  padding-top: 14px;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.subsection-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mo-text-2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px 0;
+  flex-shrink: 0;
+}
+
+.hotsearch-inline .hotsearch-list {
+  max-height: 28vh;
+  overflow-y: auto;
+  padding-right: 4px;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* v3.1.2：搜索结果滚动条美化 */
@@ -1274,7 +1424,15 @@ onUnmounted(() => {
 }
 
 .playlist-container {
-  max-height: 300px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.playlist-tracks {
+  flex: 1;
+  min-height: 0;
+  max-height: 42vh;
   overflow-y: auto;
 }
 

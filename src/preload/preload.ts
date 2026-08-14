@@ -61,6 +61,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseLikelist: (uid?: number) => ipcRenderer.invoke('netease:likelist', uid),
   // v3.2.0：评论点赞
   neteaseCommentLike: (songId: number, commentId: number, like: boolean) => ipcRenderer.invoke('netease:comment-like', songId, commentId, like),
+  // v3.2.2：网易云云盘歌曲
+  neteaseCloudDrive: (pageSize?: number, pageNo?: number) => ipcRenderer.invoke('netease:cloud-drive', pageSize, pageNo),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),
