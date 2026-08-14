@@ -83,6 +83,16 @@
             <button class="ctrl-btn" title="下一首" @click="music.next()">
               <el-icon><DArrowRight /></el-icon>
             </button>
+            <!-- v3.1.3：评论按钮 -->
+            <button
+              class="ctrl-btn comment-btn"
+              :class="{ active: showComments }"
+              :title="music.currentTrack?.source === 'online' ? '查看评论' : '仅在线歌曲支持评论'"
+              :disabled="music.currentTrack?.source !== 'online'"
+              @click="openComments"
+            >
+              <el-icon><ChatDotRound /></el-icon>
+            </button>
             <div class="volume-control">
               <el-icon><Microphone /></el-icon>
               <el-slider
@@ -121,13 +131,19 @@
 
       <!-- 右侧：搜索 + 我的歌单 + 播放列表 -->
       <div class="music-list-col">
-        <!-- v2.9.2：Tab 切换 -->
+        <!-- v3.1.5：Tab 切换（增加热搜/排行榜） -->
         <div class="music-tabs">
           <button class="music-tab" :class="{ active: neteaseTab === 'search' }" @click="neteaseTab = 'search'">
             <el-icon><Search /></el-icon> 搜索
           </button>
           <button class="music-tab" :class="{ active: neteaseTab === 'playlists' }" @click="neteaseTab = 'playlists'; onPlaylistTab()">
-            <el-icon><List /></el-icon> 我的歌单
+            <el-icon><List /></el-icon> 歌单
+          </button>
+          <button class="music-tab" :class="{ active: neteaseTab === 'hotsearch' }" @click="neteaseTab = 'hotsearch'; onHotSearchTab()">
+            <el-icon><TrendCharts /></el-icon> 热搜
+          </button>
+          <button class="music-tab" :class="{ active: neteaseTab === 'toplist' }" @click="neteaseTab = 'toplist'; onToplistTab()">
+            <el-icon><Trophy /></el-icon> 排行榜
           </button>
         </div>
 
@@ -177,6 +193,121 @@
           </div>
           <div v-else-if="music.searchKeyword" class="search-empty">
             未找到相关歌曲
+          </div>
+        </div>
+
+        <!-- v3.1.5：热搜列表 -->
+        <div class="glass-card hotsearch-card" v-show="neteaseTab === 'hotsearch'">
+          <h3 class="section-title">
+            <el-icon><TrendCharts /></el-icon>
+            热搜榜
+            <el-button size="small" text @click="music.fetchHotSearch()" :loading="music.hotSearchLoading" style="margin-left: auto">
+              刷新
+            </el-button>
+          </h3>
+          <div v-if="music.hotSearchLoading && music.hotSearchList.length === 0" class="search-loading">
+            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+          </div>
+          <div v-else-if="music.hotSearchList.length > 0" class="hotsearch-list">
+            <div
+              v-for="item in music.hotSearchList"
+              :key="item.rank"
+              class="hotsearch-item"
+              @click="searchFromHot(item.keyword)"
+            >
+              <span class="hotsearch-rank" :class="{ 'top3': item.rank <= 3 }">{{ item.rank }}</span>
+              <div class="hotsearch-info">
+                <div class="hotsearch-keyword">{{ item.keyword }}</div>
+                <div class="hotsearch-score" v-if="item.score > 0">{{ item.score }} 热度</div>
+              </div>
+              <el-icon class="hotsearch-icon" v-if="item.iconUrl"><img :src="item.iconUrl" class="hotsearch-badge" /></el-icon>
+            </div>
+          </div>
+          <div v-else class="search-empty">
+            暂无热搜数据，请点击刷新重试
+          </div>
+        </div>
+
+        <!-- v3.1.5：排行榜 -->
+        <div class="glass-card toplist-card" v-show="neteaseTab === 'toplist'">
+          <h3 class="section-title">
+            <el-icon><Trophy /></el-icon>
+            排行榜
+            <el-button size="small" text @click="music.fetchToplist()" :loading="music.toplistLoading" style="margin-left: auto">
+              刷新
+            </el-button>
+          </h3>
+
+          <!-- 排行榜列表 -->
+          <div v-if="!viewingToplistId">
+            <div v-if="music.toplistLoading && music.toplistList.length === 0" class="search-loading">
+              <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+            </div>
+            <div v-else-if="music.toplistList.length > 0" class="toplist-list">
+              <div
+                v-for="list in music.toplistList"
+                :key="list.id"
+                class="toplist-item"
+                @click="openToplistDetail(list.id)"
+              >
+                <img v-if="list.cover" :src="list.cover" class="toplist-cover" />
+                <div v-else class="toplist-cover placeholder"><el-icon :size="24"><Trophy /></el-icon></div>
+                <div class="toplist-info">
+                  <div class="toplist-name">{{ list.name }}</div>
+                  <div class="toplist-update">{{ list.updateFrequency }}</div>
+                  <div class="toplist-preview">
+                    <span v-for="(t, i) in list.topTracks" :key="i" class="toplist-track-preview">
+                      {{ i + 1 }}.{{ t.name }} - {{ t.artist }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="search-empty">
+              暂无排行榜数据，请点击刷新重试
+            </div>
+          </div>
+
+          <!-- 排行榜详情（歌曲列表） -->
+          <div v-else class="playlist-detail">
+            <div class="playlist-detail-header">
+              <el-button size="small" text @click="viewingToplistId = 0">
+                <el-icon><DArrowLeft /></el-icon> 返回排行榜
+              </el-button>
+              <span class="playlist-detail-name">{{ music.currentToplistInfo?.name }}</span>
+            </div>
+            <div class="playlist-detail-actions">
+              <el-button size="small" type="primary" :loading="music.toplistDetailLoading" @click="music.playPlaylist(music.currentToplistDetail)">
+                <el-icon><VideoPlay /></el-icon> 播放全部
+              </el-button>
+              <el-button size="small" :loading="music.toplistDetailLoading" @click="music.addPlaylistToQueue(music.currentToplistDetail)">
+                <el-icon><Plus /></el-icon> 添加到队列
+              </el-button>
+            </div>
+            <div class="playlist-tracks">
+              <div v-if="music.toplistDetailLoading" class="search-loading">
+                <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+              </div>
+              <div
+                v-for="(track, i) in music.currentToplistDetail"
+                :key="track.id"
+                class="search-item"
+              >
+                <span class="item-index">{{ i + 1 }}</span>
+                <div class="song-info">
+                  <div class="song-name">{{ track.name }}</div>
+                  <div class="song-artist">{{ track.artist }} · {{ track.album }}</div>
+                </div>
+                <div class="song-actions">
+                  <el-button size="small" type="primary" circle @click="music.playOnlineSong(track)">
+                    <el-icon><VideoPlay /></el-icon>
+                  </el-button>
+                  <el-button size="small" circle @click="music.addOnlineSong(track)">
+                    <el-icon><Plus /></el-icon>
+                  </el-button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -323,6 +454,109 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- v3.1.3：网易云歌曲评论抽屉 -->
+    <el-drawer
+      v-model="showComments"
+      title="歌曲评论"
+      direction="rtl"
+      size="420px"
+      :before-close="() => showComments = false"
+    >
+      <div class="comments-drawer">
+        <!-- 歌曲信息 -->
+        <div class="comments-song-info" v-if="music.currentTrack">
+          <img v-if="music.currentTrack.cover" :src="music.currentTrack.cover" class="comments-song-cover" />
+          <div v-else class="comments-song-cover placeholder"><el-icon :size="24"><Headset /></el-icon></div>
+          <div class="comments-song-meta">
+            <div class="comments-song-name">{{ music.currentTrack.name }}</div>
+            <div class="comments-song-artist">{{ music.currentTrack.artist || '未知歌手' }}</div>
+          </div>
+          <div class="comments-total" v-if="music.commentsTotal > 0">共 {{ music.commentsTotal }} 条</div>
+        </div>
+
+        <!-- 排序切换 -->
+        <div class="comments-sort">
+          <button
+            class="sort-btn"
+            :class="{ active: music.commentSortType === 1 }"
+            @click="switchCommentSort(1)"
+          >最新</button>
+          <button
+            class="sort-btn"
+            :class="{ active: music.commentSortType === 2 }"
+            @click="switchCommentSort(2)"
+          >最热</button>
+        </div>
+
+        <!-- 热评区 -->
+        <div class="hot-comments" v-if="music.hotComments.length > 0 && music.commentSortType === 1">
+          <div class="comments-section-title">精彩评论</div>
+          <div
+            v-for="c in music.hotComments"
+            :key="'hot-' + c.commentId"
+            class="comment-item"
+          >
+            <img v-if="c.avatar" :src="c.avatar" class="comment-avatar" />
+            <div v-else class="comment-avatar placeholder"><el-icon><User /></el-icon></div>
+            <div class="comment-body">
+              <div class="comment-header">
+                <span class="comment-nickname">{{ c.nickname }}</span>
+                <span class="comment-like">
+                  <el-icon><Star /></el-icon> {{ c.likedCount }}
+                </span>
+              </div>
+              <div class="comment-content">{{ c.content }}</div>
+              <div class="comment-reply" v-if="c.repliedContent">
+                <span class="reply-to">@{{ c.repliedNickname }}：</span>{{ c.repliedContent }}
+              </div>
+              <div class="comment-time">{{ formatCommentTime(c.time) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 评论列表 -->
+        <div class="comments-list">
+          <div class="comments-section-title" v-if="music.hotComments.length > 0 && music.commentSortType === 1">最新评论</div>
+          <div v-if="music.commentsLoading && music.comments.length === 0" class="comments-loading">
+            <el-icon class="is-loading"><Loading /></el-icon> 加载评论中...
+          </div>
+          <div v-else-if="music.comments.length === 0" class="comments-empty">
+            暂无评论，快来抢沙发吧~
+          </div>
+          <div
+            v-for="c in music.comments"
+            :key="c.commentId"
+            class="comment-item"
+          >
+            <img v-if="c.avatar" :src="c.avatar" class="comment-avatar" />
+            <div v-else class="comment-avatar placeholder"><el-icon><User /></el-icon></div>
+            <div class="comment-body">
+              <div class="comment-header">
+                <span class="comment-nickname">{{ c.nickname }}</span>
+                <span class="comment-like">
+                  <el-icon><Star /></el-icon> {{ c.likedCount }}
+                </span>
+              </div>
+              <div class="comment-content">{{ c.content }}</div>
+              <div class="comment-reply" v-if="c.repliedContent">
+                <span class="reply-to">@{{ c.repliedNickname }}：</span>{{ c.repliedContent }}
+              </div>
+              <div class="comment-time">{{ formatCommentTime(c.time) }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 加载更多 -->
+        <div class="comments-load-more" v-if="music.comments.length > 0 && music.comments.length < music.commentsTotal">
+          <el-button
+            size="small"
+            :loading="music.commentsLoading"
+            @click="music.loadMoreComments()"
+          >加载更多</el-button>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -332,7 +566,8 @@ import { useMusicStore } from '@/stores/music'
 import {
   Headset, FolderOpened, Document, Delete, Search,
   VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, Microphone,
-  List, Plus, Close, User, InfoFilled
+  List, Plus, Close, User, InfoFilled, ChatDotRound, Star, Loading,
+  TrendCharts, Trophy
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -344,12 +579,13 @@ const volumeValue = ref(music.volume)
 const lyricsContainer = ref<HTMLElement | null>(null)
 const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime 覆盖
 
-// v3.1.0：网易云 Cookie 登录与歌单
-const neteaseTab = ref<'search' | 'playlists'>('search')
+// v3.1.5：Tab 类型扩展（增加热搜/排行榜）
+const neteaseTab = ref<'search' | 'playlists' | 'hotsearch' | 'toplist'>('search')
 const showLoginDialog = ref(false)
 const cookieInput = ref('')
 const cookieLogging = ref(false)
 const viewingPlaylistId = ref(0)
+const viewingToplistId = ref(0)
 
 const currentCover = computed(() => music.currentTrack?.cover || '')
 
@@ -439,6 +675,33 @@ function onPlaylistTab() {
   }
 }
 
+// v3.1.5：切换到热搜 Tab 时加载
+function onHotSearchTab() {
+  if (music.hotSearchList.length === 0) {
+    music.fetchHotSearch()
+  }
+}
+
+// v3.1.5：切换到排行榜 Tab 时加载
+function onToplistTab() {
+  if (music.toplistList.length === 0) {
+    music.fetchToplist()
+  }
+}
+
+// v3.1.5：从热搜列表点击搜索
+function searchFromHot(keyword: string) {
+  searchKeyword.value = keyword
+  neteaseTab.value = 'search'
+  doSearch()
+}
+
+// v3.1.5：打开排行榜详情
+async function openToplistDetail(id: number) {
+  viewingToplistId.value = id
+  await music.fetchToplistDetail(id)
+}
+
 // v2.9.2：打开歌单详情
 async function openPlaylist(id: number) {
   viewingPlaylistId.value = id
@@ -449,6 +712,54 @@ async function openPlaylist(id: number) {
 watch(showLoginDialog, (val) => {
   if (!val) {
     cookieInput.value = ''
+  }
+})
+
+// ── v3.1.3：网易云歌曲评论 ──
+
+const showComments = ref(false)
+
+function openComments() {
+  const track = music.currentTrack
+  if (!track || track.source !== 'online' || !track.id) {
+    ElMessage.warning('仅网易云在线歌曲支持查看评论')
+    return
+  }
+  showComments.value = true
+  // 如果切换了歌曲，重新加载评论
+  if (music.currentCommentSongId !== track.id) {
+    music.fetchComments(track.id, 1, 1)
+  }
+}
+
+function switchCommentSort(type: number) {
+  const track = music.currentTrack
+  if (!track?.id) return
+  music.fetchComments(track.id, 1, type)
+}
+
+function formatCommentTime(ts: number): string {
+  if (!ts) return ''
+  const date = new Date(ts)
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+  if (days === 0) {
+    const hours = Math.floor(diff / (1000 * 60 * 60))
+    if (hours === 0) {
+      const mins = Math.floor(diff / (1000 * 60))
+      return mins <= 0 ? '刚刚' : `${mins}分钟前`
+    }
+    return `${hours}小时前`
+  }
+  if (days < 7) return `${days}天前`
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+// 切换歌曲时自动加载评论（如果评论抽屉打开）
+watch(() => music.currentTrack?.id, (newId) => {
+  if (showComments.value && newId && music.currentTrack?.source === 'online') {
+    music.fetchComments(newId, 1, 1)
   }
 })
 
@@ -1112,5 +1423,347 @@ onUnmounted(() => {
   padding: 1px 4px;
   border-radius: 3px;
   font-size: 11px;
+}
+
+/* v3.1.3：评论按钮 */
+.comment-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* v3.1.3：评论抽屉 */
+.comments-drawer {
+  padding: 0 16px 16px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.comments-song-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--mo-surface);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.comments-song-cover {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.comments-song-cover.placeholder {
+  background: var(--mo-bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mo-text-3);
+}
+
+.comments-song-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.comments-song-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mo-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.comments-song-artist {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  margin-top: 2px;
+}
+
+.comments-total {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  flex-shrink: 0;
+}
+
+.comments-sort {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sort-btn {
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--mo-border);
+  background: transparent;
+  color: var(--mo-text-3);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sort-btn:hover {
+  color: var(--mo-text-1);
+  border-color: var(--mo-primary);
+}
+
+.sort-btn.active {
+  background: var(--mo-primary);
+  border-color: var(--mo-primary);
+  color: #fff;
+}
+
+.comments-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mo-text-2);
+  margin: 12px 0 8px;
+  padding-left: 8px;
+  border-left: 3px solid var(--mo-primary);
+}
+
+.hot-comments {
+  margin-bottom: 8px;
+}
+
+.comment-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--mo-border);
+}
+
+.comment-item:last-child {
+  border-bottom: none;
+}
+
+.comment-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.comment-avatar.placeholder {
+  background: var(--mo-bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mo-text-3);
+  font-size: 14px;
+}
+
+.comment-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.comment-nickname {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mo-primary);
+}
+
+.comment-like {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.comment-content {
+  font-size: 13px;
+  color: var(--mo-text-1);
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.comment-reply {
+  font-size: 12px;
+  color: var(--mo-text-2);
+  background: var(--mo-surface);
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-top: 6px;
+  line-height: 1.5;
+}
+
+.reply-to {
+  color: var(--mo-primary);
+  font-weight: 500;
+}
+
+.comment-time {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  margin-top: 6px;
+}
+
+.comments-loading,
+.comments-empty {
+  text-align: center;
+  padding: 30px 0;
+  color: var(--mo-text-3);
+  font-size: 13px;
+}
+
+.comments-load-more {
+  text-align: center;
+  padding: 16px 0;
+}
+
+/* v3.1.5：热搜列表 */
+.hotsearch-card {
+  margin-bottom: 16px;
+}
+
+.hotsearch-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.hotsearch-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.hotsearch-item:hover {
+  background: var(--mo-bg-2);
+}
+
+.hotsearch-rank {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mo-text-3);
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--mo-surface);
+}
+
+.hotsearch-rank.top3 {
+  background: var(--mo-primary);
+  color: #fff;
+}
+
+.hotsearch-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hotsearch-keyword {
+  font-size: 13px;
+  color: var(--mo-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hotsearch-score {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  margin-top: 2px;
+}
+
+.hotsearch-badge {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+/* v3.1.5：排行榜 */
+.toplist-card {
+  margin-bottom: 16px;
+}
+
+.toplist-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.toplist-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toplist-item:hover {
+  background: var(--mo-bg-2);
+}
+
+.toplist-cover {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.toplist-cover.placeholder {
+  background: var(--mo-bg-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mo-text-3);
+}
+
+.toplist-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.toplist-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mo-text-1);
+  margin-bottom: 3px;
+}
+
+.toplist-update {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  margin-bottom: 6px;
+}
+
+.toplist-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toplist-track-preview {
+  font-size: 11px;
+  color: var(--mo-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

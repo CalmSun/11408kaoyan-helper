@@ -116,6 +116,14 @@ interface ElectronAPI {
     tracks?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]
     message?: string
   }>
+  // v3.1.3：网易云歌曲评论
+  neteaseComments: (id: number, pageNo?: number, pageSize?: number, sortType?: number) => Promise<{
+    success: boolean
+    comments?: { commentId: number; content: string; time: number; likedCount: number; nickname: string; avatar: string; userId: number; repliedContent: string; repliedNickname: string }[]
+    hotComments?: { commentId: number; content: string; time: number; likedCount: number; nickname: string; avatar: string; userId: number; repliedContent: string; repliedNickname: string }[]
+    total?: number
+    message?: string
+  }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

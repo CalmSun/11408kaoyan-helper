@@ -1423,6 +1423,225 @@ ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
   }
 })
 
+// v3.1.3：网易云歌曲评论
+ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize = 20, sortType = 1) => {
+  try {
+    const data = await neteaseSmartRequest('/comment/new', {
+      id,
+      type: 0, // 0=歌曲
+      sortType, // 0=推荐 1=最新 2=最热
+      pageNo,
+      pageSize,
+      cursor: pageNo > 1 ? String(Date.now()) : ''
+    }) as {
+      data?: {
+        comments?: Array<{
+          commentId: number; content: string; time: number; likedCount: number
+          user?: { nickname: string; avatarUrl?: string; userId?: number }
+          beReplied?: Array<{ content: string; user?: { nickname: string } }>
+        }>
+        hotComments?: Array<{
+          commentId: number; content: string; time: number; likedCount: number
+          user?: { nickname: string; avatarUrl?: string; userId?: number }
+        }>
+        totalCount?: number
+      }
+      code?: number
+    }
+    const d = data.data
+    if (!d) return { success: false, comments: [], hotComments: [], total: 0, message: '获取评论失败' }
+    const mapComment = (c: any) => ({
+      commentId: c.commentId,
+      content: c.content,
+      time: c.time,
+      likedCount: c.likedCount || 0,
+      nickname: c.user?.nickname || '匿名用户',
+      avatar: c.user?.avatarUrl || '',
+      userId: c.user?.userId || 0,
+      repliedContent: c.beReplied?.[0]?.content || '',
+      repliedNickname: c.beReplied?.[0]?.user?.nickname || ''
+    })
+    return {
+      success: true,
+      comments: (d.comments || []).map(mapComment),
+      hotComments: (d.hotComments || []).map(mapComment),
+      total: d.totalCount || 0
+    }
+  } catch (err) {
+    return { success: false, comments: [], hotComments: [], total: 0, message: String(err) }
+  }
+})
+
+// ── v3.1.5：热搜列表 ──
+
+ipcMain.handle('netease:hot-search', async () => {
+  try {
+    const data = await neteaseGetRequest('/search/hot') as {
+      result?: { hots?: Array<{ first: string; second?: number; third?: number; iconUrl?: string }> }
+      code?: number
+    }
+    const hots = (data.result?.hots || []).map((h, i) => ({
+      rank: i + 1,
+      keyword: h.first,
+      score: h.second || 0,
+      iconUrl: h.iconUrl || ''
+    }))
+    return { success: true, hots }
+  } catch (err) {
+    return { success: false, hots: [], message: String(err) }
+  }
+})
+
+// ── v3.1.5：排行榜列表 ──
+
+ipcMain.handle('netease:toplist', async () => {
+  try {
+    const data = await neteaseGetRequest('/toplist') as {
+      list?: Array<{
+        id: number; name: string; coverImgUrl?: string; updateFrequency?: string
+        description?: string; playCount?: number; tracks?: Array<{ first: string; second: string }>
+      }>
+      code?: number
+    }
+    const lists = (data.list || []).map(l => ({
+      id: l.id,
+      name: l.name,
+      cover: l.coverImgUrl || '',
+      updateFrequency: l.updateFrequency || '',
+      description: l.description || '',
+      playCount: l.playCount || 0,
+      topTracks: (l.tracks || []).slice(0, 3).map(t => ({ name: t.first, artist: t.second }))
+    }))
+    return { success: true, lists }
+  } catch (err) {
+    return { success: false, lists: [], message: String(err) }
+  }
+})
+
+// ── v3.1.5：排行榜详情（含歌曲列表） ──
+
+ipcMain.handle('netease:toplist-detail', async (_e, id: number) => {
+  try {
+    const data = await neteaseSmartRequest('/v6/playlist/detail', {
+      id,
+      n: 100000,
+      s: 8
+    }) as {
+      playlist?: {
+        id: number; name: string; coverImgUrl?: string; playCount?: number
+        trackCount?: number; description?: string
+        tracks?: Array<{
+          id: number; name: string; ar?: Array<{ name: string }>
+          al?: { name: string; picUrl?: string }; dt?: number
+        }>
+      }
+      code?: number
+    }
+    const pl = data.playlist
+    if (!pl) return { success: false, playlist: null, tracks: [], message: '榜单不存在' }
+    const tracks = (pl.tracks || []).map(t => ({
+      id: t.id,
+      name: t.name,
+      artist: (t.ar || []).map(a => a.name).join(' / '),
+      album: t.al?.name || '',
+      cover: t.al?.picUrl || '',
+      duration: t.dt || 0
+    }))
+    return {
+      success: true,
+      playlist: {
+        id: pl.id,
+        name: pl.name,
+        cover: pl.coverImgUrl || '',
+        playCount: pl.playCount || 0,
+        trackCount: pl.trackCount || 0,
+        description: pl.description || ''
+      },
+      tracks
+    }
+  } catch (err) {
+    return { success: false, playlist: null, tracks: [], message: String(err) }
+  }
+})
+
+// ── v3.1.5：用户详情 ──
+
+ipcMain.handle('netease:user-detail', async (_e, uid: number) => {
+  try {
+    const data = await neteaseSmartRequest('/user/detail', {
+      uid
+    }) as {
+      profile?: {
+        userId?: number; nickname?: string; avatarUrl?: string; signature?: string
+        level?: number; gender?: number; birthday?: number; province?: number; city?: number
+        followeds?: number; follows?: number; playlistCount?: number
+        eventCount?: number; createdPlaylistCount?: number
+      }
+      level?: number
+      listenSongs?: number
+      code?: number
+    }
+    const p = data.profile
+    if (!p) return { success: false, user: null, message: '获取用户详情失败' }
+    return {
+      success: true,
+      user: {
+        id: p.userId || 0,
+        nickname: p.nickname || '',
+        avatar: p.avatarUrl || '',
+        signature: p.signature || '',
+        level: p.level || data.level || 0,
+        gender: p.gender || 0,
+        birthday: p.birthday || 0,
+        followeds: p.followeds || 0,
+        follows: p.follows || 0,
+        playlistCount: p.playlistCount || 0,
+        listenSongs: data.listenSongs || 0
+      }
+    }
+  } catch (err) {
+    return { success: false, user: null, message: String(err) }
+  }
+})
+
+// ── v3.1.5：心动模式（官方 intelligence list API） ──
+
+ipcMain.handle('netease:intelligence-list', async (_e, songId: number, playlistId: number) => {
+  try {
+    const data = await neteaseSmartRequest('/playmode/intelligence/list', {
+      songId,
+      type: 'fromSong',
+      id: playlistId
+    }) as {
+      data?: Array<{
+        songInfo?: {
+          id: number; name: string; ar?: Array<{ name: string }>
+          al?: { name: string; picUrl?: string }; dt?: number
+        }
+        recommended?: boolean
+      }>
+      code?: number
+    }
+    const songs = (data.data || [])
+      .filter(item => item.songInfo)
+      .map(item => {
+        const s = item.songInfo!
+        return {
+          id: s.id,
+          name: s.name,
+          artist: (s.ar || []).map(a => a.name).join(' / '),
+          album: s.al?.name || '',
+          cover: s.al?.picUrl || '',
+          duration: s.dt || 0,
+          recommended: item.recommended || false
+        }
+      })
+    return { success: true, songs }
+  } catch (err) {
+    return { success: false, songs: [], message: String(err) }
+  }
+})
+
 // ── 国内天气服务（v2.8.0：中国天气网数据源，主进程代理避免跨域） ──
 
 const gbkDecoder = new TextDecoder('gbk')
