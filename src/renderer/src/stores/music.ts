@@ -54,6 +54,39 @@ export const useMusicStore = defineStore('music', () => {
   const searchLoading = ref(false)
   const searchKeyword = ref('')
 
+  // v3.2.0：歌曲评论
+  const songComments = ref<{
+    id: number
+    userId: number
+    nickname: string
+    avatar: string
+    vipType: number
+    content: string
+    time: number
+    likedCount: number
+    liked: boolean
+    replies: { userId: number; nickname: string; avatar: string; content: string }[]
+  }[]>([])
+  const hotComments = ref<{
+    id: number
+    userId: number
+    nickname: string
+    avatar: string
+    vipType: number
+    content: string
+    time: number
+    likedCount: number
+    liked: boolean
+    replies: { userId: number; nickname: string; avatar: string; content: string }[]
+  }[]>([])
+  const commentsLoading = ref(false)
+  const commentsTotal = ref(0)
+  const commentsSortType = ref(2) // 1=最新, 2=最热
+
+  // v3.2.0：喜欢状态
+  const likedSongs = ref<Set<number>>(new Set())
+  const likingLoading = ref(false)
+
   const currentTrack = computed<MusicTrack | null>(
     () => playlist.value[currentIndex.value] ?? null
   )
@@ -850,6 +883,104 @@ export const useMusicStore = defineStore('music', () => {
     return { success: true, message: `心动模式已开启：随机播放全部歌单（${allTracks.length} 首）` }
   }
 
+  // v3.2.0：获取歌曲评论
+  async function fetchSongComments(songId: number, type = 0, limit = 20, offset = 0, sortType = 2): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseComments) return
+    commentsLoading.value = true
+    try {
+      const res = await api.neteaseComments(songId, type, limit, offset, sortType)
+      if (res.success) {
+        songComments.value = res.comments || []
+        hotComments.value = res.hotComments || []
+        commentsTotal.value = res.total || 0
+        commentsSortType.value = sortType
+      }
+    } catch { /* ignore */ }
+    commentsLoading.value = false
+  }
+
+  // v3.2.0：清空评论
+  function clearComments(): void {
+    songComments.value = []
+    hotComments.value = []
+    commentsTotal.value = 0
+  }
+
+  // v3.2.0：切换评论排序
+  async function toggleCommentsSort(): Promise<void> {
+    const newSortType = commentsSortType.value === 1 ? 2 : 1
+    if (currentTrack.value?.id) {
+      await fetchSongComments(currentTrack.value.id, 0, 20, 0, newSortType)
+    }
+  }
+
+  // v3.2.0：喜欢/取消喜欢歌曲
+  async function likeSong(songId: number, like = true): Promise<boolean> {
+    const api = window.electronAPI
+    if (!api?.neteaseLikeSong) return false
+    likingLoading.value = true
+    try {
+      const res = await api.neteaseLikeSong(songId, like)
+      if (res.success) {
+        if (like) {
+          likedSongs.value.add(songId)
+        } else {
+          likedSongs.value.delete(songId)
+        }
+        return true
+      }
+    } catch { /* ignore */ }
+    likingLoading.value = false
+    return false
+  }
+
+  // v3.2.0：检查歌曲是否被喜欢
+  function isSongLiked(songId: number): boolean {
+    return likedSongs.value.has(songId)
+  }
+
+  // v3.2.0：获取用户账号信息
+  async function fetchUserAccount(): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseUserAccount) return
+    try {
+      const res = await api.neteaseUserAccount()
+      if (res.success && res.loggedIn && res.profile) {
+        // 更新用户信息
+        neteaseUser.value = {
+          id: res.profile.userId,
+          nickname: res.profile.nickname,
+          avatar: res.profile.avatar,
+          signature: res.profile.signature || ''
+        }
+        neteaseLoggedIn.value = true
+      }
+    } catch { /* ignore */ }
+  }
+
+  // v3.2.0：使用智能心动模式（根据API文档）
+  async function startIntelligenceMode(songId: number, playlistId: number): Promise<boolean> {
+    const api = window.electronAPI
+    if (!api?.neteaseIntelligenceList) return false
+    try {
+      const res = await api.neteaseIntelligenceList(songId, playlistId)
+      if (res.success && res.songs && res.songs.length > 0) {
+        // 获取播放地址并设置播放列表
+        const tracks = await resolvePlayUrls(res.songs)
+        if (tracks.length > 0) {
+          playlist.value.forEach(t => revokeIfBlob(t.url))
+          playlist.value = tracks
+          currentIndex.value = 0
+          loadCurrent()
+          await play()
+          return true
+        }
+      }
+    } catch { /* ignore */ }
+    return false
+  }
+
   return {
     playlist,
     currentIndex,
@@ -919,6 +1050,21 @@ export const useMusicStore = defineStore('music', () => {
     // v3.1.5：用户详情
     neteaseUserDetail,
     userDetailLoading,
-    fetchUserDetail
+    fetchUserDetail,
+    // v3.2.0：新增状态和方法
+    songComments,
+    hotComments,
+    commentsLoading,
+    commentsTotal,
+    commentsSortType,
+    likedSongs,
+    likingLoading,
+    fetchSongComments,
+    clearComments,
+    toggleCommentsSort,
+    likeSong,
+    isSongLiked,
+    fetchUserAccount,
+    startIntelligenceMode
   }
 })

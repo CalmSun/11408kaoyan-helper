@@ -48,6 +48,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseToplist: () => ipcRenderer.invoke('netease:toplist'),
   neteaseToplistDetail: (id: number) => ipcRenderer.invoke('netease:toplist-detail', id),
   neteaseUserDetail: (uid: number) => ipcRenderer.invoke('netease:user-detail', uid),
+  // v3.2.0：新增网易云 API
+  neteaseComments: (id: number, type?: number, limit?: number, offset?: number, sortType?: number) => ipcRenderer.invoke('netease:comments', id, type, limit, offset, sortType),
+  neteaseIntelligenceList: (songId: number, playlistId: number) => ipcRenderer.invoke('netease:intelligence-list', songId, playlistId),
+  neteaseUserAccount: () => ipcRenderer.invoke('netease:user-account'),
+  neteaseLikeSong: (id: number, like?: boolean) => ipcRenderer.invoke('netease:like-song', id, like),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

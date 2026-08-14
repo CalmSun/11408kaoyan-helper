@@ -122,6 +122,69 @@ interface ElectronAPI {
   neteaseToplistDetail: (id: number) => Promise<{ success: boolean; playlist?: { id: number; name: string; cover: string; playCount: number; trackCount: number; description: string } | null; tracks?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]; message?: string }>
   // v3.1.5：用户详情
   neteaseUserDetail: (uid: number) => Promise<{ success: boolean; user?: { id: number; nickname: string; avatar: string; signature: string; level: number; gender: number; birthday: number; followeds: number; follows: number; playlistCount: number; listenSongs: number } | null; message?: string }>
+  // v3.2.0：新增网易云 API
+  neteaseComments: (id: number, type?: number, limit?: number, offset?: number, sortType?: number) => Promise<{
+    success: boolean
+    hotComments?: {
+      id: number
+      userId: number
+      nickname: string
+      avatar: string
+      vipType: number
+      content: string
+      time: number
+      likedCount: number
+      liked: boolean
+      replies: { userId: number; nickname: string; avatar: string; content: string }[]
+    }[]
+    comments?: {
+      id: number
+      userId: number
+      nickname: string
+      avatar: string
+      vipType: number
+      content: string
+      time: number
+      likedCount: number
+      liked: boolean
+      replies: { userId: number; nickname: string; avatar: string; content: string }[]
+    }[]
+    total?: number
+    message?: string
+  }>
+  neteaseIntelligenceList: (songId: number, playlistId: number) => Promise<{
+    success: boolean
+    songs?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]
+    message?: string
+  }>
+  neteaseUserAccount: () => Promise<{
+    success: boolean
+    loggedIn?: boolean
+    account?: {
+      id: number
+      userName: string
+      vipType: number
+      createTime: number
+      status: number
+    } | null
+    profile?: {
+      userId: number
+      nickname: string
+      avatar: string
+      signature: string
+      gender: number
+      birthday: number
+      province: number
+      city: number
+      vipType: number
+    } | null
+    message?: string
+  }>
+  neteaseLikeSong: (id: number, like?: boolean) => Promise<{
+    success: boolean
+    code?: number
+    message?: string
+  }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

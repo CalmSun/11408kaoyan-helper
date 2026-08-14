@@ -289,6 +289,7 @@
           </div>
           <div class="ncm-user-actions">
             <button class="ncm-action-btn" @click="goToMusic">音乐播放</button>
+            <button class="ncm-action-btn" @click="refreshUserAccount">刷新信息</button>
             <button class="ncm-action-btn danger" @click="handleNeteaseLogout">退出登录</button>
           </div>
         </div>
@@ -528,12 +529,24 @@ function goMusic() {
   router.push('/music')
 }
 
-// v3.1.5：网易云心动模式（使用官方 intelligence list API）
+// v3.2.0：网易云智能心动模式（使用官方 intelligence list API）
 const heartbeatLoading = ref(false)
 async function handleHeartbeat() {
   if (heartbeatLoading.value) return
   heartbeatLoading.value = true
   try {
+    // 优先尝试智能心动模式（需要当前歌曲和歌单）
+    if (music.currentTrack?.source === 'online' && music.currentTrack.id && music.userPlaylists.length > 0) {
+      // 使用第一个歌单作为播放列表
+      const playlistId = music.userPlaylists[0].id
+      const success = await music.startIntelligenceMode(music.currentTrack.id, playlistId)
+      if (success) {
+        ElMessage.success('智能心动模式已开启')
+        return
+      }
+    }
+    
+    // 智能心动模式失败时降级到随机播放模式
     const res = await music.startHeartbeatMode()
     if (res.success) {
       ElMessage.success(res.message)
@@ -550,6 +563,12 @@ async function loadNeteaseUserDetail() {
   if (music.neteaseUser?.id) {
     await music.fetchUserDetail(music.neteaseUser.id)
   }
+}
+
+// v3.2.0：刷新用户账号信息
+async function refreshUserAccount() {
+  await music.fetchUserAccount()
+  ElMessage.success('用户信息已刷新')
 }
 
 // v3.1.5：退出网易云登录
