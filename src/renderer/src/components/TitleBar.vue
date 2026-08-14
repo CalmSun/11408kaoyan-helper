@@ -236,6 +236,17 @@
         <el-icon :size="14"><Headset /></el-icon>
       </button>
 
+      <!-- v3.1.3：网易云心动模式按钮 -->
+      <button
+        class="mini-btn heartbeat-btn"
+        v-if="!transparent"
+        :class="{ on: music.heartbeatMode }"
+        :title="music.heartbeatMode ? '心动模式播放中' : '网易云心动模式（随机播放喜欢的歌单）'"
+        @click="handleHeartbeat"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 12.5 C7 12.5 1.5 9 1.5 5 A3 3 0 0 1 7 3.5 A3 3 0 0 1 12.5 5 C12.5 9 7 12.5 7 12.5 Z" :fill="music.heartbeatMode ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
+      </button>
+
       <!-- 护眼模式 -->
       <button class="mini-btn eyecare-btn" :class="{ on: eyeCareOn }" :title="eyeCareOn ? '关闭护眼模式' : '开启护眼模式'" @click="toggleEye">
         <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2 C9 2 11 6 11 6 C11 6 9 10 6 10 C3 10 1 6 1 6 C1 6 3 2 6 2 Z" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="6" cy="6" r="1.8" fill="currentColor"/></svg>
@@ -251,8 +262,45 @@
         <el-icon :size="14"><component :is="dark ? Sunny : Moon" /></el-icon>
       </button>
 
-      <!-- 用户栏 -->
-      <div v-if="!transparent && userStore.isLoggedIn" class="user-mini" :title="userStore.displayName" @click="goToSettings">
+      <!-- v3.1.5：网易云用户信息 popover -->
+      <el-popover
+        v-if="!transparent && music.neteaseLoggedIn && music.neteaseUser"
+        placement="bottom"
+        :width="280"
+        trigger="click"
+        popper-class="titlebar-popover"
+      >
+        <template #reference>
+          <div class="user-mini" :title="music.neteaseUser.nickname">
+            <img v-if="music.neteaseUser.avatar" :src="music.neteaseUser.avatar" class="user-mini-avatar" />
+            <el-icon v-else :size="14" class="user-mini-icon"><UserFilled /></el-icon>
+            <span class="user-mini-name">{{ music.neteaseUser.nickname }}</span>
+          </div>
+        </template>
+        <div class="ncm-user-panel">
+          <div class="ncm-user-header">
+            <img v-if="music.neteaseUser.avatar" :src="music.neteaseUser.avatar" class="ncm-user-avatar" />
+            <div class="ncm-user-info">
+              <div class="ncm-user-name">{{ music.neteaseUser.nickname }}</div>
+              <div class="ncm-user-level" v-if="music.neteaseUserDetail?.level">Lv.{{ music.neteaseUserDetail.level }}</div>
+              <div class="ncm-user-sig" v-if="music.neteaseUserDetail?.signature">{{ music.neteaseUserDetail.signature }}</div>
+            </div>
+          </div>
+          <div class="ncm-user-stats" v-if="music.neteaseUserDetail">
+            <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.followeds }}</span><span class="ncm-stat-label">粉丝</span></div>
+            <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.follows }}</span><span class="ncm-stat-label">关注</span></div>
+            <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.playlistCount }}</span><span class="ncm-stat-label">歌单</span></div>
+            <div class="ncm-stat"><span class="ncm-stat-val">{{ music.neteaseUserDetail.listenSongs }}</span><span class="ncm-stat-label">听歌</span></div>
+          </div>
+          <div class="ncm-user-actions">
+            <button class="ncm-action-btn" @click="goToMusic">音乐播放</button>
+            <button class="ncm-action-btn danger" @click="handleNeteaseLogout">退出登录</button>
+          </div>
+        </div>
+      </el-popover>
+
+      <!-- 用户栏（本地用户） -->
+      <div v-if="!transparent && userStore.isLoggedIn && !(music.neteaseLoggedIn && music.neteaseUser)" class="user-mini" :title="userStore.displayName" @click="goToSettings">
         <el-icon :size="14" class="user-mini-icon"><UserFilled /></el-icon>
         <span class="user-mini-name">{{ userStore.displayName }}</span>
       </div>
@@ -275,7 +323,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
@@ -485,6 +533,36 @@ function goMusic() {
   router.push('/music')
 }
 
+// v3.1.5：网易云心动模式（使用官方 intelligence list API）
+const heartbeatLoading = ref(false)
+async function handleHeartbeat() {
+  if (heartbeatLoading.value) return
+  heartbeatLoading.value = true
+  try {
+    const res = await music.startHeartbeatMode()
+    if (res.success) {
+      ElMessage.success(res.message)
+    } else {
+      ElMessage.warning(res.message)
+    }
+  } finally {
+    heartbeatLoading.value = false
+  }
+}
+
+// v3.1.5：网易云用户详情加载
+async function loadNeteaseUserDetail() {
+  if (music.neteaseUser?.id) {
+    await music.fetchUserDetail(music.neteaseUser.id)
+  }
+}
+
+// v3.1.5：退出网易云登录
+async function handleNeteaseLogout() {
+  await music.logoutNetease()
+  ElMessage.success('已退出网易云登录')
+}
+
 // v2.9.2：打开默认浏览器（默认 Bing 搜索，便于实时查资料）
 async function openBrowser() {
   const api = window.electronAPI
@@ -503,8 +581,19 @@ function onVolumeInput(e: Event) {
   music.setVolume(Number(target.value) / 100)
 }
 
+// v3.1.5：监听网易云登录状态变化，自动加载用户详情
+watch(() => music.neteaseLoggedIn, (logged) => {
+  if (logged && music.neteaseUser?.id && !music.neteaseUserDetail) {
+    loadNeteaseUserDetail()
+  }
+})
+
 onMounted(() => {
   initWeather()
+  // v3.1.5：如果已登录网易云，加载用户详情
+  if (music.neteaseLoggedIn && music.neteaseUser?.id) {
+    loadNeteaseUserDetail()
+  }
 })
 </script>
 
@@ -1220,6 +1309,118 @@ onMounted(() => {
 
 .win-btn-close:hover {
   background: var(--mo-danger);
+  color: #fff;
+}
+
+/* v3.1.5：用户头像（顶栏） */
+.user-mini-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+/* v3.1.5：网易云用户详情面板 */
+.ncm-user-panel {
+  font-size: 13px;
+  color: var(--mo-text-1);
+}
+
+.ncm-user-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ncm-user-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.ncm-user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ncm-user-name {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.ncm-user-level {
+  font-size: 12px;
+  color: var(--mo-primary);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.ncm-user-sig {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ncm-user-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--mo-border);
+  border-bottom: 1px solid var(--mo-border);
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.ncm-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ncm-stat-val {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--mo-text-1);
+}
+
+.ncm-stat-label {
+  font-size: 11px;
+  color: var(--mo-text-3);
+}
+
+.ncm-user-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.ncm-action-btn {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 8px;
+  border: 1px solid var(--mo-border);
+  background: var(--mo-surface);
+  color: var(--mo-text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ncm-action-btn:hover {
+  background: var(--mo-primary);
+  border-color: var(--mo-primary);
+  color: #fff;
+}
+
+.ncm-action-btn.danger:hover {
+  background: var(--mo-danger);
+  border-color: var(--mo-danger);
   color: #fff;
 }
 </style>
