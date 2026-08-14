@@ -773,6 +773,75 @@ export const useMusicStore = defineStore('music', () => {
     userDetailLoading.value = false
   }
 
+
+  // ── v3.1.7：云盘歌曲 ──
+  interface NetEaseCloudSong {
+    id: number
+    name: string
+    artist: string
+    album: string
+    cover: string
+    size: number
+  }
+
+  const cloudSongs = ref<NetEaseCloudSong[]>([])
+  const cloudLoading = ref(false)
+  const cloudTotal = ref(0)
+  const cloudOffset = ref(0)
+
+  async function fetchCloudSongs(pageNo = 1, pageSize = 20): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.neteaseCloud || !neteaseLoggedIn.value) return
+    cloudLoading.value = true
+    try {
+      const res = await api.neteaseCloud(pageSize, (pageNo - 1) * pageSize)
+      if (res.success && res.cloudSongs) {
+        if (pageNo === 1) cloudSongs.value = res.cloudSongs
+        else cloudSongs.value = [...cloudSongs.value, ...res.cloudSongs]
+        cloudTotal.value = res.total || res.cloudSongs.length
+        cloudOffset.value = (pageNo - 1) * pageSize + res.cloudSongs.length
+      }
+    } catch { /* ignore */ }
+    cloudLoading.value = false
+  }
+
+  /** 播放云盘歌曲 */
+  async function playCloudSong(song: NetEaseCloudSong): Promise<boolean> {
+    const api = window.electronAPI
+    if (!api?.neteaseSongUrl) return false
+    try {
+      const urlRes = await api.neteaseSongUrl([song.id])
+      const urlInfo = urlRes.urls?.find(u => u.id === song.id)
+      if (!urlInfo?.url) return false
+      playlist.value.push({ name: song.name, url: urlInfo.url, source: 'online' as const, id: song.id, artist: song.artist, album: song.album, cover: song.cover })
+      currentIndex.value = playlist.value.length - 1
+      loadCurrent()
+      await play()
+      return true
+    } catch { return false }
+  }
+
+  // ── v3.1.7：我喜欢的歌单（ID列表） ──
+  const likeSongIds = ref<number[]>([])
+  const likeSongIdsLoading = ref(false)
+  const likeSongIdsTotal = ref(0)
+
+  async function fetchLikeSongIds(uid?: number, limit = 100, offset = 0): Promise<void> {
+    const api = window.electronAPI
+    const targetUid = uid ?? neteaseUser.value?.id
+    if (!targetUid || !api?.neteaseUserLikeSongs) return
+    likeSongIdsLoading.value = true
+    try {
+      const res = await api.neteaseUserLikeSongs(targetUid, limit, offset)
+      if (res.success && res.songIds) {
+        if (offset === 0) likeSongIds.value = res.songIds
+        else likeSongIds.value = [...likeSongIds.value, ...res.songIds]
+        likeSongIdsTotal.value = res.total ?? likeSongIds.value.length
+      }
+    } catch { /* ignore */ }
+    likeSongIdsLoading.value = false
+  }
+
   // ── v3.1.3：心动模式（一键播放喜欢歌单的随机歌曲） ──
 
   const heartbeatMode = ref(false)
@@ -1008,6 +1077,17 @@ export const useMusicStore = defineStore('music', () => {
     // v3.1.5：用户详情
     neteaseUserDetail,
     userDetailLoading,
-    fetchUserDetail
+    fetchUserDetail,
+    // v3.1.7：云盘歌曲
+    cloudSongs,
+    cloudLoading,
+    cloudTotal,
+    fetchCloudSongs,
+    playCloudSong,
+    // v3.1.7：喜欢音乐
+    likeSongIds,
+    likeSongIdsLoading,
+    likeSongIdsTotal,
+    fetchLikeSongIds
   }
 })

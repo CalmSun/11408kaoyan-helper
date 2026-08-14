@@ -138,12 +138,6 @@
           <button class="music-tab" :class="{ active: neteaseTab === 'playlists' }" @click="neteaseTab = 'playlists'; onPlaylistTab()">
             <el-icon><List /></el-icon> 歌单
           </button>
-          <button class="music-tab" :class="{ active: neteaseTab === 'cloud' }" @click="neteaseTab = 'cloud'; onCloudTab()">
-            <el-icon><Cloudy /></el-icon> 云盘
-          </button>
-          <button class="music-tab" :class="{ active: neteaseTab === 'likes' }" @click="neteaseTab = 'likes'; onLikeTab()">
-            <el-icon><Star /></el-icon> 喜欢
-          </button>
           <button class="music-tab" :class="{ active: neteaseTab === 'hotsearch' }" @click="neteaseTab = 'hotsearch'; onHotSearchTab()">
             <el-icon><TrendCharts /></el-icon> 热搜
           </button>
@@ -390,72 +384,6 @@
           </div>
         </div>
 
-        <!-- v3.1.7：云盘歌曲 -->
-        <div class="glass-card cloud-card" v-show="neteaseTab === 'cloud'">
-          <h3 class="section-title">
-            <el-icon><Cloudy /></el-icon>
-            我的云盘
-            <span v-if="music.cloudTotal > 0" class="playlist-count">{{ music.cloudTotal }} 首</span>
-            <el-button size="small" text @click="cloudPage = 1; music.fetchCloudSongs(1, cloudPageSize)" :loading="music.cloudLoading" style="margin-left: auto">
-              刷新
-            </el-button>
-          </h3>
-          <div v-if="!music.neteaseLoggedIn" class="playlist-empty">
-            请先登录网易云账号以查看云盘<br />
-            <el-button size="small" type="primary" @click="showLoginDialog = true" style="margin-top: 10px">去登录</el-button>
-          </div>
-          <div v-else-if="music.cloudLoading && music.cloudSongs.length === 0" class="search-loading">
-            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
-          </div>
-          <div v-else-if="music.cloudSongs.length > 0">
-            <div v-for="(song, i) in music.cloudSongs" :key="song.id + '-' + i" class="search-item">
-              <span class="item-index">{{ i + 1 }}</span>
-              <div class="song-info">
-                <div class="song-name">{{ song.name }}</div>
-                <div class="song-artist">{{ song.artist || '未知歌手' }}<span v-if="song.size"> · {{ formatFileSize(song.size) }}</span></div>
-              </div>
-              <div class="song-actions">
-                <el-button size="small" type="primary" circle @click="music.playCloudSong(song)">
-                  <el-icon><VideoPlay /></el-icon>
-                </el-button>
-                <el-button size="small" circle @click="music.addOnlineSong(song)">
-                  <el-icon><Plus /></el-icon>
-                </el-button>
-              </div>
-            </div>
-            <div class="comments-load-more" v-if="music.cloudSongs.length < music.cloudTotal">
-              <el-button size="small" :loading="music.cloudLoading" @click="loadMoreCloudSongs()">加载更多</el-button>
-            </div>
-          </div>
-          <div v-else class="search-empty">云盘暂无歌曲</div>
-        </div>
-
-        <!-- v3.1.7：喜欢音乐 -->
-        <div class="glass-card likes-card" v-show="neteaseTab === 'likes'">
-          <h3 class="section-title">
-            <el-icon><Star /></el-icon>
-            我喜欢的音乐
-            <span v-if="music.likeSongIdsTotal > 0" class="playlist-count">{{ music.likeSongIdsTotal }} 首</span>
-            <el-button size="small" text @click="music.fetchLikeSongIds()" :loading="music.likeSongIdsLoading" style="margin-left: auto">
-              刷新
-            </el-button>
-          </h3>
-          <div v-if="!music.neteaseLoggedIn" class="playlist-empty">
-            请先登录网易云账号以查看喜欢的音乐<br />
-            <el-button size="small" type="primary" @click="showLoginDialog = true" style="margin-top: 10px">去登录</el-button>
-          </div>
-          <div v-else-if="music.likeSongIdsLoading && music.likeSongIds.length === 0" class="search-loading">
-            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
-          </div>
-          <div v-else-if="music.likeSongIds.length > 0">
-            <p class="likes-hint">共收藏 {{ music.likeSongIdsTotal }} 首喜欢的歌曲（显示前 {{ music.likeSongIds.length }} 首的 ID）</p>
-            <div class="likes-id-grid">
-              <span v-for="(id, i) in music.likeSongIds" :key="id" class="likes-id-chip">#{{ i + 1 }}: {{ id }}</span>
-            </div>
-          </div>
-          <div v-else class="search-empty">暂无喜欢的歌曲数据</div>
-        </div>
-
         <!-- 播放列表 -->
         <div class="glass-card playlist-card">
           <h3 class="section-title">
@@ -638,7 +566,7 @@ import {
   Headset, FolderOpened, Document, Delete, Search,
   VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, Microphone,
   List, Plus, Close, User, InfoFilled, ChatDotRound, Star, Loading,
-  TrendCharts, Trophy, Cloudy
+  TrendCharts, Trophy
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -650,17 +578,13 @@ const volumeValue = ref(music.volume)
 const lyricsContainer = ref<HTMLElement | null>(null)
 const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime 覆盖
 
-// v3.1.7：Tab 类型扩展（新增云盘/喜欢音乐）
-const neteaseTab = ref<'search' | 'playlists' | 'cloud' | 'likes' | 'hotsearch' | 'toplist'>('search')
+// v3.1.5：Tab 类型扩展（增加热搜/排行榜）
+const neteaseTab = ref<'search' | 'playlists' | 'hotsearch' | 'toplist'>('search')
 const showLoginDialog = ref(false)
 const cookieInput = ref('')
 const cookieLogging = ref(false)
 const viewingPlaylistId = ref(0)
 const viewingToplistId = ref(0)
-
-// v3.1.7：云盘分页
-const cloudPage = ref(1)
-const cloudPageSize = 20
 
 const currentCover = computed(() => music.currentTrack?.cover || '')
 
@@ -764,27 +688,6 @@ function onToplistTab() {
   }
 }
 
-// v3.1.7：切换到云盘 Tab
-function onCloudTab() {
-  if (music.cloudSongs.length === 0 && music.neteaseLoggedIn) {
-    cloudPage.value = 1
-    music.fetchCloudSongs(1, cloudPageSize)
-  }
-}
-
-// v3.1.7：切换到喜欢音乐 Tab
-async function onLikeTab() {
-  if (music.likeSongIds.length === 0 && music.neteaseLoggedIn) {
-    await music.fetchLikeSongIds()
-  }
-}
-
-// v3.1.7：加载更多云盘歌曲
-async function loadMoreCloudSongs() {
-  cloudPage.value++
-  music.fetchCloudSongs(cloudPage.value, cloudPageSize)
-}
-
 // v3.1.5：从热搜列表点击搜索
 function searchFromHot(keyword: string) {
   searchKeyword.value = keyword
@@ -850,14 +753,6 @@ function formatCommentTime(ts: number): string {
   }
   if (days < 7) return `${days}天前`
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-// v3.1.7：格式化文件大小
-function formatFileSize(bytes: number): string {
-  if (!bytes) return ''
-  if (bytes < 1024) return bytes + 'B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
-  return (bytes / 1024 / 1024).toFixed(1) + 'MB'
 }
 
 // 切换歌曲时自动加载评论（如果评论抽屉打开）
@@ -1537,26 +1432,20 @@ onUnmounted(() => {
 
 /* v3.1.3：评论抽屉 */
 .comments-drawer {
-  padding: 20px;
+  padding: 0 20px 20px;
   height: 100%;
   overflow-y: auto;
-  background: var(--mo-surface);
-  border-radius: 12px;
-}
-
-.comments-drawer .el-drawer__body {
-  padding: 0;
 }
 
 .comments-song-info {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   padding: 16px;
-  background: var(--mo-bg-2);
-  border-radius: 10px;
+  background: linear-gradient(135deg, var(--mo-surface), var(--mo-bg-2));
+  border-radius: 12px;
   margin-bottom: 16px;
-  border: 1px solid var(--mo-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 .comments-song-cover {
@@ -1651,20 +1540,9 @@ onUnmounted(() => {
 .comment-item {
   display: flex;
   gap: 12px;
-  padding: 14px;
-  border-radius: 8px;
-  background: var(--mo-bg-2);
-  margin-bottom: 8px;
-  border: 1px solid var(--mo-border);
+  padding: 14px 0;
+  border-bottom: 1px solid var(--mo-border);
   transition: background 0.2s;
-}
-
-.comment-item:hover {
-  background: var(--mo-surface-hover);
-}
-
-.comment-item:last-child {
-  margin-bottom: 0;
 }
 
 .comment-item:hover {

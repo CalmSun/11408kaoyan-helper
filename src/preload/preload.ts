@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+﻿import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   exportData: (data: string) => ipcRenderer.invoke('export-data', data),
@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseToplistDetail: (id: number) => ipcRenderer.invoke('netease:toplist-detail', id),
   neteaseUserDetail: (uid: number) => ipcRenderer.invoke('netease:user-detail', uid),
   neteaseIntelligenceList: (songId: number, playlistId: number) => ipcRenderer.invoke('netease:intelligence-list', songId, playlistId),
+  neteaseUserLikeSongs: (uid: number, limit?: number, offset?: number) => ipcRenderer.invoke('netease:user-like-songs', uid, limit, offset),
+  neteaseCloud: (limit?: number, offset?: number) => ipcRenderer.invoke('netease:cloud', limit, offset),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

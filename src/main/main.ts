@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage, shell } from 'electron'
+﻿import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -1423,223 +1423,88 @@ ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
   }
 })
 
-// v3.1.3：网易云歌曲评论
-ipcMain.handle('netease:comments', async (_e, id: number, pageNo = 1, pageSize = 20, sortType = 1) => {
+
+// --- v3.1.7：网易云歌曲评论 ---
+ipcMain.handle('netease:comments', async (_e, id, pageNo = 1, pageSize = 20, sortType = 1) => {
   try {
-    // /comment/music 接口使用 limit/offset 分页，直接返回 comments/hotComments
     const offset = (pageNo - 1) * pageSize
-    const data = await neteaseSmartRequest('/comment/music', {
-      id,
-      limit: pageSize,
-      offset
-    }) as {
-      comments?: Array<{
-        commentId: number; content: string; time: number; likedCount: number
-        user?: { nickname: string; avatarUrl?: string; userId?: number }
-        beReplied?: Array<{ content: string; user?: { nickname: string } }>
-      }>
-      hotComments?: Array<{
-        commentId: number; content: string; time: number; likedCount: number
-        user?: { nickname: string; avatarUrl?: string; userId?: number }
-      }>
-      total?: number
-      code?: number
-    }
-    if (!data || data.code !== 200) {
-      return { success: false, comments: [], hotComments: [], total: 0, message: '获取评论失败' }
-    }
-    const mapComment = (c: any) => ({
-      commentId: c.commentId,
-      content: c.content,
-      time: c.time,
-      likedCount: c.likedCount || 0,
-      nickname: c.user?.nickname || '匿名用户',
-      avatar: c.user?.avatarUrl || '',
-      userId: c.user?.userId || 0,
-      repliedContent: c.beReplied?.[0]?.content || '',
-      repliedNickname: c.beReplied?.[0]?.user?.nickname || ''
-    })
-    return {
-      success: true,
-      comments: (data.comments || []).map(mapComment),
-      hotComments: (data.hotComments || []).map(mapComment),
-      total: data.total || 0
-    }
-  } catch (err) {
-    return { success: false, comments: [], hotComments: [], total: 0, message: String(err) }
-  }
+    const d = await neteaseSmartRequest('/comment/music', { id, type: 0, limit: pageSize, offset, sortType }) as { code?: number; total?: number; hotComments?: any[]; comments?: any[] }
+    if (!d || d.code !== 200) return { success: false, comments: [], hotComments: [], total: 0, message: '获取评论失败' }
+    const m = (c: any) => ({ commentId: c.commentId ?? c.id, content: c.content || '', time: c.time ?? 0, likedCount: c.likedCount || 0, nickname: c.user?.nickname || c.nickname || '匿名用户', avatar: c.user?.avatarUrl || c.avatarUrl || '', userId: c.user?.userId || c.userId || 0, repliedContent: c.beReplied?.[0]?.content || '', repliedNickname: c.beReplied?.[0]?.user?.nickname || '' })
+    return { success: true, comments: (d.comments || []).map(m), hotComments: (d.hotComments || []).map(m), total: d.total || 0 }
+  } catch (e) { return { success: false, comments: [], hotComments: [], total: 0, message: String(e) } }
 })
 
-// ── v3.1.5：热搜列表 ──
-
+// --- v3.1.7：热搜列表简略（优先eapi，降级get） ---
 ipcMain.handle('netease:hot-search', async () => {
   try {
-    // 使用 /search/hot/detail 获取更详细的热搜信息
-    const data = await neteaseGetRequest('/search/hot/detail') as {
-      data?: Array<{ searchWord: string; score: number; content?: string; iconUrl?: string }>
-      code?: number
+    let r: Array<{ searchWord?: string; score?: number; iconUrl?: string }> = []
+    try {
+      const d = await neteaseSmartRequest('/search/hot', {}) as { code?: number; result?: { hots?: Array<{ first?: string; second?: number; third?: string; iconUrl?: string }> } }
+      if (d.code === 200 && d.result?.hots) r = d.result.hots.map((h, i) => ({ searchWord: h.first, score: h.second || 0, iconUrl: h.iconUrl || '' }))
+    } catch {
+      const d = await neteaseGetRequest('/search/hot/detail') as { code?: number; data?: Array<{ searchWord?: string; score?: number; iconUrl?: string }> }
+      if (d.code === 200 && d.data) r = d.data.filter(x => x.searchWord)
     }
-    const hots = (data.data || []).map((h, i) => ({
-      rank: i + 1,
-      keyword: h.searchWord,
-      score: h.score || 0,
-      iconUrl: h.iconUrl || ''
-    }))
-    return { success: true, hots }
-  } catch (err) {
-    return { success: false, hots: [], message: String(err) }
-  }
+    return { success: true, hots: r.map((h, i) => ({ rank: i + 1, keyword: h.searchWord || '', score: h.score || 0, iconUrl: h.iconUrl || '' })) }
+  } catch (e) { return { success: false, hots: [], message: String(e) } }
 })
 
-// ── v3.1.5：排行榜列表 ──
-
+// --- v3.1.5：排行榜列表 ---
 ipcMain.handle('netease:toplist', async () => {
   try {
-    const data = await neteaseGetRequest('/toplist') as {
-      list?: Array<{
-        id: number; name: string; coverImgUrl?: string; updateFrequency?: string
-        description?: string; playCount?: number; tracks?: Array<{ first: string; second: string }>
-      }>
-      code?: number
-    }
-    const lists = (data.list || []).map(l => ({
-      id: l.id,
-      name: l.name,
-      cover: l.coverImgUrl || '',
-      updateFrequency: l.updateFrequency || '',
-      description: l.description || '',
-      playCount: l.playCount || 0,
-      topTracks: (l.tracks || []).slice(0, 3).map(t => ({ name: t.first, artist: t.second }))
-    }))
-    return { success: true, lists }
-  } catch (err) {
-    return { success: false, lists: [], message: String(err) }
-  }
+    const d = await neteaseGetRequest('/toplist') as { list?: Array<{ id: number; name: string; coverImgUrl?: string; updateFrequency?: string; description?: string; playCount?: number; tracks?: Array<{ first: string; second: string }> }>; code?: number }
+    return { success: true, lists: (d.list || []).map(l => ({ id: l.id, name: l.name, cover: l.coverImgUrl || '', updateFrequency: l.updateFrequency || '', description: l.description || '', playCount: l.playCount || 0, topTracks: (l.tracks || []).slice(0, 3).map(t => ({ name: t.first, artist: t.second })) })) }
+  } catch (e) { return { success: false, lists: [], message: String(e) } }
 })
 
-// ── v3.1.5：排行榜详情（含歌曲列表） ──
-
-ipcMain.handle('netease:toplist-detail', async (_e, id: number) => {
+// --- v3.1.5：排行榜详情 ---
+ipcMain.handle('netease:toplist-detail', async (_e, id) => {
   try {
-    const data = await neteaseSmartRequest('/v6/playlist/detail', {
-      id,
-      n: 100000,
-      s: 8
-    }) as {
-      playlist?: {
-        id: number; name: string; coverImgUrl?: string; playCount?: number
-        trackCount?: number; description?: string
-        tracks?: Array<{
-          id: number; name: string; ar?: Array<{ name: string }>
-          al?: { name: string; picUrl?: string }; dt?: number
-        }>
-      }
-      code?: number
-    }
-    const pl = data.playlist
-    if (!pl) return { success: false, playlist: null, tracks: [], message: '榜单不存在' }
-    const tracks = (pl.tracks || []).map(t => ({
-      id: t.id,
-      name: t.name,
-      artist: (t.ar || []).map(a => a.name).join(' / '),
-      album: t.al?.name || '',
-      cover: t.al?.picUrl || '',
-      duration: t.dt || 0
-    }))
-    return {
-      success: true,
-      playlist: {
-        id: pl.id,
-        name: pl.name,
-        cover: pl.coverImgUrl || '',
-        playCount: pl.playCount || 0,
-        trackCount: pl.trackCount || 0,
-        description: pl.description || ''
-      },
-      tracks
-    }
-  } catch (err) {
-    return { success: false, playlist: null, tracks: [], message: String(err) }
-  }
+    const d = await neteaseSmartRequest('/v6/playlist/detail', { id, n: 100000, s: 8 }) as { playlist?: { id: number; name: string; coverImgUrl?: string; playCount?: number; trackCount?: number; description?: string; tracks?: Array<{ id: number; name: string; ar?: Array<{ name: string }>; al?: { name: string; picUrl?: string }; dt?: number }> }; code?: number }
+    const p = d.playlist; if (!p) return { success: false, playlist: null, tracks: [], message: '榜单不存在' }
+    const tracks = (p.tracks || []).map(t => ({ id: t.id, name: t.name, artist: (t.ar || []).map(a => a.name).join(' / '), album: t.al?.name || '', cover: t.al?.picUrl || '', duration: t.dt || 0 }))
+    return { success: true, playlist: { id: p.id, name: p.name, cover: p.coverImgUrl || '', playCount: p.playCount || 0, trackCount: p.trackCount || 0, description: p.description || '' }, tracks }
+  } catch (e) { return { success: false, playlist: null, tracks: [], message: String(e) } }
 })
 
-// ── v3.1.5：用户详情 ──
-
-ipcMain.handle('netease:user-detail', async (_e, uid: number) => {
+// --- v3.1.5：用户详情 ---
+ipcMain.handle('netease:user-detail', async (_e, uid) => {
   try {
-    const data = await neteaseSmartRequest('/user/detail', {
-      uid
-    }) as {
-      profile?: {
-        userId?: number; nickname?: string; avatarUrl?: string; signature?: string
-        level?: number; gender?: number; birthday?: number; province?: number; city?: number
-        followeds?: number; follows?: number; playlistCount?: number
-        eventCount?: number; createdPlaylistCount?: number
-      }
-      level?: number
-      listenSongs?: number
-      code?: number
-    }
-    const p = data.profile
-    if (!p) return { success: false, user: null, message: '获取用户详情失败' }
-    return {
-      success: true,
-      user: {
-        id: p.userId || 0,
-        nickname: p.nickname || '',
-        avatar: p.avatarUrl || '',
-        signature: p.signature || '',
-        level: p.level || data.level || 0,
-        gender: p.gender || 0,
-        birthday: p.birthday || 0,
-        followeds: p.followeds || 0,
-        follows: p.follows || 0,
-        playlistCount: p.playlistCount || 0,
-        listenSongs: data.listenSongs || 0
-      }
-    }
-  } catch (err) {
-    return { success: false, user: null, message: String(err) }
-  }
+    const d = await neteaseSmartRequest('/user/detail', { uid }) as { profile?: { userId?: number; nickname?: string; avatarUrl?: string; signature?: string; level?: number; gender?: number; birthday?: number; followeds?: number; follows?: number; playlistCount?: number }; level?: number; listenSongs?: number; code?: number }
+    const p = d.profile; if (!p) return { success: false, user: null, message: '获取用户详情失败' }
+    return { success: true, user: { id: p.userId || 0, nickname: p.nickname || '', avatar: p.avatarUrl || '', signature: p.signature || '', level: p.level || d.level || 0, gender: p.gender || 0, birthday: p.birthday || 0, followeds: p.followeds || 0, follows: p.follows || 0, playlistCount: p.playlistCount || 0, listenSongs: d.listenSongs || 0 } }
+  } catch (e) { return { success: false, user: null, message: String(e) } }
 })
 
-// ── v3.1.5：心动模式（官方 intelligence list API） ──
-
-ipcMain.handle('netease:intelligence-list', async (_e, songId: number, playlistId: number) => {
+// --- v3.1.7：心动模式智能播放 ---
+ipcMain.handle('netease:intelligence-list', async (_e, songId, playlistId) => {
   try {
-    const data = await neteaseSmartRequest('/playmode/intelligence/list', {
-      songId,
-      type: 'fromSong',
-      id: playlistId
-    }) as {
-      data?: Array<{
-        songInfo?: {
-          id: number; name: string; ar?: Array<{ name: string }>
-          al?: { name: string; picUrl?: string }; dt?: number
-        }
-        recommended?: boolean
-      }>
-      code?: number
-    }
-    const songs = (data.data || [])
-      .filter(item => item.songInfo)
-      .map(item => {
-        const s = item.songInfo!
-        return {
-          id: s.id,
-          name: s.name,
-          artist: (s.ar || []).map(a => a.name).join(' / '),
-          album: s.al?.name || '',
-          cover: s.al?.picUrl || '',
-          duration: s.dt || 0,
-          recommended: item.recommended || false
-        }
-      })
-    return { success: true, songs }
-  } catch (err) {
-    return { success: false, songs: [], message: String(err) }
-  }
+    const d = await neteaseSmartRequest('/playmode/intelligence/list', { songId, pid: playlistId, rid: playlistId }) as { code?: number; data?: Array<{ songInfo?: { id: number; name: string; ar?: Array<{ name: string }>; al?: { name: string; picUrl?: string }; dt?: number }; recommended?: boolean }> }
+    if (!d || d.code !== 200) return { success: false, songs: [], message: '心跳模式请求失败' }
+    return { success: true, songs: (d.data || []).filter(i => i.songInfo).map(i => { const s = i.songInfo!; return { id: s.id, name: s.name, artist: (s.ar || []).map(a => a.name).join(' / '), album: s.al?.name || '', cover: s.al?.picUrl || '', duration: s.dt || 0, recommended: i.recommended || false } }) }
+  } catch (e) { return { success: false, songs: [], message: String(e) } }
 })
+
+// --- v3.1.7：喜欢音乐列表 ---
+ipcMain.handle('netease:user-like-songs', async (_e, uid, limit = 50, offset = 0) => {
+  try {
+    const d = await neteaseSmartRequest('/likelist', { uid }) as { code?: number; ids?: Array<{ id: number }> }
+    if (!d || d.code !== 200 || !d.ids?.length) return { success: true, songIds: [], total: 0 }
+    return { success: true, songIds: d.ids.slice(offset, offset + limit).map(i => i.id), total: d.ids.length }
+  } catch (e) { return { success: false, songIds: [], total: 0, message: String(e) } }
+})
+
+// --- v3.1.7：云盘歌曲列表 ---
+ipcMain.handle('netease:cloud', async (_e, limit = 500, offset = 0) => {
+  try {
+    const d = await neteaseSmartRequest('/user/cloud', { limit, offset }) as { code?: number; data?: Array<{ id: number; songName: string; fileSize: number; song?: { ar?: Array<{ name: string }>; al?: { name?: string; picUrl?: string } }>; count?: number } }
+    if (!d || d.code !== 200) return { success: false, cloudSongs: [], total: 0, message: '获取云盘失败' }
+    const songs = (d.data || []).map(s => ({ id: s.id, name: s.songName || s.song?.name || '未知曲目', artist: (s.song?.ar || []).map(a => a.name).join(' / '), album: s.song?.al?.name || '', cover: s.song?.al?.picUrl || '', size: s.fileSize || 0 }))
+    return { success: true, cloudSongs: songs, total: d.count || songs.length }
+  } catch (e) { return { success: false, cloudSongs: [], total: 0, message: String(e) } }
+})
+
 
 // ── 国内天气服务（v2.8.0：中国天气网数据源，主进程代理避免跨域） ──
 

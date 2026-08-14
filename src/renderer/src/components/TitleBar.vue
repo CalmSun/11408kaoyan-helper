@@ -1315,17 +1315,24 @@ onMounted(() => {
   object-fit: cover;
 }
 
-/* v3.1.5：网易云用户详情面板 */
+/* v3.1.7：网易云用户详情面板 - 现代化设计 */
 .ncm-user-panel {
   font-size: 13px;
   color: var(--mo-text-1);
+  background: var(--mo-surface);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid var(--mo-border);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
 }
 
 .ncm-user-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--mo-border);
 }
 
 .ncm-user-avatar {
@@ -1364,13 +1371,13 @@ onMounted(() => {
 
 .ncm-user-stats {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  padding: 10px 0;
-  border-top: 1px solid var(--mo-border);
-  border-bottom: 1px solid var(--mo-border);
-  margin-bottom: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px 0;
+  margin: 16px 0;
   text-align: center;
+  background: var(--mo-bg-2);
+  border-radius: 8px;
 }
 
 .ncm-stat {
@@ -1392,19 +1399,20 @@ onMounted(() => {
 
 .ncm-user-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
 }
 
 .ncm-action-btn {
   flex: 1;
-  padding: 6px 0;
+  padding: 8px 0;
   border-radius: 8px;
   border: 1px solid var(--mo-border);
   background: var(--mo-surface);
   color: var(--mo-text-2);
-  font-size: 12px;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
+  font-weight: 500;
 }
 
 .ncm-action-btn:hover {
