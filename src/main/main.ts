@@ -1616,19 +1616,22 @@ ipcMain.handle('netease:user-account', async () => {
       viptype?: number
       createTime?: number
       createDays?: number
-      code?: number
     }
     if (data.code !== 200 || !data.profile) return { success: false, message: '获取账号信息失败' }
     const bPhone = (data.bound || []).find(b => b.type === 2)
     const bEmail = (data.bound || []).find(b => b.type === 3)
+    const bindTime = bPhone?.bindTime
+    const emailBindTime = bEmail?.bindTime
+    const phoneStr = (bindTime && bindTime > 0 && !bPhone?.expired) ? `${bindTime.toString().slice(0,3)}****${bindTime.toString().slice(-4)}` : ''
+    const emailStr = (bEmail && bEmail.bindingStatus === 1 && emailBindTime && emailBindTime > 0) ? `${emailBindTime.toString().slice(0,3)}@***` : ''
     return {
       success: true,
       data: {
         id: data.account?.id || data.profile.userId || 0,
         username: data.account?.userName || '',
         nickname: data.profile.nickname || '',
-        phone: bPhone ? (bPhone.bindTime > 0 ? bPhone.expired ? '' : `${bPhone.bindTime.toString().slice(0,3)}****${bPhone.bindTime.toString().slice(-4)}` : '') : '',
-        email: bEmail && bEmail.bindingStatus === 1 ? bEmail.bindTime > 0 ? `${bEmail.bindTime.toString().slice(0,3)}@***` : '' : '',
+        phone: phoneStr,
+        email: emailStr,
         vipType: data.viptype || 0,
         createTime: data.createTime || 0,
         createDays: data.createDays || 0,
