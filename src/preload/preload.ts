@@ -44,17 +44,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseSetCookie: (cookie: string) => ipcRenderer.invoke('netease:set-cookie', cookie),
   neteaseUserPlaylist: (uid: number, limit?: number, offset?: number) => ipcRenderer.invoke('netease:user-playlist', uid, limit, offset),
   neteasePlaylistDetail: (id: number) => ipcRenderer.invoke('netease:playlist-detail', id),
-  // v3.1.5：排行榜、用户详情
+  // v3.1.3：网易云歌曲评论
+  neteaseComments: (id: number, pageNo?: number, pageSize?: number, sortType?: number) => ipcRenderer.invoke('netease:comments', id, pageNo, pageSize, sortType),
+  // v3.1.5：热搜列表、排行榜、用户详情、心动模式
+  neteaseHotSearch: () => ipcRenderer.invoke('netease:hot-search'),
   neteaseToplist: () => ipcRenderer.invoke('netease:toplist'),
   neteaseToplistDetail: (id: number) => ipcRenderer.invoke('netease:toplist-detail', id),
   neteaseUserDetail: (uid: number) => ipcRenderer.invoke('netease:user-detail', uid),
-  // v3.2.0：新增网易云 API
-  neteaseComments: (id: number, type?: number, limit?: number, offset?: number, sortType?: number) => ipcRenderer.invoke('netease:comments', id, type, limit, offset, sortType),
-  neteaseIntelligenceList: (songId: number, playlistId: number) => ipcRenderer.invoke('netease:intelligence-list', songId, playlistId),
   neteaseUserAccount: () => ipcRenderer.invoke('netease:user-account'),
-  neteaseLikeSong: (id: number, like?: boolean) => ipcRenderer.invoke('netease:like-song', id, like),
-  // v3.3.0：获取用户喜欢的音乐列表
-  neteaseLikelist: (uid: number) => ipcRenderer.invoke('netease:likelist', uid),
+  neteaseLike: (songId: number, like?: boolean) => ipcRenderer.invoke('netease:like', songId, like),
+  neteaseSongLikeStatus: (songId: number) => ipcRenderer.invoke('netease:song-like-status', songId),
+  neteaseIntelligenceList: (songId: number, playlistId: number) => ipcRenderer.invoke('netease:intelligence-list', songId, playlistId),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

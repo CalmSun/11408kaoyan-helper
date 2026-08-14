@@ -116,83 +116,12 @@ interface ElectronAPI {
     tracks?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]
     message?: string
   }>
-  // v3.1.5：排行榜列表
-  neteaseToplist: () => Promise<{ success: boolean; lists?: { id: number; name: string; cover: string; updateFrequency: string; description: string; playCount: number; topTracks: { name: string; artist: string }[] }[]; message?: string }>
-  // v3.1.5：排行榜详情
-  neteaseToplistDetail: (id: number) => Promise<{ success: boolean; playlist?: { id: number; name: string; cover: string; playCount: number; trackCount: number; description: string } | null; tracks?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]; message?: string }>
-  // v3.1.5：用户详情
-  neteaseUserDetail: (uid: number) => Promise<{ success: boolean; user?: { id: number; nickname: string; avatar: string; signature: string; level: number; gender: number; birthday: number; followeds: number; follows: number; playlistCount: number; listenSongs: number } | null; message?: string }>
-  // v3.2.0：新增网易云 API
-  neteaseComments: (id: number, type?: number, limit?: number, offset?: number, sortType?: number) => Promise<{
+  // v3.1.3：网易云歌曲评论
+  neteaseComments: (id: number, pageNo?: number, pageSize?: number, sortType?: number) => Promise<{
     success: boolean
-    hotComments?: {
-      id: number
-      userId: number
-      nickname: string
-      avatar: string
-      vipType: number
-      content: string
-      time: number
-      likedCount: number
-      liked: boolean
-      replies: { userId: number; nickname: string; avatar: string; content: string }[]
-    }[]
-    comments?: {
-      id: number
-      userId: number
-      nickname: string
-      avatar: string
-      vipType: number
-      content: string
-      time: number
-      likedCount: number
-      liked: boolean
-      replies: { userId: number; nickname: string; avatar: string; content: string }[]
-    }[]
+    comments?: { commentId: number; content: string; time: number; likedCount: number; nickname: string; avatar: string; userId: number; repliedContent: string; repliedNickname: string }[]
+    hotComments?: { commentId: number; content: string; time: number; likedCount: number; nickname: string; avatar: string; userId: number; repliedContent: string; repliedNickname: string }[]
     total?: number
-    message?: string
-  }>
-  neteaseIntelligenceList: (songId: number, playlistId: number) => Promise<{
-    success: boolean
-    songs?: { id: number; name: string; artist: string; album: string; cover: string; duration: number }[]
-    message?: string
-  }>
-  // v3.3.0：增强版用户账号信息
-  neteaseUserAccount: () => Promise<{
-    success: boolean
-    user?: {
-      id: number
-      userName: string
-      nickname: string
-      avatar: string
-      signature: string
-      level: number
-      vipType: number
-      gender: number
-      birthday: number
-      followeds: number
-      follows: number
-      playlistCount: number
-      listenSongs: number
-      description: string
-      expertTags: string[]
-      djStatus: number
-      authStatus: number
-      createTime: number
-      city: number
-      province: number
-    } | null
-    message?: string
-  }>
-  neteaseLikeSong: (id: number, like?: boolean) => Promise<{
-    success: boolean
-    code?: number
-    message?: string
-  }>
-  // v3.3.0：获取用户喜欢的音乐列表
-  neteaseLikelist: (uid: number) => Promise<{
-    success: boolean
-    ids?: number[]
     message?: string
   }>
   // 国内天气服务（v2.8.0）

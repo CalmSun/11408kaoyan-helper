@@ -83,20 +83,16 @@
             <button class="ctrl-btn" title="下一首" @click="music.next()">
               <el-icon><DArrowRight /></el-icon>
             </button>
-          </div>
-          <!-- v3.3.0：喜欢按钮（取代评论和音量） -->
-          <div class="player-extra-controls">
-            <button 
-              v-if="music.currentTrack?.source === 'online'" 
-              class="ctrl-btn" 
-              :class="{ active: isCurrentSongLiked, 'like-active': isCurrentSongLiked }"
-              :title="isCurrentSongLiked ? '取消喜欢' : '喜欢这首歌曲'"
-              @click="toggleLikeSong"
-              :disabled="music.likingLoading"
+            <!-- v3.1.6：喜欢按钮 -->
+            <button
+              class="ctrl-btn like-btn"
+              :class="{ active: music.currentLiked }"
+              :title="music.currentLiked ? '取消喜欢' : '喜欢该音乐'"
+              :disabled="!music.currentTrack?.id"
+              @click="handleToggleLike"
             >
-              <el-icon><Star /></el-icon>
+              <el-icon><StarFilled /></el-icon>
             </button>
-            <span v-else class="like-hint">本地文件不支持喜欢</span>
           </div>
         </div>
 
@@ -113,6 +109,7 @@
               :key="i"
               class="lyric-line"
               :class="{ active: i === music.currentLyricIndex }"
+              :ref="el => { if (i === music.currentLyricIndex && el) scrollToLyric(el as HTMLElement) }"
             >
               {{ line.text }}
             </div>
@@ -122,13 +119,16 @@
 
       <!-- 右侧：搜索 + 我的歌单 + 播放列表 -->
       <div class="music-list-col">
-        <!-- v3.1.8：Tab 切换（搜索/歌单/排行榜） -->
+        <!-- v3.1.5：Tab 切换（增加热搜/排行榜） -->
         <div class="music-tabs">
           <button class="music-tab" :class="{ active: neteaseTab === 'search' }" @click="neteaseTab = 'search'">
             <el-icon><Search /></el-icon> 搜索
           </button>
           <button class="music-tab" :class="{ active: neteaseTab === 'playlists' }" @click="neteaseTab = 'playlists'; onPlaylistTab()">
             <el-icon><List /></el-icon> 歌单
+          </button>
+          <button class="music-tab" :class="{ active: neteaseTab === 'hotsearch' }" @click="neteaseTab = 'hotsearch'; onHotSearchTab()">
+            <el-icon><TrendCharts /></el-icon> 热搜
           </button>
           <button class="music-tab" :class="{ active: neteaseTab === 'toplist' }" @click="neteaseTab = 'toplist'; onToplistTab()">
             <el-icon><Trophy /></el-icon> 排行榜
@@ -181,6 +181,38 @@
           </div>
           <div v-else-if="music.searchKeyword" class="search-empty">
             未找到相关歌曲
+          </div>
+        </div>
+
+        <!-- v3.1.5：热搜列表 -->
+        <div class="glass-card hotsearch-card" v-show="neteaseTab === 'hotsearch'">
+          <h3 class="section-title">
+            <el-icon><TrendCharts /></el-icon>
+            热搜榜
+            <el-button size="small" text @click="music.fetchHotSearch()" :loading="music.hotSearchLoading" style="margin-left: auto">
+              刷新
+            </el-button>
+          </h3>
+          <div v-if="music.hotSearchLoading && music.hotSearchList.length === 0" class="search-loading">
+            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
+          </div>
+          <div v-else-if="music.hotSearchList.length > 0" class="hotsearch-list">
+            <div
+              v-for="item in music.hotSearchList"
+              :key="item.rank"
+              class="hotsearch-item"
+              @click="searchFromHot(item.keyword)"
+            >
+              <span class="hotsearch-rank" :class="{ 'top3': item.rank <= 3 }">{{ item.rank }}</span>
+              <div class="hotsearch-info">
+                <div class="hotsearch-keyword">{{ item.keyword }}</div>
+                <div class="hotsearch-score" v-if="item.score > 0">{{ item.score }} 热度</div>
+              </div>
+              <el-icon class="hotsearch-icon" v-if="item.iconUrl"><img :src="item.iconUrl" class="hotsearch-badge" /></el-icon>
+            </div>
+          </div>
+          <div v-else class="search-empty">
+            暂无热搜数据，请点击刷新重试
           </div>
         </div>
 
@@ -410,8 +442,7 @@
         </div>
       </div>
     </el-dialog>
-
-    <!-- v3.3.0：评论功能已移除 -->
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -419,9 +450,9 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useMusicStore } from '@/stores/music'
 import {
   Headset, FolderOpened, Document, Delete, Search,
-  VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort,
-  List, Plus, Close, User, InfoFilled, Loading, Trophy,
-  Star
+  VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, StarFilled,
+  List, Plus, Close, User, InfoFilled, Loading,
+  TrendCharts, Trophy
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -432,24 +463,19 @@ const progressValue = ref(0)
 const lyricsContainer = ref<HTMLElement | null>(null)
 const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime 覆盖
 
-// v3.1.8：Tab 类型（移除云盘/喜欢音乐/热搜）
-const neteaseTab = ref<'search' | 'playlists' | 'toplist'>('search')
+// v3.1.5：Tab 类型扩展（增加热搜/排行榜）
+const neteaseTab = ref<'search' | 'playlists' | 'hotsearch' | 'toplist'>('search')
 const showLoginDialog = ref(false)
 const cookieInput = ref('')
 const cookieLogging = ref(false)
 const viewingPlaylistId = ref(0)
 const viewingToplistId = ref(0)
 
-// v3.1.8：进度更新节流（减少 timeupdate 频繁触发导致的页面重渲染卡顿）
-let lastProgressUpdate = 0
+const currentCover = computed(() => music.currentTrack?.cover || '')
+
 watch(() => music.currentTime, (t) => {
   if (!isDraggingProgress.value) {
-    const now = Date.now()
-    // 播放中最多每 300ms 更新一次进度 UI；新歌曲/暂停时立即更新
-    if (now - lastProgressUpdate >= 300 || !music.isPlaying || Math.abs(t - progressValue.value) > 1.5) {
-      progressValue.value = t
-      lastProgressUpdate = now
-    }
+    progressValue.value = t
   }
 })
 
@@ -485,33 +511,16 @@ function doSearch() {
   }
 }
 
-// v3.1.8：歌词滚动优化——仅在歌词行索引变化时平滑滚动，避免 timeupdate 高频触发导致的卡顿
-watch(() => music.currentLyricIndex, (idx) => {
-  if (idx < 0 || !lyricsContainer.value) return
-  const activeLine = lyricsContainer.value.querySelector('.lyric-line.active') as HTMLElement | null
-  if (!activeLine) return
+function scrollToLyric(el: HTMLElement) {
+  if (!lyricsContainer.value) return
   const container = lyricsContainer.value
-  const targetScroll = activeLine.offsetTop - container.clientHeight / 2 + activeLine.clientHeight / 2
+  const elTop = el.offsetTop
+  const containerHeight = container.clientHeight
+  const targetScroll = elTop - containerHeight / 2 + el.clientHeight / 2
   container.scrollTo({ top: targetScroll, behavior: 'smooth' })
-})
-
-// v3.1.5：切换到歌单 Tab 时加载
-
-// v3.3.0：喜欢功能（评论功能已移除）
-const isCurrentSongLiked = computed(() => {
-  return music.currentTrack?.id ? music.isSongLiked(music.currentTrack.id) : false
-})
-
-async function toggleLikeSong(): Promise<void> {
-  if (music.currentTrack?.id) {
-    const success = await music.likeSong(music.currentTrack.id, !isCurrentSongLiked.value)
-    if (success) {
-      ElMessage.success(isCurrentSongLiked.value ? '已喜欢这首歌曲' : '已取消喜欢')
-    } else {
-      ElMessage.error('操作失败，请重试')
-    }
-  }
 }
+
+// ── v3.1.0：网易云 Cookie 登录 ──
 
 async function handleCookieLogin() {
   const cookie = cookieInput.value.trim()
@@ -539,10 +548,17 @@ async function handleLogout() {
   ElMessage.success('已退出网易云登录')
 }
 
-// v3.1.8：切换到歌单 Tab 时加载
+// v2.9.2：切换到歌单 Tab 时加载
 function onPlaylistTab() {
   if (music.neteaseLoggedIn && music.userPlaylists.length === 0) {
     music.fetchUserPlaylists()
+  }
+}
+
+// v3.1.5：切换到热搜 Tab 时加载
+function onHotSearchTab() {
+  if (music.hotSearchList.length === 0) {
+    music.fetchHotSearch()
   }
 }
 
@@ -551,6 +567,13 @@ function onToplistTab() {
   if (music.toplistList.length === 0) {
     music.fetchToplist()
   }
+}
+
+// v3.1.5：从热搜列表点击搜索
+function searchFromHot(keyword: string) {
+  searchKeyword.value = keyword
+  neteaseTab.value = 'search'
+  doSearch()
 }
 
 // v3.1.5：打开排行榜详情
@@ -569,6 +592,28 @@ async function openPlaylist(id: number) {
 watch(showLoginDialog, (val) => {
   if (!val) {
     cookieInput.value = ''
+  }
+})
+
+// ── v3.1.6：喜欢音乐 ──
+
+async function handleToggleLike() {
+  const track = music.currentTrack
+  if (!track || !track.id) return
+  const success = await music.toggleLikeSong(track.id)
+  if (success) {
+    ElMessage.success(music.currentLiked ? '已喜欢' : '已取消喜欢')
+  } else {
+    ElMessage.warning('操作失败，请检查是否已登录')
+  }
+}
+
+// 切换歌曲时检查喜欢状态
+watch(() => music.currentTrack?.id, (newId) => {
+  if (newId && music.currentTrack?.source === 'online') {
+    music.checkSongLikeStatus(newId)
+  } else {
+    music.currentLiked = false
   }
 })
 
@@ -773,29 +818,17 @@ onUnmounted(() => {
   opacity: 0.9;
 }
 
-/* v3.3.0：额外控制区（喜欢按钮取代音量） */
-.player-extra-controls {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 12px;
+/* v3.1.6：喜欢按钮 */
+.like-btn.active {
+  color: #ff6b6b;
 }
-
-.ctrl-btn.like-active {
-  background: #e74c3c;
-  border-color: #e74c3c;
-  color: #fff;
+.like-btn.active:hover {
+  background: #ff6b6b;
+  border-color: #ff6b6b;
 }
-
-.ctrl-btn.like-active:hover {
-  background: #c0392b;
-  border-color: #c0392b;
-}
-
-.like-hint {
-  font-size: 12px;
-  color: var(--mo-text-3);
+.like-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* 歌词卡片 */
@@ -1247,6 +1280,75 @@ onUnmounted(() => {
   font-size: 11px;
 }
 
+/* v3.1.5：热搜列表 */
+.hotsearch-card {
+  margin-bottom: 16px;
+}
+
+.hotsearch-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.hotsearch-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.hotsearch-item:hover {
+  background: var(--mo-bg-2);
+}
+
+.hotsearch-rank {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mo-text-3);
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--mo-surface);
+}
+
+.hotsearch-rank.top3 {
+  background: var(--mo-primary);
+  color: #fff;
+}
+
+.hotsearch-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hotsearch-keyword {
+  font-size: 13px;
+  color: var(--mo-text-1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hotsearch-score {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  margin-top: 2px;
+}
+
+.hotsearch-badge {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
 /* v3.1.5：排行榜 */
 .toplist-card {
   margin-bottom: 16px;
@@ -1318,6 +1420,4 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* v3.3.0：评论样式已移除 */
 </style>
