@@ -1058,8 +1058,10 @@ async function neteaseEapiRequest(path: string, data: Record<string, unknown>): 
     throw new Error(`NetEase eapi ${path} HTTP ${res.status}`)
   }
   const json = await res.json() as { code?: number; message?: string }
-  if (json.code && json.code !== 200) {
-    throw new Error(`NetEase eapi ${path} code=${json.code}${json.message ? ': ' + json.message : ''}`)
+  // v3.2.4：eapi 若返回无 code 字段或非 200（如喜欢接口 /radio/like 的某些响应），必须抛错，
+  // 才能让 neteaseSmartRequest 降级到 weapi（ncm-api-rs 参考实现即用 weapi 处理喜欢）。
+  if (json.code !== 200) {
+    throw new Error(`NetEase eapi ${path} code=${json.code ?? 'unknown'}${json.message ? ': ' + json.message : ''}`)
   }
   return json
 }
@@ -1118,8 +1120,9 @@ async function neteaseRequest(path: string, data: Record<string, unknown>): Prom
     throw new Error(`NetEase API ${path} HTTP ${res.status}`)
   }
   const json = await res.json() as { code?: number; message?: string }
-  if (json.code && json.code !== 200) {
-    throw new Error(`NetEase API ${path} code=${json.code}${json.message ? ': ' + json.message : ''}`)
+  // v3.2.4：与 eapi 一致——无 code 或非 200 视为失败抛错，避免静默返回错误响应
+  if (json.code !== 200) {
+    throw new Error(`NetEase API ${path} code=${json.code ?? 'unknown'}${json.message ? ': ' + json.message : ''}`)
   }
   return json
 }

@@ -209,7 +209,7 @@
               :key="song.id"
               class="search-item"
             >
-              <img v-if="song.cover" :src="song.cover" class="song-cover" />
+              <img v-if="song.cover" :src="song.cover" class="song-cover" loading="lazy" />
               <div v-else class="song-cover placeholder"><el-icon><Headset /></el-icon></div>
               <div class="song-info">
                 <div class="song-name">{{ song.name }}</div>
@@ -270,7 +270,7 @@
             <el-icon><Folder /></el-icon>
             云盘歌曲
             <span v-if="music.cloudDriveCount" class="playlist-count">{{ music.cloudDriveCount }} 首</span>
-            <el-button size="small" text @click="music.fetchCloudDrive()" :loading="music.cloudDriveLoading" style="margin-left: auto">
+            <el-button size="small" text @click="refreshCloudDrive" :loading="music.cloudDriveLoading" style="margin-left: auto">
               刷新
             </el-button>
           </h3>
@@ -298,12 +298,12 @@
             </div>
             <div v-else-if="music.cloudDriveList.length > 0" class="playlist-tracks">
               <div
-                v-for="(track, i) in music.cloudDriveList"
+                v-for="(track, i) in music.cloudDriveList.slice(0, cloudVisible)"
                 :key="track.id"
                 class="search-item"
               >
                 <span class="item-index">{{ i + 1 }}</span>
-                <img v-if="track.cover" :src="track.cover" class="song-cover" />
+                <img v-if="track.cover" :src="track.cover" class="song-cover" loading="lazy" />
                 <div v-else class="song-cover placeholder"><el-icon><Headset /></el-icon></div>
                 <div class="song-info">
                   <div class="song-name">{{ track.name }}</div>
@@ -320,6 +320,10 @@
                     <el-icon><StarFilled v-if="music.isSongLiked(track.id)" /><Star v-else /></el-icon>
                   </el-button>
                 </div>
+              </div>
+              <!-- v3.2.4：加载更多（云盘歌曲可能上百首，分批渲染减少卡顿） -->
+              <div v-if="music.cloudDriveList.length > cloudVisible" class="load-more-row" @click="loadMoreCloud">
+                加载更多（已显示 {{ cloudVisible }} / {{ music.cloudDriveList.length }}）
               </div>
             </div>
             <div v-else class="search-empty">
@@ -503,7 +507,7 @@
               播放列表为空，请选择本地文件或搜索在线歌曲
             </div>
             <div
-              v-for="(track, i) in music.playlist"
+              v-for="(track, i) in music.playlist.slice(0, queueVisible)"
               :key="i"
               class="playlist-item"
               :class="{ active: i === music.currentIndex }"
@@ -520,6 +524,10 @@
               <button class="item-remove" title="移除" @click.stop="music.removeTrack(i)">
                 <el-icon><Close /></el-icon>
               </button>
+            </div>
+            <!-- v3.2.4：播放队列过长时分批渲染，避免卡顿 -->
+            <div v-if="music.playlist.length > queueVisible" class="load-more-row" @click="loadMoreQueue">
+              加载更多（已显示 {{ queueVisible }} / {{ music.playlist.length }}）
             </div>
           </div>
         </div>
@@ -673,6 +681,14 @@ const isDraggingProgress = ref(false) // v3.0.0：防止拖动时被 currentTime
 
 // v3.1.5：Tab 类型扩展（v3.2.2：原热搜 Tab 改为云盘）
 const neteaseTab = ref<'search' | 'playlists' | 'clouddrive' | 'toplist'>('search')
+
+// v3.2.4：长列表可视数量分页——避免云盘/播放队列歌曲量大时一次性渲染过多 DOM 导致卡顿
+const VISIBLE_STEP = 60
+const cloudVisible = ref(VISIBLE_STEP)
+const queueVisible = ref(VISIBLE_STEP)
+function loadMoreCloud() { cloudVisible.value += VISIBLE_STEP }
+function loadMoreQueue() { queueVisible.value += VISIBLE_STEP }
+
 const showLoginDialog = ref(false)
 const cookieInput = ref('')
 const cookieLogging = ref(false)
@@ -865,8 +881,15 @@ function onCloudDriveTab() {
     return
   }
   if (music.cloudDriveList.length === 0) {
+    cloudVisible.value = VISIBLE_STEP // v3.2.4：重置可视数量
     music.fetchCloudDrive()
   }
+}
+
+// v3.2.4：手动刷新云盘——重置可视数量并重新拉取
+function refreshCloudDrive() {
+  cloudVisible.value = VISIBLE_STEP
+  music.fetchCloudDrive()
 }
 
 // v3.1.5：从热搜列表点击搜索
@@ -1116,20 +1139,23 @@ onUnmounted(() => {
   margin-bottom: 0 !important;
 }
 
-/* v3.2.3：右侧 Tab 内容卡片（搜索/云盘/排行榜/我的歌单）——按内容高度，不增长，避免卡片过长 */
+/* v3.2.4：右侧 Tab 内容卡片（搜索/云盘/排行榜/我的歌单）——主内容区，basis 0 + flex:1 填充剩余空间
+   内部列表各自 overflow:auto 滚动，始终可见，不再被下方播放列表挤占 */
 .search-card,
 .clouddrive-card,
 .toplist-card,
 .myplaylists-card {
-  flex: 0 1 auto;
+  flex: 1 1 0;
   min-height: 0;
   margin-bottom: 0 !important;
 }
 
-/* v3.2.3：底部播放列表卡片——填充右侧剩余空间，与左侧歌词卡片底部对齐 */
+/* v3.2.4：底部播放列表卡片——按内容高度，上限 40vh，内部滚动；
+   flex:0 1 auto 不主动增长，避免歌曲多时挤占上方 Tab 内容卡片 */
 .playlist-card {
-  flex: 1 1 auto;
-  min-height: 0;
+  flex: 0 1 auto;
+  min-height: 120px;
+  max-height: 40vh;
   margin-bottom: 0 !important;
 }
 
@@ -1435,6 +1461,24 @@ onUnmounted(() => {
   color: var(--mo-text-3);
   font-weight: 400;
   margin-left: 8px;
+}
+
+/* v3.2.4：长列表"加载更多"按钮 */
+.load-more-row {
+  text-align: center;
+  padding: 10px;
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--mo-text-2);
+  background: var(--mo-fill-1, rgba(125, 125, 125, 0.08));
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  user-select: none;
+}
+.load-more-row:hover {
+  background: var(--mo-primary, #409eff);
+  color: #fff;
 }
 
 .playlist-container {
