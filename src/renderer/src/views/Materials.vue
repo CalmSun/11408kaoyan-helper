@@ -91,12 +91,25 @@
           </el-button>
         </h3>
         <div class="preview-container" v-if="currentFile">
-          <!-- PDF 预览 -->
-          <iframe
-            v-if="currentFile.ext === '.pdf'"
-            :src="currentFile.url"
-            class="pdf-viewer"
-          />
+          <!-- PDF 预览（v3.3.1：原生 PDFium + 加载指示/错误处理/切换时释放内存） -->
+          <div v-if="currentFile.ext === '.pdf'" class="pdf-wrap">
+            <iframe
+              v-if="pdfVisible"
+              :src="pdfSrc"
+              class="pdf-viewer"
+              @load="onPdfLoaded"
+              @error="onPdfError"
+            />
+            <div v-if="pdfLoading" class="pdf-loading-mask">
+              <el-icon class="is-loading" :size="40"><Loading /></el-icon>
+              <span>PDF 加载中...</span>
+            </div>
+            <div v-if="pdfError" class="pdf-error-mask">
+              <el-icon :size="40"><Warning /></el-icon>
+              <span>PDF 加载失败</span>
+              <el-button size="small" type="primary" @click="retryPdf">重试</el-button>
+            </div>
+          </div>
           <!-- 视频播放（v3.0.0：支持音量调节/全屏/进度拖动，Range 协议加速加载；v3.2.2：美化 UI + 修复音量过低 + 增强无声检测） -->
           <div v-else-if="isVideo(currentFile.ext)" class="video-wrap" ref="videoWrap">
             <div class="video-stage">
@@ -268,8 +281,19 @@ const videoLoading = ref(false)
 let audioCtx: AudioContext | null = null
 let gainNode: GainNode | null = null
 let videoSourceNode: MediaElementAudioSourceNode | null = null
-// 防止重复接入
-let audioNodeAttached = false
+// v3.3.1：记录已接入增益链路的 video 元素——createMediaElementSource 每个元素仅能调用一次，
+// 需据此判断是「同元素复用链路」还是「新元素需重建链路」
+let attachedVideoEl: HTMLVideoElement | null = null
+
+// v3.3.1：PDF 加载状态管理（借鉴 vue-pdf 的懒加载/显式释放模式，但保留原生 PDFium 的高效渲染）
+const pdfVisible = ref(false)
+const pdfLoading = ref(false)
+const pdfError = ref(false)
+// PDF URL 加上视图参数：FitH=按宽度适配、toolbar=1显示工具栏、page=1首页
+const pdfSrc = computed(() => {
+  if (!currentFile.value?.url) return ''
+  return `${currentFile.value.url}#view=FitH&toolbar=1&page=1`
+})
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
@@ -357,9 +381,48 @@ onMounted(() => {
   window.addEventListener('keydown', onVideoKeydown)
 })
 
+// v3.3.1：组件卸载时彻底释放视频与音频资源，避免 AudioContext / MediaElementSource 泄漏
 onUnmounted(() => {
   window.removeEventListener('keydown', onVideoKeydown)
+  disposeVideoResources()
 })
+
+// v3.3.1：集中释放视频相关资源（src、Web Audio 链路、状态标记）
+// 仅在「离开视频模式」或「组件卸载」时调用——video→video 切换由 Vue 复用同一元素，不能重建链路
+function disposeVideoResources() {
+  if (videoEl.value) {
+    try {
+      videoEl.value.pause()
+    } catch { /* ignore */ }
+    // 清空 src 触发底层 media element 释放网络流与解码缓冲
+    videoEl.value.removeAttribute('src')
+    try { videoEl.value.load() } catch { /* ignore */ }
+  }
+  if (audioCtx) {
+    audioCtx.close().catch(() => { /* ignore */ })
+    audioCtx = null
+    gainNode = null
+    videoSourceNode = null
+    attachedVideoEl = null
+  }
+}
+
+// v3.3.1：PDF 加载完成回调（iframe @load 仅在主框架加载完成时触发，PDFium 内部逐页懒渲染不影响）
+function onPdfLoaded() {
+  pdfLoading.value = false
+  pdfError.value = false
+}
+function onPdfError() {
+  pdfLoading.value = false
+  pdfError.value = true
+}
+// 重试：先卸载再重新挂载 iframe
+function retryPdf() {
+  pdfVisible.value = false
+  pdfError.value = false
+  pdfLoading.value = true
+  nextTick(() => { pdfVisible.value = true })
+}
 
 // v3.2.3：视频键盘快捷键：←/→ 快退快进 5 秒，↑/↓ 音量 ±5，空格 播放/暂停
 function onVideoKeydown(e: KeyboardEvent) {
@@ -405,7 +468,19 @@ function changeVolumeStep(step: number) {
 }
 
 // v3.0.0：切换文件时重置视频状态
-watch(() => currentFile.value, () => {
+// v3.3.1：借鉴 videojs-player 的资源管理模式——仅在「离开视频模式」时释放音频链路，
+// video→video 由 Vue 复用同一 <video> 元素，不能重建 createMediaElementSource 链路
+watch(() => currentFile.value, (newVal, oldVal) => {
+  const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
+  const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
+  // 离开视频模式（video→pdf/image/other 或 video→null）：彻底释放 src + Web Audio 上下文
+  if (oldIsVideo && !newIsVideo) {
+    disposeVideoResources()
+  }
+  // 旧文件是 PDF：先卸载 iframe（v-if=false 触发 PDFium 释放内存），下次再挂载
+  if (oldVal && oldVal.ext === '.pdf') {
+    pdfVisible.value = false
+  }
   videoCurrent.value = 0
   videoDuration.value = 0
   videoPlaying.value = false
@@ -415,6 +490,17 @@ watch(() => currentFile.value, () => {
   videoBuffered.value = 0
   videoLoading.value = false
   audioWarning.value = ''
+  // v3.3.1：新文件是 PDF 时，先显示 loading，下一帧再挂载 iframe（懒加载，避免立即占用内存）
+  if (newVal && newVal.ext === '.pdf') {
+    pdfLoading.value = true
+    pdfError.value = false
+    pdfVisible.value = false
+    nextTick(() => { pdfVisible.value = true })
+  } else {
+    pdfLoading.value = false
+    pdfError.value = false
+    pdfVisible.value = false
+  }
   nextTick(() => {
     if (videoEl.value) {
       videoEl.value.playbackRate = 1
@@ -426,8 +512,24 @@ watch(() => currentFile.value, () => {
 })
 
 // v3.2.2：首次播放时搭建 Web Audio 增益链路（提升视频音量）
+// v3.3.1：按 video 元素身份判断——同元素复用链路（createMediaElementSource 仅能调用一次），
+// 切换到新元素（如 video→pdf→video 重建 DOM）时关闭旧上下文并重建链路
 async function ensureAudioBoost(): Promise<void> {
-  if (!videoEl.value || audioNodeAttached) return
+  if (!videoEl.value) return
+  // 同一元素已接入：仅需确保上下文处于运行态
+  if (attachedVideoEl === videoEl.value && audioCtx && gainNode) {
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume().catch(() => { /* ignore */ })
+    }
+    return
+  }
+  // 新元素：先关闭可能残留的旧上下文（指向已被销毁的旧元素）
+  if (audioCtx) {
+    try { await audioCtx.close() } catch { /* ignore */ }
+    audioCtx = null
+    gainNode = null
+    videoSourceNode = null
+  }
   try {
     const AC = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
     if (!AC) return
@@ -437,7 +539,7 @@ async function ensureAudioBoost(): Promise<void> {
     videoSourceNode = audioCtx.createMediaElementSource(videoEl.value)
     videoSourceNode.connect(gainNode)
     gainNode.connect(audioCtx.destination)
-    audioNodeAttached = true
+    attachedVideoEl = videoEl.value
     if (audioCtx.state === 'suspended') {
       await audioCtx.resume().catch(() => { /* ignore */ })
     }
@@ -945,6 +1047,36 @@ if (typeof document !== 'undefined') {
   height: 100%;
   border: none;
   border-radius: 8px;
+}
+
+/* v3.3.1：PDF 容器与加载/错误遮罩 */
+.pdf-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pdf-loading-mask,
+.pdf-error-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  background: var(--mo-surface, #1a1c25);
+  color: var(--mo-text-2, #ccc);
+  font-size: 14px;
+  z-index: 2;
+  border-radius: 8px;
+}
+
+.pdf-error-mask {
+  background: rgba(245, 108, 108, 0.08);
+  color: #f56c6c;
 }
 
 /* v2.9.2：视频播放区域（v3.2.2 重构美化） */
