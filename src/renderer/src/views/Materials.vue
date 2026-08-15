@@ -91,74 +91,37 @@
           </el-button>
         </h3>
         <div class="preview-container" v-if="currentFile">
-          <!-- PDF 预览（v3.3.2：使用 @tato30/vue-pdf 重构，支持翻页/缩放/旋转/文本选择） -->
+          <!-- PDF 预览（v3.3.8：使用 Chromium 内置 PDFium via iframe） -->
           <div v-if="currentFile.ext === '.pdf'" class="pdf-wrap">
-            <div class="pdf-toolbar">
-              <div class="pdf-nav-group">
-                <button class="pdf-btn" @click="prevPage" :disabled="pdfPage <= 1" title="上一页">‹</button>
-                <input
-                  type="number"
-                  v-model="pdfPage"
-                  :min="1"
-                  :max="pages || 1"
-                  class="page-input"
-                  @change="onPageInput"
-                />
-                <span class="page-total">/ {{ pages }}</span>
-                <button class="pdf-btn" @click="nextPage" :disabled="pdfPage >= pages" title="下一页">›</button>
-              </div>
-              <div class="pdf-zoom-group">
-                <button class="pdf-btn" @click="zoomOut" :disabled="!pdfFitParent && pdfScale <= 0.5" title="缩小">−</button>
-                <span class="zoom-label">{{ pdfFitParent ? '适配' : Math.round(pdfScale * 100) + '%' }}</span>
-                <button class="pdf-btn" @click="zoomIn" :disabled="!pdfFitParent && pdfScale >= 3" title="放大">+</button>
-                <button class="pdf-btn" @click="fitWidth" :class="{ active: pdfFitParent }" title="适配宽度">⤢</button>
-              </div>
-              <button class="pdf-btn" @click="rotatePdf" title="旋转 90°">
-                <el-icon><RefreshRight /></el-icon>
-              </button>
-            </div>
             <div class="pdf-viewer-wrap">
-              <VuePDF
-                v-if="pdf"
-                :pdf="pdf"
-                :page="pdfPage"
-                :scale="pdfScale"
-                :fit-parent="pdfFitParent"
-                :rotation="pdfRotation"
-                text-layer
-                annotation-layer
-                @loaded="onPdfPageLoaded"
-              >
-                <div class="pdf-page-loading">
-                  <el-icon class="is-loading" :size="32"><Loading /></el-icon>
-                </div>
-              </VuePDF>
+              <iframe
+                v-if="currentFile.ext === '.pdf' && currentFile.url"
+                :src="currentFile.url + '#view=FitH&toolbar=1&page=1'"
+                class="pdf-iframe"
+                frameborder="0"
+                @load="pdfLoading = false"
+              ></iframe>
               <div v-if="pdfLoading && !pdfError" class="pdf-loading-mask">
                 <el-icon class="is-loading" :size="40"><Loading /></el-icon>
-                <span>PDF 加载中...{{ pdfProgress > 0 ? ' ' + pdfProgress + '%' : '' }}</span>
+                <span>PDF 加载中...</span>
               </div>
               <div v-if="pdfError" class="pdf-error-mask">
                 <el-icon :size="40"><Warning /></el-icon>
                 <span>PDF 加载失败</span>
-                <el-button size="small" type="primary" @click="retryPdf">重试</el-button>
               </div>
             </div>
           </div>
 
-          <!-- 视频播放（v3.3.2：使用 @videojs-player/vue 重构，原生 video.js 控制栏 + 增益/快捷键/无声检测） -->
+          <!-- 视频播放（v3.3.8：原生 <video> + 增益/快捷键/无声检测） -->
           <div v-else-if="isVideo(currentFile.ext)" class="video-wrap" ref="videoWrap">
             <div class="video-stage">
-              <video-player
-                v-if="videoSrc"
+              <video
+                ref="nativeVideo"
                 :src="videoSrc"
                 controls
                 preload="metadata"
                 playsinline
-                fill
-                :volume="videoVolume / 100"
-                :playback-rates="[0.5, 1, 1.25, 1.5, 2]"
-                @mounted="onVideoMounted"
-                @ready="onVideoReady"
+                class="native-video"
                 @loadedmetadata="onVideoLoadedMetadata"
                 @play="videoPlaying = true"
                 @pause="videoPlaying = false"
@@ -167,8 +130,7 @@
                 @playing="videoLoading = false; videoPlaying = true"
                 @volumechange="onVolumeChange"
                 @error="onVideoError"
-                class="video-player"
-              />
+              ></video>
               <div v-if="videoLoading" class="video-loading-mask">
                 <el-icon class="is-loading" :size="40"><Loading /></el-icon>
                 <span>视频加载中...</span>
@@ -176,7 +138,7 @@
             </div>
             <!-- v3.1.2：音频编码不支持警告 -->
             <div v-if="audioWarning" class="audio-warning">{{ audioWarning }}</div>
-            <!-- v3.2.2：增益调节 + 快退快进（video.js 原生控制栏不含此功能，作为自定义覆盖层） -->
+            <!-- v3.2.2：增益调节 + 快退快进（原生控制栏不含此功能，作为自定义覆盖层） -->
             <div class="video-extra-controls">
               <button class="extra-ctrl-btn" @click="seekRelative(-10)" title="快退 10 秒 (←)">
                 <el-icon>⏪</el-icon>
@@ -216,7 +178,7 @@
         <div v-else class="preview-empty">
           <el-icon :size="48"><Document /></el-icon>
           <p>从左侧选择文件进行预览</p>
-          <p class="hint">支持 PDF 阅读（翻页/缩放/旋转/文本选择）、视频播放（video.js 原生控制 + 音量增益）</p>
+          <p class="hint">支持 PDF 阅读（内置 PDFium）、视频播放（原生控制 + 音量增益）</p>
         </div>
       </div>
     </div>
@@ -234,51 +196,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning, ArrowRight, Loading, Open, RefreshRight
+  View, Warning, ArrowRight, Loading, Open
 } from '@element-plus/icons-vue'
-
-// v3.3.2：引入 @tato30/vue-pdf（基于 pdf.js 的 Vue 3 组件）
-// v3.3.5：关键修复——改用 /minimal 入口！
-//        默认入口 index.mjs 包含模块级副作用：
-//          import PDFWorker from "pdfjs-dist/build/pdf.worker.min?url";
-//          if (!GlobalWorkerOptions?.workerSrc) configWorker(PDFWorker);
-//        该 ?url 导入在 Electron file:// 协议下解析失败会导致整个模块 import 崩溃，
-//        表现为「点击学习资料无响应」。/minimal 入口无此副作用，仅导出组件+composable。
-import { VuePDF, usePDF } from '@tato30/vue-pdf/minimal'
-import '@tato30/vue-pdf/style.css'
-
-// v3.3.3：修复 Electron file:// 环境下 pdf.js worker 无法从 data URL 加载的问题
-// v3.3.4：从模块顶层移到 onMounted try/catch 内执行，避免 new PdfWorker() 抛异常导致整个模块加载失败
-// v3.3.5：仍保留此处的 worker 初始化（workerPort 优先级高于 workerSrc），
-//        真正生效的是我们通过 Vite ?worker&inline 构造的 blob Worker，不受 pdfjs 默认路径影响
-// v3.3.6：改用 legacy 构建——pdf.js 6.x 主构建使用 ES2025 Iterator 全局对象，Electron 28 不支持
-import { GlobalWorkerOptions } from 'pdfjs-dist'
-// eslint-disable-next-line import/no-unresolved
-import PdfWorkerConstructor from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker&inline'
-
-let pdfWorkerInitialized = false
-function initPdfWorker() {
-  if (pdfWorkerInitialized) return
-  try {
-    // v3.3.5：先强制清掉 @tato30/vue-pdf 默认入口可能遗留的无效 workerSrc（防止它内部 fallback 到错误路径）
-    GlobalWorkerOptions.workerSrc = ''
-    if (!GlobalWorkerOptions.workerPort && typeof PdfWorkerConstructor === 'function') {
-      GlobalWorkerOptions.workerPort = new PdfWorkerConstructor() as unknown as Worker
-    }
-    pdfWorkerInitialized = true
-  } catch (err) {
-    console.warn('[Materials] pdf.js worker 初始化失败，PDF 预览可能不可用：', err)
-  }
-}
-
-// v3.3.2：引入 @videojs-player/vue（Video.js 的 Vue 3 封装）
-import { VideoPlayer } from '@videojs-player/vue'
-import 'video.js/dist/video-js.css'
-import type typeVideojs from 'video.js'
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
 interface DisplayNode extends MaterialNode {
@@ -294,117 +217,24 @@ const expandedFolders = ref<Set<string>>(new Set())
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 
-// ============ v3.3.2：PDF 状态管理（@tato30/vue-pdf） ============
-// usePDF 接受 Ref<PDFSrc>，源变化时自动重新加载
-const pdfSource = computed<string | undefined>(() => {
-  if (currentFile.value?.ext === '.pdf' && currentFile.value?.url) {
-    return currentFile.value.url
-  }
-  return undefined
-})
+// ============ v3.3.8：PDF 状态管理（Chromium 内置 PDFium via iframe） ============
 const pdfLoading = ref(false)
 const pdfError = ref(false)
-const pdfProgress = ref(0)
-const pdfPage = ref(1)
-const pdfScale = ref(1)
-const pdfFitParent = ref(true)
-const pdfRotation = ref(0)
 
-const { pdf, pages } = usePDF(pdfSource, {
-  onProgress: (e: { loaded: number; total: number }) => {
+// Reset loading state when file changes
+watch(() => currentFile.value, (newFile) => {
+  if (newFile?.ext === '.pdf') {
     pdfLoading.value = true
     pdfError.value = false
-    if (e.total) {
-      pdfProgress.value = Math.round((e.loaded / e.total) * 100)
-    }
-  },
-  onError: (_err: unknown) => {
-    pdfLoading.value = false
-    pdfError.value = true
-  }
-})
-
-// pages 变化意味着 PDF 加载完成
-watch(pages, (p) => {
-  if (p > 0) {
-    pdfLoading.value = false
-    pdfError.value = false
-    pdfProgress.value = 0
-  }
-})
-
-// 源变化时重置状态
-watch(pdfSource, (newVal) => {
-  if (newVal) {
-    // v3.3.4：首次打开 PDF 前确保 worker 已就绪
-    initPdfWorker()
-    pdfLoading.value = true
-    pdfError.value = false
-    pdfProgress.value = 0
-    pdfPage.value = 1
-    pdfScale.value = 1
-    pdfFitParent.value = true
-    pdfRotation.value = 0
   } else {
-    // 离开 PDF 模式：销毁文档释放内存
-    if (pdf.value) {
-      pdf.value.destroy()
-    }
     pdfLoading.value = false
     pdfError.value = false
   }
 })
 
-function onPdfPageLoaded() {
-  // 单页渲染完成
-}
-function prevPage() {
-  if (pdfPage.value > 1) pdfPage.value--
-}
-function nextPage() {
-  if (pdfPage.value < pages.value) pdfPage.value++
-}
-function onPageInput() {
-  if (pdfPage.value < 1) pdfPage.value = 1
-  if (pdfPage.value > pages.value) pdfPage.value = pages.value
-}
-function zoomIn() {
-  pdfFitParent.value = false
-  pdfScale.value = Math.min(3, pdfScale.value + 0.25)
-}
-function zoomOut() {
-  pdfFitParent.value = false
-  pdfScale.value = Math.max(0.25, pdfScale.value - 0.25)
-}
-function fitWidth() {
-  pdfFitParent.value = true
-  pdfScale.value = 1
-}
-function rotatePdf() {
-  pdfRotation.value = (pdfRotation.value + 90) % 360
-}
-function retryPdf() {
-  if (pdfSource.value) {
-    pdfError.value = false
-    pdfLoading.value = true
-    // 触发重新加载：先销毁再重新设置源
-    if (pdf.value) {
-      pdf.value.destroy()
-    }
-    nextTick(() => {
-      const src = pdfSource.value
-      if (src) {
-        // usePDF 内部 watch 会在 ref 值变化时重新加载，
-        // 但值未变时不会触发，这里手动重新设置
-        pdfSource.value // 触发 computed 重新求值
-      }
-    })
-  }
-}
-
-// ============ v3.3.2：视频状态管理（@videojs-player/vue） ============
+// ============ v3.3.8：视频状态管理（原生 <video> + Web Audio API 增益） ============
 const videoWrap = ref<HTMLElement | null>(null)
-const vjsPlayer = ref<typeVideojs.Player | null>(null)
+const nativeVideo = ref<HTMLVideoElement | null>(null)
 const videoSrc = computed(() => {
   if (currentFile.value && isVideo(currentFile.value.ext || '') && currentFile.value.url) {
     return currentFile.value.url
@@ -495,8 +325,6 @@ function countFilesInFolder(folder: MaterialNode): number {
 
 // ============ 生命周期 ============
 onMounted(() => {
-  // v3.3.4：worker 初始化放 onMounted try/catch 内，失败不阻塞页面
-  initPdfWorker()
   restoreFolder()
   window.addEventListener('keydown', onVideoKeydown)
 })
@@ -505,9 +333,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onVideoKeydown)
   disposeAudioResources()
-  if (pdf.value) {
-    pdf.value.destroy()
-  }
 })
 
 // v3.3.1：集中释放音频资源（AudioContext / GainNode / SourceNode）
@@ -523,14 +348,13 @@ function disposeAudioResources() {
 
 // v3.0.0：切换文件时重置状态
 // v3.3.1：仅在「离开视频模式」时释放音频链路
-// v3.3.2：适配 video.js player 生命周期
+// v3.3.8：适配原生 <video> 元素生命周期
 watch(() => currentFile.value, (newVal, oldVal) => {
   const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
   const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
   // 离开视频模式：释放 AudioContext
   if (oldIsVideo && !newIsVideo) {
     disposeAudioResources()
-    vjsPlayer.value = null
   }
   // 重置视频状态
   videoPlaying.value = false
@@ -541,24 +365,15 @@ watch(() => currentFile.value, (newVal, oldVal) => {
 
 // ============ 视频播放器事件处理 ============
 
-// v3.3.2：video.js player 挂载——保存 player 实例
-function onVideoMounted(player: typeVideojs.Player) {
-  vjsPlayer.value = player
-}
-
-function onVideoReady(player: typeVideojs.Player) {
-  vjsPlayer.value = player
-}
-
 // v3.1.2 + v3.2.2：loadedmetadata 后进行无声检测
+// v3.3.8：改用原生 <video> 元素
 function onVideoLoadedMetadata() {
-  if (!vjsPlayer.value) return
-  const el = vjsPlayer.value.el()?.querySelector('video') as (HTMLVideoElement & {
+  if (!nativeVideo.value) return
+  const el = nativeVideo.value as HTMLVideoElement & {
     audioTracks?: { length: number }
     mozHasAudio?: boolean
     webkitAudioDecodedByteCount?: number
-  }) | null
-  if (!el) return
+  }
   let hasAudioTrack = true
   if (typeof el.audioTracks === 'object' && el.audioTracks) {
     hasAudioTrack = el.audioTracks.length > 0
@@ -572,8 +387,8 @@ function onVideoLoadedMetadata() {
     audioWarning.value = ''
   }
   // 尝试播放（非用户交互可能被拦截，吞异常）
-  if (vjsPlayer.value.paused()) {
-    vjsPlayer.value.play()?.then(() => {
+  if (nativeVideo.value.paused) {
+    nativeVideo.value.play()?.then(() => {
       videoPlaying.value = true
       ensureAudioBoost()
     }).catch(() => {
@@ -584,11 +399,10 @@ function onVideoLoadedMetadata() {
 
 // v3.2.2：首次播放时搭建 Web Audio 增益链路（提升视频音量）
 // v3.3.1：按 video 元素身份判断——同元素复用链路，新元素重建链路
-// v3.3.2：通过 video.js player 获取底层 video 元素
+// v3.3.8：直接使用原生 <video> 元素
 async function ensureAudioBoost(): Promise<void> {
-  if (!vjsPlayer.value) return
-  const el = vjsPlayer.value.el()?.querySelector('video') as HTMLVideoElement | null
-  if (!el) return
+  if (!nativeVideo.value) return
+  const el = nativeVideo.value
   // 同一元素已接入：仅需确保上下文处于运行态
   if (attachedVideoEl === el && audioCtx && gainNode) {
     if (audioCtx.state === 'suspended') {
@@ -633,14 +447,14 @@ function applyGain() {
 }
 
 function onVolumeChange() {
-  if (vjsPlayer.value) {
-    videoVolume.value = Math.round(vjsPlayer.value.volume() * 100)
+  if (nativeVideo.value) {
+    videoVolume.value = Math.round(nativeVideo.value.volume * 100)
   }
 }
 
 // v3.1.2 + v3.2.2：视频加载错误处理
 function onVideoError() {
-  const err = vjsPlayer.value?.error()
+  const err = nativeVideo.value?.error
   const code = err?.code || 0
   if (code === 3 || code === 4) {
     audioWarning.value = '视频加载/解码失败，可能使用了浏览器不支持的编码，建议转码为 MP4(H.264 + AAC) 后重试'
@@ -651,18 +465,18 @@ function onVideoError() {
 
 // v3.2.3：相对快进/快退（秒），自动夹紧到 [0, duration]
 function seekRelative(delta: number) {
-  if (!vjsPlayer.value) return
-  const dur = vjsPlayer.value.duration() || 0
-  let next = (vjsPlayer.value.currentTime() || 0) + delta
+  if (!nativeVideo.value) return
+  const dur = nativeVideo.value.duration || 0
+  let next = (nativeVideo.value.currentTime || 0) + delta
   if (next < 0) next = 0
   if (dur && next > dur) next = dur
-  vjsPlayer.value.currentTime(next)
+  nativeVideo.value.currentTime = next
 }
 
 // v3.2.3：视频键盘快捷键：←/→ 快退快进 5 秒，↑/↓ 音量 ±5，空格 播放/暂停
 function onVideoKeydown(e: KeyboardEvent) {
   if (!currentFile.value || !isVideo(currentFile.value.ext || '')) return
-  if (!vjsPlayer.value) return
+  if (!nativeVideo.value) return
   const tag = (e.target as HTMLElement)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   if (e.target instanceof HTMLElement && e.target.isContentEditable) return
@@ -686,10 +500,10 @@ function onVideoKeydown(e: KeyboardEvent) {
     case ' ':
     case 'Spacebar':
       e.preventDefault()
-      if (vjsPlayer.value.paused()) {
-        vjsPlayer.value.play()?.then(() => { videoPlaying.value = true; ensureAudioBoost() }).catch(() => {})
+      if (nativeVideo.value.paused) {
+        nativeVideo.value.play()?.then(() => { videoPlaying.value = true; ensureAudioBoost() }).catch(() => {})
       } else {
-        vjsPlayer.value.pause()
+        nativeVideo.value.pause()
         videoPlaying.value = false
       }
       break
@@ -697,11 +511,11 @@ function onVideoKeydown(e: KeyboardEvent) {
 }
 
 function changeVolumeStep(step: number) {
-  if (!vjsPlayer.value) return
-  let v = vjsPlayer.value.volume() * 100 + step
+  if (!nativeVideo.value) return
+  let v = nativeVideo.value.volume * 100 + step
   if (v < 0) v = 0
   if (v > 100) v = 100
-  vjsPlayer.value.volume(v / 100)
+  nativeVideo.value.volume = v / 100
   videoVolume.value = v
 }
 
@@ -817,7 +631,7 @@ function downloadFile() {
 // 监听全屏变化（用户按 ESC 退出时同步状态）
 if (typeof document !== 'undefined') {
   document.addEventListener('fullscreenchange', () => {
-    // video.js 自行处理全屏状态，此处无需额外操作
+    // 原生 <video> 全屏由浏览器/控件自行处理，此处无需额外操作
   })
 }
 </script>
@@ -1145,6 +959,17 @@ if (typeof document !== 'undefined') {
   padding: 8px;
 }
 
+/* v3.3.8：Chromium 内置 PDFium via iframe */
+.pdf-iframe {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 8px;
+  min-height: 0;
+  background: var(--mo-bg, #1a1c25);
+}
+
 .pdf-page-loading {
   display: flex;
   align-items: center;
@@ -1193,6 +1018,15 @@ if (typeof document !== 'undefined') {
   border: 1px solid rgba(255, 255, 255, 0.08);
   min-height: 0;
   display: flex;
+}
+
+/* v3.3.8：原生 <video> 元素样式 */
+.native-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+  border-radius: 14px;
 }
 
 .video-player {
