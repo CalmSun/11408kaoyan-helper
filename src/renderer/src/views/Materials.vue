@@ -255,9 +255,10 @@ import '@tato30/vue-pdf/style.css'
 // v3.3.4：从模块顶层移到 onMounted try/catch 内执行，避免 new PdfWorker() 抛异常导致整个模块加载失败
 // v3.3.5：仍保留此处的 worker 初始化（workerPort 优先级高于 workerSrc），
 //        真正生效的是我们通过 Vite ?worker&inline 构造的 blob Worker，不受 pdfjs 默认路径影响
+// v3.3.6：改用 legacy 构建——pdf.js 6.x 主构建使用 ES2025 Iterator 全局对象，Electron 28 不支持
 import { GlobalWorkerOptions } from 'pdfjs-dist'
 // eslint-disable-next-line import/no-unresolved
-import PdfWorkerConstructor from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline'
+import PdfWorkerConstructor from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?worker&inline'
 
 let pdfWorkerInitialized = false
 function initPdfWorker() {

@@ -12,9 +12,15 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version)
   },
   resolve: {
-    alias: {
-      '@': resolve(__dirname, 'src/renderer/src')
-    }
+    alias: [
+      { find: '@', replacement: resolve(__dirname, 'src/renderer/src') },
+      // v3.3.6：pdf.js 6.x 主构建使用 ES2025 Iterator 全局对象，
+      //        Electron 28（Chromium 120）不支持，运行时报 ReferenceError: Iterator is not defined。
+      //        解决：将所有 pdfjs-dist 导入重定向到 legacy 构建（为旧引擎转译，API 完全一致）。
+      //        这会同时捕获 @tato30/vue-pdf 内部的 `import ... from "pdfjs-dist"` 和我们的 worker 导入。
+      { find: /^pdfjs-dist$/, replacement: resolve(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.mjs') },
+      { find: /^pdfjs-dist\/build\//, replacement: resolve(__dirname, 'node_modules/pdfjs-dist/legacy/build/') }
+    ]
   },
   root: resolve(__dirname, 'src/renderer'),
   // v3.3.2：pdf.js 需要 top-level await 支持
