@@ -11,7 +11,10 @@
       <main class="main-content" :class="{ 'full-width': isLoginPage }">
         <router-view v-slot="{ Component }">
           <transition name="fade" mode="out-in">
-            <component :is="Component" />
+            <!-- v3.4.1：学习资料页 keep-alive——切换页面再返回时保持原状态（文件树/当前文件/阅读进度等） -->
+            <keep-alive :include="['Materials']">
+              <component :is="Component" />
+            </keep-alive>
           </transition>
         </router-view>
       </main>

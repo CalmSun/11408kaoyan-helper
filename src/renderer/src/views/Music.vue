@@ -1024,6 +1024,15 @@ onMounted(() => {
   if (music.hotSearchList.length === 0) {
     music.fetchHotSearch()
   }
+  // v3.4.1：从其他页面（如顶栏心动模式）切歌后返回本页时，当前曲目 ID 已发生变化，
+  //         watch(currentTrack?.id) 不会再次触发，导致热门评论/评论弹窗空白。
+  //         挂载时若已存在在线曲目，主动补拉其喜欢状态与评论。
+  const track = music.currentTrack
+  if (track?.id && track.source === 'online') {
+    music.currentLiked = music.isSongLiked(track.id)
+    music.checkSongLikeStatus(track.id)
+    music.fetchSongComments(track.id, 1, 20, 1)
+  }
 })
 
 onUnmounted(() => {
@@ -1130,11 +1139,13 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-/* v3.2.2：热门评论卡片：紧凑高度，不参与空间争夺 */
+/* v3.2.2：热门评论卡片：紧凑高度，不参与空间争夺
+   v3.4.1：内部可滚动，长评论超出高度时在卡片内滚动而非溢出 */
 .hot-comment-card {
   flex-shrink: 0;
   max-height: 220px;
   margin-bottom: 0 !important;
+  overflow-y: auto;
 }
 
 /* v3.2.4：右侧 Tab 内容卡片（搜索/云盘/排行榜/我的歌单）——主内容区，basis 0 + flex:1 填充剩余空间
@@ -2138,7 +2149,12 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--mo-text-1);
   line-height: 1.6;
+  /* v3.4.1：长文本/连续字符（URL、表情等）溢出卡片修复——
+     用 overflow-wrap:anywhere 强制在任意字符处断行，配合 pre-wrap 保留换行 */
+  white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .comment-reply {
@@ -2149,6 +2165,11 @@ onUnmounted(() => {
   font-size: 12px;
   color: var(--mo-text-2);
   line-height: 1.5;
+  /* v3.4.1：回复内容同样处理长文本断行，防止撑破卡片 */
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .reply-arrow {

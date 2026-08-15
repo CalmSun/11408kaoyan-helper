@@ -93,10 +93,30 @@
         <div class="preview-container" v-if="currentFile">
           <!-- PDF 预览（v3.4.0：Chromium PDFium <iframe> 渲染） -->
           <div v-if="currentFile.ext === '.pdf'" class="pdf-wrap">
-            <!-- PDF 工具栏 -->
+            <!-- PDF 工具栏（v3.4.1：新增页码导航与进度保存） -->
             <div class="pdf-toolbar">
+              <div class="pdf-page-nav">
+                <button class="pdf-page-btn" :disabled="pdfPage <= 1" @click="goPdfPage(-1)" title="上一页">
+                  <el-icon><ArrowLeft /></el-icon>
+                </button>
+                <span class="pdf-page-indicator">
+                  第
+                  <input
+                    v-model.number="pdfPageInput"
+                    class="pdf-page-input"
+                    type="number"
+                    min="1"
+                    @change="jumpPdfPage(pdfPageInput)"
+                    title="输入页码后回车跳转"
+                  />
+                  页
+                </span>
+                <button class="pdf-page-btn" @click="goPdfPage(1)" title="下一页">
+                  <el-icon><ArrowRight /></el-icon>
+                </button>
+              </div>
               <el-icon class="pdf-tip-icon"><InfoFilled /></el-icon>
-              <span class="pdf-tip">已通过内置查看器打开，可翻页 / 缩放 / 搜索 / 打印（快捷键 Ctrl+F 搜索）</span>
+              <span class="pdf-tip">已通过内置查看器打开，可翻页 / 缩放 / 搜索 / 打印（快捷键 Ctrl+F 搜索），返回后自动恢复阅读进度</span>
             </div>
             <!-- PDF 渲染区 -->
             <div class="pdf-viewer-wrap">
@@ -136,12 +156,13 @@
                 class="native-video"
                 @loadedmetadata="onVideoLoadedMetadata"
                 @play="videoPlaying = true"
-                @pause="videoPlaying = false"
+                @pause="onVideoPause"
                 @ended="onVideoEnded"
                 @waiting="videoLoading = true"
                 @playing="videoLoading = false; videoPlaying = true"
                 @volumechange="onVolumeChange"
                 @ratechange="onVideoRateChange"
+                @timeupdate="onVideoTimeUpdate"
                 @error="onVideoError"
               ></video>
               <div v-if="videoLoading" class="video-loading-mask">
@@ -283,7 +304,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
@@ -298,9 +319,14 @@ const pdfFrame = ref<HTMLIFrameElement | null>(null)
 const pdfFrameUrl = ref('')
 
 // v3.4.0: 由当前 PDF 文件 URL 拼接 PDFium 查看器参数（FitH 适应宽度，toolbar 显示原生工具条）
-function buildPdfFrameUrl(url: string): string {
-  return `${url}#view=FitH&toolbar=1&page=1`
+// v3.4.1: 支持 page 参数——打开时恢复到上次阅读页码
+function buildPdfFrameUrl(url: string, page = 1): string {
+  return `${url}#view=FitH&toolbar=1&page=${page}`
 }
+
+// v3.4.1: 当前 PDF 页码（父页面自管，导航时重载 iframe 的 page 参数）
+const pdfPage = ref(1)
+const pdfPageInput = ref(1)
 
 // v3.4.0: 卸载 iframe 释放 PDFium 渲染资源（切换文件/离开 PDF 模式时调用）
 function unloadPdf() {
@@ -327,13 +353,43 @@ const pdfLoading = ref(false)
 const pdfError = ref('')
 
 // v3.4.0: 加载 PDF（iframe 懒挂载，卸载时清空 src 释放 PDFium 资源）
+// v3.4.1: 打开时恢复到上次阅读页码
 function loadPdf(url: string) {
   unloadPdf()
   pdfLoading.value = true
   pdfError.value = ''
+  // 恢复上次阅读页码
+  const prog = currentFile.value ? loadProgress()[currentFile.value.path] : null
+  const startPage = prog?.pdfPage && prog.pdfPage > 0 ? prog.pdfPage : 1
+  pdfPage.value = startPage
+  pdfPageInput.value = startPage
   // 将 src 赋值放在下一次宏任务，确保先卸载旧文档再加载新文档
   requestAnimationFrame(() => {
-    pdfFrameUrl.value = buildPdfFrameUrl(url)
+    pdfFrameUrl.value = buildPdfFrameUrl(url, startPage)
+    pdfLoading.value = false
+  })
+}
+
+// v3.4.1: PDF 页码导航（±1 页）并保存进度
+function goPdfPage(delta: number) {
+  const target = pdfPage.value + delta
+  if (target < 1) return
+  jumpPdfPage(target)
+}
+
+// v3.4.1: 跳转到指定页码（重载 iframe 的 page 参数）并保存进度
+function jumpPdfPage(target: number) {
+  if (!Number.isFinite(target)) return
+  if (target < 1) target = 1
+  pdfPage.value = target
+  pdfPageInput.value = target
+  if (currentFile.value) saveProgress(currentFile.value.path, { pdfPage: target })
+  const url = currentFile.value?.url
+  if (!url) return
+  pdfLoading.value = true
+  pdfError.value = ''
+  requestAnimationFrame(() => {
+    pdfFrameUrl.value = buildPdfFrameUrl(url, target)
     pdfLoading.value = false
   })
 }
@@ -440,6 +496,10 @@ function toggleAutoPlay() {
 
 function onVideoEnded() {
   videoPlaying.value = false
+  // v3.4.1：播放结束保存进度（结尾附近自动置 0，下次从头开始）
+  if (nativeVideo.value && currentFile.value) {
+    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+  }
   if (autoPlayNext.value) {
     setTimeout(() => playNextVideo(), 800)
   }
@@ -551,10 +611,96 @@ function countFilesInFolder(folder: MaterialNode): number {
   return count
 }
 
+// ============ v3.4.1：学习进度保存（PDF 页码 / 视频播放位置） ============
+// 以文件 path 为 key 存 localStorage，切换页面/关闭应用后下次打开自动恢复
+const PROGRESS_KEY = 'materials-progress'
+
+interface MaterialProgressEntry {
+  pdfPage?: number
+  videoTime?: number
+  videoDuration?: number
+  updatedAt?: number
+}
+type MaterialProgress = Record<string, MaterialProgressEntry>
+
+function loadProgress(): MaterialProgress {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') return parsed
+    }
+  } catch { /* ignore */ }
+  return {}
+}
+
+function saveProgress(path: string, patch: Partial<MaterialProgressEntry>) {
+  if (!path) return
+  const all = loadProgress()
+  all[path] = { ...(all[path] || {}), ...patch, updatedAt: Date.now() }
+  try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(all)) } catch { /* ignore */ }
+}
+
+// v3.4.1：视频进度保存（按文件 path）
+function saveVideoProgress(time: number, dur: number) {
+  if (!currentFile.value || !(dur > 0)) return
+  // 已看到结尾附近（最后 5 秒）视为看完，下次从头开始
+  const finalTime = time >= dur - 5 ? 0 : time
+  saveProgress(currentFile.value.path, { videoTime: finalTime, videoDuration: dur })
+}
+
+// v3.4.1：视频播放中节流保存（每 5 秒，避免频繁写 localStorage）
+let lastVideoSaveTime = 0
+function onVideoTimeUpdate() {
+  const el = nativeVideo.value
+  if (!el || !currentFile.value) return
+  const now = Date.now()
+  if (now - lastVideoSaveTime < 5000) return
+  lastVideoSaveTime = now
+  saveVideoProgress(el.currentTime, el.duration)
+}
+
+// v3.4.1：视频暂停时保存进度
+function onVideoPause() {
+  videoPlaying.value = false
+  if (nativeVideo.value && currentFile.value) {
+    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+  }
+}
+
+// v3.4.1：打开视频时恢复到上次观看位置（结尾附近从头开始）
+function restoreVideoProgress(el: HTMLVideoElement) {
+  if (!currentFile.value) return
+  const prog = loadProgress()[currentFile.value.path]
+  if (!prog) return
+  const savedTime = prog.videoTime || 0
+  const dur = el.duration || 0
+  if (savedTime > 5 && savedTime < dur - 5) {
+    el.currentTime = savedTime
+  }
+}
+
 // ============ 生命周期 ============
 onMounted(() => {
   restoreFolder()
+  // v3.4.1：keep-alive 下键盘监听改由 onActivated/onDeactivated 控制
+})
+
+// v3.4.1：keep-alive 激活（从其他页面返回学习资料页）时恢复键盘监听
+onActivated(() => {
   window.addEventListener('keydown', onVideoKeydown)
+})
+
+// v3.4.1：keep-alive 失活（切换到其他页面）时：
+//   - 移除键盘监听，避免误控隐藏页面的视频
+//   - 保存视频进度并暂停，保持「原状态」，返回后可继续观看
+onDeactivated(() => {
+  window.removeEventListener('keydown', onVideoKeydown)
+  if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
+    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+    nativeVideo.value.pause()
+    videoPlaying.value = false
+  }
 })
 
 // v3.3.1：组件卸载时彻底释放视频与音频资源
@@ -591,6 +737,10 @@ watch(() => currentFile.value, async (newVal, oldVal) => {
   }
   const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
   const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
+  // v3.4.1：离开视频前保存最终进度（含 视频→视频 切换）
+  if (oldIsVideo && nativeVideo.value) {
+    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+  }
   // 离开视频模式：释放 AudioContext
   if (oldIsVideo && !newIsVideo) {
     disposeAudioResources()
@@ -640,6 +790,8 @@ function onVideoLoadedMetadata() {
       }
     }, { once: true })
   } catch { /* ignore */ }
+  // v3.4.1：恢复到上次观看位置（在首帧封面捕获之后设置，避免 seek 覆盖）
+  restoreVideoProgress(nativeVideo.value)
   // 尝试播放（非用户交互可能被拦截，吞异常）
   if (nativeVideo.value.paused) {
     nativeVideo.value.play()?.then(() => {
@@ -1150,6 +1302,74 @@ if (typeof document !== 'undefined') {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* v3.4.1: PDF 页码导航控件 */
+.pdf-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pdf-page-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
+  border-radius: 6px;
+  background: var(--mo-surface, rgba(255,255,255,0.06));
+  color: var(--mo-text-2, #ccc);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.pdf-page-btn:hover:not(:disabled) {
+  background: var(--mo-primary, #409eff);
+  border-color: transparent;
+  color: #fff;
+}
+
+.pdf-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pdf-page-indicator {
+  font-size: 12px;
+  color: var(--mo-text-2, #ccc);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.pdf-page-input {
+  width: 44px;
+  height: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--mo-text-1, #eee);
+  background: var(--mo-surface, rgba(255,255,255,0.06));
+  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.pdf-page-input::-webkit-outer-spin-button,
+.pdf-page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.pdf-page-input:focus {
+  border-color: var(--mo-primary, #409eff);
 }
 
 /* v3.3.2：PDF 查看器容器 */

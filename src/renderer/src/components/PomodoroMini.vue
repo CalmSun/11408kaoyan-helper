@@ -315,7 +315,7 @@ function clampPos() {
   if (pos.y + h > vh) pos.y = vh - h
 }
 
-// 首次挂载：恢复位置；若没有历史位置则默认右下角
+// 首次挂载：恢复位置；若没有历史位置则默认左下角（v3.4.1：由右下角改为左下角）
 function initPos() {
   const saved = loadPos()
   const el = rootRef.value
@@ -325,7 +325,7 @@ function initPos() {
     pos.y = saved.y
   } else {
     const margin = 24
-    pos.x = window.innerWidth - el.offsetWidth - margin
+    pos.x = margin
     pos.y = window.innerHeight - el.offsetHeight - margin
   }
   clampPos()
