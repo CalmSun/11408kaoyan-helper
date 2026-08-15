@@ -246,13 +246,23 @@ import { VuePDF, usePDF } from '@tato30/vue-pdf'
 import '@tato30/vue-pdf/style.css'
 
 // v3.3.3：修复 Electron file:// 环境下 pdf.js worker 无法从 data URL 加载的问题
-// @tato30/vue-pdf 默认用 ?url 导入 worker（内联为 base64 data URL），
-// 在 webSecurity:true + file:// 下 new Worker(dataURL,{type:"module"}) 会被同源策略阻止。
-// 改用 Vite ?worker&inline 导入，生成 blob URL Worker 实例，通过 workerPort 注入。
+// v3.3.4：关键修复——从模块顶层移到 onMounted try/catch 内执行，
+//        避免 new PdfWorker() 抛异常导致整个 Materials 模块加载失败、页面无法进入。
 import { GlobalWorkerOptions } from 'pdfjs-dist'
-import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline'
-if (!GlobalWorkerOptions.workerPort) {
-  GlobalWorkerOptions.workerPort = new PdfWorker()
+// eslint-disable-next-line import/no-unresolved
+import PdfWorkerConstructor from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline'
+
+let pdfWorkerInitialized = false
+function initPdfWorker() {
+  if (pdfWorkerInitialized) return
+  try {
+    if (!GlobalWorkerOptions.workerPort && typeof PdfWorkerConstructor === 'function') {
+      GlobalWorkerOptions.workerPort = new PdfWorkerConstructor() as unknown as Worker
+    }
+    pdfWorkerInitialized = true
+  } catch (err) {
+    console.warn('[Materials] pdf.js worker 初始化失败，PDF 预览可能不可用：', err)
+  }
 }
 
 // v3.3.2：引入 @videojs-player/vue（Video.js 的 Vue 3 封装）
@@ -316,6 +326,8 @@ watch(pages, (p) => {
 // 源变化时重置状态
 watch(pdfSource, (newVal) => {
   if (newVal) {
+    // v3.3.4：首次打开 PDF 前确保 worker 已就绪
+    initPdfWorker()
     pdfLoading.value = true
     pdfError.value = false
     pdfProgress.value = 0
@@ -473,6 +485,8 @@ function countFilesInFolder(folder: MaterialNode): number {
 
 // ============ 生命周期 ============
 onMounted(() => {
+  // v3.3.4：worker 初始化放 onMounted try/catch 内，失败不阻塞页面
+  initPdfWorker()
   restoreFolder()
   window.addEventListener('keydown', onVideoKeydown)
 })
