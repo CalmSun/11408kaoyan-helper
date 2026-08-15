@@ -681,16 +681,19 @@ body.liquid-glass .card::after {
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* 液态玻璃：卡片悬浮 */
+/* 液态玻璃：卡片悬浮
+   v3.2.7：彻底移除 translateY 上浮——任何 transform 都会为元素创建新的合成层（compositing layer），
+   在存在 backdrop-filter 的卡片网格中，该合成层的绘制顺序会"跳过"兄弟节点的 z-index/isolation，
+   最终视觉上盖住相邻卡片。改为仅通过 box-shadow 的增强营造悬浮感，完全不触发合成层重建 */
 body.liquid-glass .glass-card--card:hover,
 body.liquid-glass .card:hover {
-  transform: translateY(-2px);
   box-shadow:
-    var(--glass-shadow-hover),
-    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.05)),
+    0 8px 28px rgba(31, 64, 130, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.08)),
     inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
     inset 1px 0 0 rgba(255, 100, 100, 0.03),
     inset -1px 0 0 rgba(100, 100, 255, 0.03);
+  isolation: isolate;
 }
 
 /* 液态玻璃：不使用背景流动动画（保留用户自定义背景） */

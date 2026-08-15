@@ -129,7 +129,8 @@
         <div class="data-action-item">
           <div class="action-info">
             <h4>导出备份</h4>
-            <p>将所有学习数据导出为 JSON 文件保存到本地</p>
+            <p>将所有学习数据导出为 JSON 文件<br/>
+            <span class="muted" style="font-size:12px;color:var(--mo-text-3)">固定保存位置：D:\下载\文档\11408kaoyan-helper\</span></p>
           </div>
           <el-button type="primary" @click="exportData">
             <el-icon><Download /></el-icon>
@@ -156,39 +157,6 @@
             清除数据
           </el-button>
         </div>
-      </div>
-    </GlassCard>
-
-    <!-- 账号管理 -->
-    <GlassCard class="card setting-section">
-      <h3 class="section-title">
-        <el-icon><User /></el-icon>
-        账号管理
-      </h3>
-      <div class="account-info">
-        <div class="info-row">
-          <span class="label">当前用户：</span>
-          <span class="value">{{ userStore.displayName }}</span>
-        </div>
-        <div class="info-row" v-if="userStore.isLoggedIn">
-          <span class="label">账号类型：</span>
-          <el-tag type="success" size="small">已登录</el-tag>
-        </div>
-        <div class="info-row" v-else>
-          <span class="label">账号类型：</span>
-          <el-tag type="info" size="small">游客模式</el-tag>
-        </div>
-      </div>
-      <div class="account-actions">
-        <el-button type="primary" @click="handleLogout" v-if="userStore.isLoggedIn">
-          退出登录
-        </el-button>
-        <el-button type="warning" @click="goToLogin" v-else>
-          登录 / 注册
-        </el-button>
-        <el-button type="danger" @click="handleDeleteAccount" v-if="userStore.isLoggedIn">
-          删除账号
-        </el-button>
       </div>
     </GlassCard>
 

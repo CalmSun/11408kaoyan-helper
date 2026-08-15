@@ -517,9 +517,15 @@ function markCorrect() {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* v3.2.7：内容溢出修复——长文本换行 + 超出滚动，防止撑破卡片 */
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 100%;
+  padding: 4px 2px;
   text-align: center;
   margin: 0;
-  word-break: break-word;
 }
 
 .flip-hint {

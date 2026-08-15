@@ -485,8 +485,9 @@ onUnmounted(() => {
 }
 
 .tips-grid {
+  /* v3.2.7：复习建议卡片两两并列（政治/英语 与 数学/408 各一行） */
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 

@@ -2253,19 +2253,28 @@ ipcMain.handle('report:export-pdf', async (_event, html: string) => {
   }
 })
 
-// 导出数据
+// 导出数据（v3.2.7：固定导出路径为 D:\下载\文档\11408kaoyan-helper，不再弹出保存对话框）
 ipcMain.handle('export-data', async (_event, data: string) => {
-  const result = await dialog.showSaveDialog({
-    title: '导出备份数据',
-    defaultPath: `考研助手备份_${new Date().toISOString().slice(0, 10)}.json`,
-    filters: [{ name: 'JSON 文件', extensions: ['json'] }]
-  })
-
-  if (!result.canceled && result.filePath) {
-    fs.writeFileSync(result.filePath, data, 'utf-8')
-    return { success: true, path: result.filePath }
+  try {
+    // v3.2.7：必须使用 D:\\ 作为根，否则 path.join('D:', ...) 在 Windows 下会变成 D:xxx（相对路径，而非 D:\xxx）
+    const exportDir = path.join('D:\\', '下载', '文档', '11408kaoyan-helper')
+    fs.mkdirSync(exportDir, { recursive: true })
+    const fileName = `考研助手备份_${new Date().toISOString().slice(0, 10)}_${Date.now()}.json`
+    const filePath = path.join(exportDir, fileName)
+    fs.writeFileSync(filePath, data, 'utf-8')
+    return { success: true, path: filePath }
+  } catch (err) {
+    // 固定目录失败时，回退到用户目录（确保功能不失效）
+    try {
+      const fallbackDir = app.getPath('documents')
+      const fileName = `考研助手备份_${new Date().toISOString().slice(0, 10)}.json`
+      const filePath = path.join(fallbackDir, fileName)
+      fs.writeFileSync(filePath, data, 'utf-8')
+      return { success: true, path: filePath, fallback: true }
+    } catch (e2) {
+      return { success: false, message: String((e2 as Error)?.message || e2) }
+    }
   }
-  return { success: false }
 })
 
 // 导入数据

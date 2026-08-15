@@ -1138,7 +1138,9 @@ onUnmounted(() => {
 }
 
 /* v3.2.4：右侧 Tab 内容卡片（搜索/云盘/排行榜/我的歌单）——主内容区，basis 0 + flex:1 填充剩余空间
-   内部列表各自 overflow:auto 滚动，始终可见，不再被下方播放列表挤占 */
+   内部列表各自 overflow:auto 滚动，始终可见，不再被下方播放列表挤占
+   v3.2.7：显式 overflow:hidden 防止内部列表内容越过卡片边界覆盖其他区域
+   （全局 .glass-card--card 为解决 hover 问题设为 overflow:visible，此处必须单独收紧） */
 .search-card,
 .clouddrive-card,
 .toplist-card,
@@ -1146,6 +1148,18 @@ onUnmounted(() => {
   flex: 1 1 0;
   min-height: 0;
   margin-bottom: 0 !important;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
+}
+/* 卡片内所有直接子元素：允许内容滚动但不出界 */
+.search-card > *,
+.clouddrive-card > *,
+.toplist-card > *,
+.myplaylists-card > * {
+  min-width: 0;
+  min-height: 0;
 }
 
 /* v3.2.4：底部播放列表卡片——按内容高度，上限 40vh，内部滚动；
@@ -1930,10 +1944,12 @@ onUnmounted(() => {
 }
 
 /* v3.1.5：排行榜（flex 规则见上方 .toplist-card）
-   v3.2.6：改为 2 列网格——飙升榜/新歌榜等两榜同一行展示 */
+   v3.2.6：改为 2 列网格——飙升榜/新歌榜等两榜同一行展示
+   v3.2.7：内容溢出修复——卡片 overflow 隐藏 + isolation 防层叠 */
 .toplist-list {
   max-height: 480px;
   overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 4px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1941,33 +1957,37 @@ onUnmounted(() => {
   isolation: isolate;
 }
 
+/* v3.2.7：排行榜卡片改为图标左、文字右的水平布局，并严格防止内容溢出 */
 .toplist-item {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 10px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
   border-radius: 10px;
   cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+  transition: background 0.2s, box-shadow 0.2s;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid transparent;
   position: relative;
   z-index: 0;
-  text-align: center;
+  text-align: left;
+  overflow: hidden;
+  min-height: 0;
+  isolation: isolate;
 }
 
 .toplist-item:hover {
   background: var(--mo-bg-2);
   border-color: var(--glass-border, var(--mo-border));
   box-shadow: 0 4px 14px rgba(31, 64, 130, 0.10);
-  transform: translateY(-1px);
-  z-index: 1;
+  /* v3.2.7：去掉 hover 的 translateY(-1px) 与 z-index:1，
+     防止 backdrop-filter 层叠导致 hover 卡片绘制到相邻卡片上层 */
 }
 
 .toplist-cover {
-  width: 80px;
-  height: 80px;
+  width: 64px;
+  height: 64px;
   border-radius: 10px;
   object-fit: cover;
   flex-shrink: 0;
@@ -1983,12 +2003,13 @@ onUnmounted(() => {
 }
 
 .toplist-info {
-  width: 100%;
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 3px;
+  overflow: hidden;
 }
 
 .toplist-name {
@@ -2003,6 +2024,9 @@ onUnmounted(() => {
 .toplist-update {
   font-size: 10px;
   color: var(--mo-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toplist-preview {
@@ -2010,7 +2034,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 1px;
   margin-top: 2px;
-  text-align: left;
+  overflow: hidden;
 }
 
 .toplist-track-preview {

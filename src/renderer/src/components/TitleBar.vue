@@ -26,7 +26,7 @@
             :title="currentLyricText"
             @click="goToMusic"
           >{{ currentLyricText }}</span>
-          <!-- v3.2.6：顶栏喜爱歌曲按钮（与音乐页状态一致，使用 isSongLiked 直接读取缓存） -->
+          <!-- v3.2.7：顶栏喜爱歌曲按钮图标改为星星（与音乐页喜爱按钮风格完全一致） -->
           <button
             class="mini-btn like-mini-btn"
             :class="{ on: isCurrentTrackLiked }"
@@ -34,7 +34,9 @@
             :disabled="!music.currentTrack?.id || music.likingSongId === music.currentTrack?.id"
             @click="handleToggleLikeSong"
           >
-            <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 11.5 C6.5 11.5 1 8.5 1 4.5 A2.8 2.8 0 0 1 6.5 3 A2.8 2.8 0 0 1 12 4.5 C12 8.5 6.5 11.5 6.5 11.5 Z" :fill="isCurrentTrackLiked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
+            <el-icon :size="13">
+              <component :is="isCurrentTrackLiked ? StarFilled : Star" />
+            </el-icon>
           </button>
           <button class="mini-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
             <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
@@ -43,13 +45,7 @@
           <button class="mini-btn" title="下一首" @click="music.next()">
             <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1 L6 5 L1 9 Z" fill="currentColor"/><rect x="7" y="1" width="2" height="8" rx="0.5" fill="currentColor"/></svg>
           </button>
-          <input
-            class="mini-volume"
-            type="range" min="0" max="100"
-            :value="Math.round(music.volume * 100)"
-            @input="onVolumeInput"
-            title="音量"
-          />
+          <!-- v3.2.7：移除顶栏音量调节滑轨（音量调节仍可在系统或音乐播放页面进行） -->
           <!-- 播放列表面板 -->
           <el-popover
             placement="bottom-start"
@@ -316,12 +312,6 @@
         </div>
       </el-popover>
 
-      <!-- 用户栏（本地用户） -->
-      <div v-if="!transparent && userStore.isLoggedIn && !(music.neteaseLoggedIn && music.neteaseUser)" class="user-mini" :title="userStore.displayName" @click="goToSettings">
-        <el-icon :size="14" class="user-mini-icon"><UserFilled /></el-icon>
-        <span class="user-mini-name">{{ userStore.displayName }}</span>
-      </div>
-
       <!-- 自建窗口控制按钮 -->
       <div class="win-controls">
         <button class="win-btn" title="最小化" @click="minimize">
@@ -358,7 +348,7 @@ import {
   type WeatherCity
 } from '@/utils/weather'
 import { ElMessage } from 'element-plus'
-import { Reading, Sunny, Moon, UserFilled, Folder, List, Search } from '@element-plus/icons-vue'
+import { Reading, Sunny, Moon, UserFilled, Folder, List, Search, Star, StarFilled } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 interface Props {

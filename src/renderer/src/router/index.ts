@@ -1,5 +1,5 @@
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
-import { getCurrentUsername, storageReady } from '@/utils/storage'
+// v3.2.7：移除未使用的 getCurrentUsername / storageReady（不再需要本地账号登录守卫）
 
 const routes: RouteRecordRaw[] = [
   {
@@ -113,22 +113,10 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫：未登录时跳转到登录页
-// v2.8.2：等待存储初始化完成后再判断登录状态，修复重启掉登录问题
-router.beforeEach(async (to, _from, next) => {
-  // 登录页不需要认证
-  if (to.path === '/login' || to.meta.requiresAuth === false) {
-    next()
-    return
-  }
-  // 等待存储层就绪（IndexedDB 加载完成）
-  await storageReady()
-  const username = getCurrentUsername()
-  if (!username) {
-    next({ path: '/login', query: { redirect: to.fullPath } })
-  } else {
-    next()
-  }
+// v3.2.7：移除本地账号系统的登录守卫——改用网易云登录替代初始登录
+// 所有路由无需强制认证，用户可直接进入主界面；音乐相关功能会在需要时引导网易云登录
+router.beforeEach(async (_to, _from, next) => {
+  next()
 })
 
 export default router

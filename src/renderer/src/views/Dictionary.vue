@@ -678,6 +678,13 @@ function showWordDetail(word: WordItem) {
 }
 
 function addToFlashcards(word: WordItem) {
+  // v3.2.7：同单词只能加入一次背诵——检查 front 字段是否已存在（大小写不敏感）
+  const wordKey = word.word.trim().toLowerCase()
+  const exists = store.flashcards.some((c) => c.front.trim().toLowerCase() === wordKey)
+  if (exists) {
+    ElMessage.warning(`「${word.word}」已在背诵卡片中，请先从背诵卡片移除后再加`)
+    return
+  }
   store.addFlashcard({
     front: word.word,
     back: `${word.phonetic ? '/' + word.phonetic + '/\n' : ''}${word.meaning}${word.example ? '\n\n例句：' + word.example.en + '\n' + word.example.cn : ''}`,

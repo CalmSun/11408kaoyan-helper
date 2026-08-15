@@ -36,7 +36,8 @@ export const useMusicStore = defineStore('music', () => {
   const playlist = ref<MusicTrack[]>([])
   const currentIndex = ref(0)
   const isPlaying = ref(false)
-  const volume = ref(0.7)
+  // v3.2.7：默认音量改为 100%
+  const volume = ref(1.0)
   const shuffle = ref<boolean>(getStorage('musicShuffle', false))
 
   // v2.8.2：歌词相关状态
