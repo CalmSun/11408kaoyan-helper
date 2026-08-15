@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage, shell, session } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage, shell } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -1091,7 +1091,7 @@ async function neteaseSmartRequest(path: string, data: Record<string, unknown>):
  * 3. Edge 浏览器 User-Agent
  * 4. 完整 cookie（含 _ntes_nuid, NMTID, WNMCID 等）
  */
-async function neteaseRequest(path: string, data: Record<string, unknown>, token?: string): Promise<unknown> {
+async function neteaseRequest(path: string, data: Record<string, unknown>): Promise<unknown> {
   const csrf = neteaseCookies.get('__csrf') || ''
   const { params, encSecKey } = neteaseWeapi({ ...data, csrf_token: csrf })
   const body = new URLSearchParams({ params, encSecKey })
@@ -1110,8 +1110,6 @@ async function neteaseRequest(path: string, data: Record<string, unknown>, token
     'X-Forwarded-For': ip,
     'Cookie': buildCookieHeader(path)
   }
-  // v3.2.5：写操作（喜欢音乐 / 评论点赞）需附加易盾反作弊 token，否则触发 524/250
-  if (token) headers['X-antiCheatToken'] = token
   const res = await fetch(url, {
     method: 'POST',
     headers,
@@ -1128,125 +1126,6 @@ async function neteaseRequest(path: string, data: Record<string, unknown>, token
     throw new Error(`NetEase API ${path} code=${json.code ?? 'unknown'}${json.message ? ': ' + json.message : ''}`)
   }
   return json
-}
-
-// ── v3.2.5：易盾（Yidun）反作弊 Token 生成 ──
-// 网易云写操作（喜欢音乐 /song/like、评论点赞 /v1/comment/like）会校验 X-antiCheatToken，
-// 缺失时返回 524「当前环境异常」或 250「点赞异常」。
-// Token 由易盾 Watchman SDK（tool.min.js）在真实浏览器环境内生成；
-// 这里用一个隐藏 BrowserWindow（真实 Chromium）加载 music.163.com 并初始化 Watchman，
-// 之后每次写操作实时 getToken（不缓存，避免复用触发风控）。
-// 对齐 NeteaseCloudMusicApiEnhanced module/register_checktoken_v2 的实现思路。
-const YIDUN_PRODUCT_NUMBER = 'YD00000558929251'
-const YIDUN_BUSINESS_ID = 'bd5d2f973ef74cd2a61325a412ae54d9'
-const YIDUN_TOOL_JS = 'https://acstatic-dun.126.net/tool.min.js'
-const AC_PARTITION = 'antichat'
-
-let antiCheatWindow: BrowserWindow | null = null
-let antiCheatInitPromise: Promise<BrowserWindow | null> | null = null
-
-/** 初始化反作弊隐藏窗口（进程内复用，失败返回 null） */
-function ensureAntiCheatWindow(): Promise<BrowserWindow | null> {
-  if (antiCheatWindow && !antiCheatWindow.isDestroyed()) return Promise.resolve(antiCheatWindow)
-  if (antiCheatInitPromise) return antiCheatInitPromise
-  antiCheatInitPromise = (async (): Promise<BrowserWindow | null> => {
-    try {
-      const ses = session.fromPartition(AC_PARTITION)
-      // 易盾 SDK 会对 UA 做特征检测，使用普通 Chrome UA 规避「Electron」特征
-      ses.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
-      // 去除 music.163.com 的 CSP，确保注入的 tool.min.js / watchman.min.js 可执行
-      ses.webRequest.onHeadersReceived((details, cb) => {
-        const headers: Record<string, string[]> = { ...(details.responseHeaders as Record<string, string[]>) }
-        for (const k of Object.keys(headers)) {
-          if (/content-security-policy/i.test(k)) delete headers[k]
-        }
-        cb({ responseHeaders: headers })
-      })
-      const win = new BrowserWindow({
-        show: false,
-        webPreferences: { partition: AC_PARTITION, sandbox: false, contextIsolation: true, nodeIntegration: false }
-      })
-      await Promise.race([
-        win.loadURL('https://music.163.com/'),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('loadURL timeout')), 20000))
-      ])
-      // 注入反自动化特征屏蔽 → 加载易盾 SDK → 初始化 Watchman（实例进程内复用）
-      const ok = await win.webContents.executeJavaScript(`
-        (async () => {
-          try {
-            try { Object.defineProperty(window.navigator, 'webdriver', { get: () => undefined }); } catch (e) {}
-            window.chrome = window.chrome || { runtime: {} };
-            try { Object.defineProperty(window.navigator, 'languages', { get: () => ['zh-CN', 'zh'] }); } catch (e) {}
-            try { Object.defineProperty(window.navigator, 'plugins', { get: () => [1,2,3,4,5] }); } catch (e) {}
-            await new Promise((resolve, reject) => {
-              const s = document.createElement('script');
-              s.src = ${JSON.stringify(YIDUN_TOOL_JS)};
-              s.onload = () => resolve();
-              s.onerror = () => reject(new Error('tool.min.js load failed'));
-              document.body.appendChild(s);
-            });
-            await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => reject(new Error('watchman init timeout')), 20000);
-              window.initWatchman({
-                auto: true,
-                productNumber: ${JSON.stringify(YIDUN_PRODUCT_NUMBER)},
-                onload(instance) { clearTimeout(timer); window.__watchman = instance; resolve(); },
-                onerror() { clearTimeout(timer); reject(new Error('watchman init error')); }
-              });
-            });
-            return true;
-          } catch (e) {
-            window.__watchmanError = String(e && e.message ? e.message : e);
-            return false;
-          }
-        })()
-      `)
-      if (!ok) {
-        try { win.destroy() } catch { /* ignore */ }
-        antiCheatWindow = null
-        return null
-      }
-      antiCheatWindow = win
-      return win
-    } catch (e) {
-      console.error('[AntiCheat] init failed:', e)
-      antiCheatWindow = null
-      return null
-    } finally {
-      antiCheatInitPromise = null
-    }
-  })()
-  return antiCheatInitPromise
-}
-
-/** 实时获取一个新鲜的易盾反作弊 token（失败返回空串，由调用方降级） */
-async function getAntiCheatToken(): Promise<string> {
-  try {
-    const win = await ensureAntiCheatWindow()
-    if (!win || win.isDestroyed()) return ''
-    const token = await win.webContents.executeJavaScript(`
-      new Promise((resolve) => {
-        const inst = window.__watchman;
-        if (!inst) { resolve(''); return; }
-        const timer = setTimeout(() => resolve(''), 15000);
-        try {
-          inst.getToken(${JSON.stringify(YIDUN_BUSINESS_ID)}, (tk) => {
-            clearTimeout(timer);
-            resolve(typeof tk === 'string' ? tk : '');
-          });
-        } catch (e) { clearTimeout(timer); resolve(''); }
-      })
-    `)
-    return typeof token === 'string' ? token : ''
-  } catch (e) {
-    console.error('[AntiCheat] getToken failed:', e)
-    // 窗口可能已失效，重置以便下次重建
-    if (antiCheatWindow && !antiCheatWindow.isDestroyed()) {
-      try { antiCheatWindow.destroy() } catch { /* ignore */ }
-    }
-    antiCheatWindow = null
-    return ''
-  }
 }
 
 /** v3.1.3：普通 API 请求（不加密，用于二维码登录等接口） */
@@ -1855,18 +1734,12 @@ ipcMain.handle('netease:user-account', async () => {
 
 ipcMain.handle('netease:like', async (_e, songId: number, like: boolean = true) => {
   try {
-    // v3.2.5：原 /radio/like 已被网易云风控拦截（524 当前环境异常），
-    // 改用 /song/like 端点并附加易盾反作弊 token（X-antiCheatToken）。
-    // weapi 路径已实测：带 token 时 like=true/false 均返回 200 并真实变更喜欢列表。
-    const token = await getAntiCheatToken()
-    const data = await neteaseRequest('/song/like', {
-      alg: 'itembased',
-      trackId: songId,
-      like: like,
-      time: '3'
-    }, token) as { code?: number }
-    if (data.code === 200) return { success: true, liked: like }
-    return { success: false, liked: false, message: '操作失败，请稍后重试' }
+    // v3.2.8：根据 NeteaseCloudMusicApiEnhanced(song_like.js) 与 ncm-api-rs(song_like.rs) 源码，
+    // /song/like 端点无需易盾反作弊 token（仅发评论等敏感操作需要）。
+    // 移除 getAntiCheatToken 调用，改用 neteaseSmartRequest（eapi 优先，weapi 降级），
+    // 参数对齐 song_like.js：{ trackId, like }（userid 由 MUSIC_U cookie 标识）。
+    await neteaseSmartRequest('/song/like', { trackId: songId, like })
+    return { success: true, liked: like }
   } catch (err) {
     return { success: false, liked: false, message: String(err) }
   }
@@ -1992,16 +1865,16 @@ ipcMain.handle('netease:intelligence-list', async (_e, songId: number, playlistI
 
 ipcMain.handle('netease:comment-like', async (_e, songId: number, commentId: number, like: boolean) => {
   try {
+    // v3.2.8：根据 NeteaseCloudMusicApiEnhanced(comment_like.js) 与 ncm-api-rs(comment_like.rs) 源码，
+    // 评论点赞无需易盾反作弊 token（仅发评论 comment.js 需要 checkToken='v2'）。
+    // 改用 neteaseSmartRequest（eapi 优先，weapi 降级），移除 getAntiCheatToken 调用。
     const path = like ? '/v1/comment/like' : '/v1/comment/unlike'
-    // v3.2.5：评论点赞需附加易盾反作弊 token，否则返回 250「点赞异常」
-    const token = await getAntiCheatToken()
     // threadId 格式：R_SO_4_{songId}（歌曲资源类型前缀）
-    const data = await neteaseRequest(path, {
+    await neteaseSmartRequest(path, {
       threadId: `R_SO_4_${songId}`,
       commentId: String(commentId)
-    }, token) as { code?: number }
-    if (data.code === 200) return { success: true, liked: like }
-    return { success: false, liked: !like, message: '评论点赞失败，请稍后重试' }
+    })
+    return { success: true, liked: like }
   } catch (err) {
     return { success: false, liked: !like, message: String(err) }
   }
