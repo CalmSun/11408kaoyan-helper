@@ -117,6 +117,14 @@ export const SUBJECT_FULL_SCORE: Record<SubjectType, number> = {
   cs408: 150
 }
 
+// v3.3.5：全局报错日志条目（必须在模块顶层，不能写在 defineStore 内部）
+export interface AppErrorLog {
+  type: 'router' | 'vue' | 'runtime' | 'api' | string
+  message: string
+  stack?: string
+  time: number
+}
+
 // 历年真题分数记录
 export interface ExamScoreRecord {
   id: string
@@ -242,6 +250,25 @@ export const useMainStore = defineStore('main', () => {
   // 应用使用时长统计（分钟）
   const appUsageMinutes = ref<number>(getStorage('appUsageMinutes', 0))
   const appSessionStart = ref<number>(Date.now())
+
+  // v3.3.5：全局报错日志（设置页可见，持久化到存储，最多保留 200 条）
+  const errorLogs = ref<AppErrorLog[]>(getStorage('errorLogs', [] as AppErrorLog[]))
+  function logError(entry: Omit<AppErrorLog, 'time'> & { time?: number }) {
+    const item: AppErrorLog = {
+      type: entry.type || 'runtime',
+      message: entry.message || '(no message)',
+      stack: entry.stack,
+      time: entry.time || Date.now()
+    }
+    console.error('[AppError]', item)
+    errorLogs.value.unshift(item)
+    if (errorLogs.value.length > 200) errorLogs.value.length = 200
+    try { setStorage('errorLogs', errorLogs.value) } catch (_) {}
+  }
+  function clearErrorLogs() {
+    errorLogs.value = []
+    try { setStorage('errorLogs', errorLogs.value) } catch (_) {}
+  }
 
   // 记录应用使用时长
   function recordAppUsage() {
@@ -635,6 +662,7 @@ export const useMainStore = defineStore('main', () => {
     planSnapshots,
     pomodoroSettings,
     subjectProgress,
+    errorLogs,        // v3.3.5
     // 常量
     SUBJECT_CONFIG,
     // 计算属性
@@ -663,6 +691,8 @@ export const useMainStore = defineStore('main', () => {
     updateExamScore,
     deleteExamScore,
     recordAppUsage,
-    recordPlanSnapshot
+    recordPlanSnapshot,
+    logError,         // v3.3.5
+    clearErrorLogs    // v3.3.5
   }
 })

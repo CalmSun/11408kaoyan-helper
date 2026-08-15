@@ -242,12 +242,19 @@ import {
 } from '@element-plus/icons-vue'
 
 // v3.3.2：引入 @tato30/vue-pdf（基于 pdf.js 的 Vue 3 组件）
-import { VuePDF, usePDF } from '@tato30/vue-pdf'
+// v3.3.5：关键修复——改用 /minimal 入口！
+//        默认入口 index.mjs 包含模块级副作用：
+//          import PDFWorker from "pdfjs-dist/build/pdf.worker.min?url";
+//          if (!GlobalWorkerOptions?.workerSrc) configWorker(PDFWorker);
+//        该 ?url 导入在 Electron file:// 协议下解析失败会导致整个模块 import 崩溃，
+//        表现为「点击学习资料无响应」。/minimal 入口无此副作用，仅导出组件+composable。
+import { VuePDF, usePDF } from '@tato30/vue-pdf/minimal'
 import '@tato30/vue-pdf/style.css'
 
 // v3.3.3：修复 Electron file:// 环境下 pdf.js worker 无法从 data URL 加载的问题
-// v3.3.4：关键修复——从模块顶层移到 onMounted try/catch 内执行，
-//        避免 new PdfWorker() 抛异常导致整个 Materials 模块加载失败、页面无法进入。
+// v3.3.4：从模块顶层移到 onMounted try/catch 内执行，避免 new PdfWorker() 抛异常导致整个模块加载失败
+// v3.3.5：仍保留此处的 worker 初始化（workerPort 优先级高于 workerSrc），
+//        真正生效的是我们通过 Vite ?worker&inline 构造的 blob Worker，不受 pdfjs 默认路径影响
 import { GlobalWorkerOptions } from 'pdfjs-dist'
 // eslint-disable-next-line import/no-unresolved
 import PdfWorkerConstructor from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline'
@@ -256,6 +263,8 @@ let pdfWorkerInitialized = false
 function initPdfWorker() {
   if (pdfWorkerInitialized) return
   try {
+    // v3.3.5：先强制清掉 @tato30/vue-pdf 默认入口可能遗留的无效 workerSrc（防止它内部 fallback 到错误路径）
+    GlobalWorkerOptions.workerSrc = ''
     if (!GlobalWorkerOptions.workerPort && typeof PdfWorkerConstructor === 'function') {
       GlobalWorkerOptions.workerPort = new PdfWorkerConstructor() as unknown as Worker
     }

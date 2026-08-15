@@ -1,4 +1,5 @@
 import { createRouter, createWebHashHistory, RouteRecordRaw } from 'vue-router'
+import { ElMessage } from 'element-plus'
 // v3.2.7：移除未使用的 getCurrentUsername / storageReady（不再需要本地账号登录守卫）
 
 const routes: RouteRecordRaw[] = [
@@ -117,6 +118,26 @@ const router = createRouter({
 // 所有路由无需强制认证，用户可直接进入主界面；音乐相关功能会在需要时引导网易云登录
 router.beforeEach(async (_to, _from, next) => {
   next()
+})
+
+// v3.3.5：路由异步组件加载失败捕获（懒加载模块 import 抛异常会走到这里，
+//        例如 Materials.vue 导入 @tato30/vue-pdf 默认入口崩溃时，点击就「无响应」）
+import { useMainStore } from '@/stores'
+router.onError((err, to) => {
+  console.error('[Router] 路由加载失败:', to?.path, err)
+  const msg = err instanceof Error ? err.message : String(err)
+  try {
+    useMainStore().logError?.({
+      type: 'router',
+      message: `页面 ${to?.path || 'unknown'} 加载失败: ${msg}`,
+      stack: err instanceof Error ? err.stack : undefined,
+      time: Date.now()
+    })
+  } catch (_) { /* store 初始化前兜底 */ }
+  // 同时弹提示，避免用户以为「没反应」
+  try {
+    ElMessage.error(`页面加载失败，请前往「设置 → 报错日志」查看详情: ${msg.slice(0, 60)}`)
+  } catch (_) {}
 })
 
 export default router

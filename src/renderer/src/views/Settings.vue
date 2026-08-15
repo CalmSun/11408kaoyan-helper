@@ -266,6 +266,68 @@
         💡 提示：所有数据都保存在本地，请定期导出备份，防止数据丢失。
       </p>
     </GlassCard>
+
+    <!-- v3.3.5：报错日志 -->
+    <GlassCard class="card setting-section">
+      <h3 class="section-title">
+        <el-icon><Warning /></el-icon>
+        报错日志
+        <span class="log-count-badge" v-if="store.errorLogs.length > 0">{{ store.errorLogs.length }}</span>
+        <el-button
+          size="small"
+          link
+          type="danger"
+          style="margin-left: auto;"
+          @click="handleClearLogs"
+          :disabled="store.errorLogs.length === 0"
+        >
+          <el-icon><CircleClose /></el-icon> 清空日志
+        </el-button>
+        <el-button
+          size="small"
+          link
+          type="primary"
+          @click="handleCopyLogs"
+          :disabled="store.errorLogs.length === 0"
+          style="margin-left: 8px;"
+        >
+          <el-icon><DocumentCopy /></el-icon> 复制全部
+        </el-button>
+      </h3>
+      <p class="section-desc">
+        记录路由加载、组件渲染、异步异常等运行时错误。遇到「点击没反应」「页面空白」等问题时，可将下方日志发给开发者定位。
+      </p>
+      <div v-if="store.errorLogs.length === 0" class="logs-empty">
+        <el-icon :size="36"><CircleCheck /></el-icon>
+        <p>暂无报错记录，运行一切正常 ✅</p>
+      </div>
+      <div v-else class="logs-list">
+        <div
+          v-for="(log, idx) in store.errorLogs"
+          :key="idx"
+          class="log-item"
+          :class="'log-type-' + log.type"
+        >
+          <div class="log-header">
+            <el-tag size="small" :type="logTagType(log.type)" effect="light">{{ logTypeLabel(log.type) }}</el-tag>
+            <span class="log-time">{{ formatLogTime(log.time) }}</span>
+            <el-button
+              size="small"
+              link
+              type="primary"
+              class="log-copy-btn"
+              @click="copySingleLog(log)"
+            >复制</el-button>
+          </div>
+          <div class="log-message">{{ log.message }}</div>
+          <div v-if="log.stack" class="log-stack" @click="toggleStack(idx)">
+            <el-icon class="stack-arrow" :class="{ expanded: expandedStacks.has(idx) }"><ArrowRight /></el-icon>
+            <span>展开堆栈</span>
+          </div>
+          <pre v-if="log.stack && expandedStacks.has(idx)" class="log-stack-content">{{ log.stack }}</pre>
+        </div>
+      </div>
+    </GlassCard>
   </div>
 </template>
 
@@ -289,7 +351,12 @@ import {
   Setting,
   Link,
   Box,
-  Headset
+  Headset,
+  Warning,
+  CircleClose,
+  DocumentCopy,
+  CircleCheck,
+  ArrowRight
 } from '@element-plus/icons-vue'
 
 const store = useMainStore()
@@ -699,6 +766,75 @@ function handleDeleteAccount() {
   }).catch(() => {})
 }
 
+// ============ v3.3.5：报错日志 ============
+import type { AppErrorLog } from '@/stores'
+const expandedStacks = ref<Set<number>>(new Set())
+
+function logTypeLabel(type: string): string {
+  const map: Record<string, string> = {
+    router: '路由加载',
+    vue: 'Vue 渲染',
+    runtime: '运行时',
+    api: '接口请求'
+  }
+  return map[type] || type
+}
+function logTagType(type: string): '' | 'success' | 'warning' | 'info' | 'danger' {
+  const map: Record<string, 'success' | 'warning' | 'info' | 'danger'> = {
+    router: 'danger',
+    vue: 'danger',
+    runtime: 'warning',
+    api: 'warning'
+  }
+  return map[type] || 'info'
+}
+function formatLogTime(t: number): string {
+  try {
+    const d = new Date(t)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  } catch {
+    return String(t)
+  }
+}
+function toggleStack(idx: number) {
+  const s = new Set(expandedStacks.value)
+  if (s.has(idx)) s.delete(idx)
+  else s.add(idx)
+  expandedStacks.value = s
+}
+function buildLogText(log: AppErrorLog): string {
+  return `[${logTypeLabel(log.type)}] ${formatLogTime(log.time)}\n${log.message}${log.stack ? '\n' + log.stack : ''}`
+}
+async function copySingleLog(log: AppErrorLog) {
+  try {
+    await navigator.clipboard.writeText(buildLogText(log))
+    ElMessage.success('已复制该条日志到剪贴板')
+  } catch {
+    ElMessage.error('复制失败，请手动选择文本复制')
+  }
+}
+async function handleCopyLogs() {
+  try {
+    const text = store.errorLogs.map(buildLogText).join('\n\n───────\n\n')
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(`已复制全部 ${store.errorLogs.length} 条日志`)
+  } catch {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+function handleClearLogs() {
+  ElMessageBox.confirm('确定清空全部报错日志吗？', '清空日志', {
+    confirmButtonText: '确定清空',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    store.clearErrorLogs()
+    expandedStacks.value = new Set()
+    ElMessage.success('日志已清空')
+  }).catch(() => {})
+}
+
 onMounted(() => {
   loadAutoLaunch()
   // 番茄钟设置已通过 store 初始化，无需额外加载
@@ -912,5 +1048,108 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+/* v3.3.5：报错日志面板 */
+.log-count-badge {
+  background: var(--el-color-danger);
+  color: #fff;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.logs-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--mo-text-3);
+}
+.logs-empty > p {
+  margin-top: 12px;
+  font-size: 14px;
+}
+
+.logs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.log-item {
+  border: 1px solid var(--glass-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--mo-surface);
+}
+.log-item.log-type-router,
+.log-item.log-type-vue {
+  border-left: 3px solid var(--el-color-danger);
+}
+.log-item.log-type-runtime {
+  border-left: 3px solid var(--el-color-warning);
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.log-time {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  font-family: Consolas, monospace;
+}
+.log-copy-btn {
+  margin-left: auto !important;
+}
+
+.log-message {
+  font-size: 13px;
+  color: var(--mo-text-1);
+  line-height: 1.6;
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.log-stack {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--mo-text-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
+}
+.log-stack:hover {
+  color: var(--el-color-primary);
+}
+.stack-arrow {
+  transition: transform 0.15s ease;
+  font-size: 12px;
+}
+.stack-arrow.expanded {
+  transform: rotate(90deg);
+}
+
+.log-stack-content {
+  margin: 8px 0 0 0;
+  padding: 10px 12px;
+  background: #1f1f1f;
+  color: #e5e7eb;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, 'Cascadia Code', monospace;
 }
 </style>
