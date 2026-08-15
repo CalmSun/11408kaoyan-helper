@@ -91,37 +91,26 @@
           </el-button>
         </h3>
         <div class="preview-container" v-if="currentFile">
-          <!-- PDF 预览（v3.3.9：pdfjs-dist canvas 渲染，分页懒加载） -->
+          <!-- PDF 预览（v3.4.0：Chromium PDFium <iframe> 渲染） -->
           <div v-if="currentFile.ext === '.pdf'" class="pdf-wrap">
             <!-- PDF 工具栏 -->
             <div class="pdf-toolbar">
-              <div class="pdf-nav-group">
-                <button class="pdf-btn" @click="pdfPrevPage" :disabled="pdfCurrentPage <= 1" title="上一页">‹</button>
-                <input
-                  class="page-input"
-                  type="number"
-                  v-model.number="pdfPageInput"
-                  @change="pdfGoToPage"
-                  @keyup.enter="pdfGoToPage"
-                  :min="1"
-                  :max="pdfTotalPages"
-                />
-                <span class="page-total">/ {{ pdfTotalPages }}</span>
-                <button class="pdf-btn" @click="pdfNextPage" :disabled="pdfCurrentPage >= pdfTotalPages" title="下一页">›</button>
-              </div>
-              <div class="pdf-zoom-group">
-                <button class="pdf-btn" @click="pdfZoomOut" :disabled="pdfScale <= 0.5" title="缩小">−</button>
-                <span class="zoom-label">{{ Math.round(pdfScale * 100) }}%</span>
-                <button class="pdf-btn" @click="pdfZoomIn" :disabled="pdfScale >= 3.0" title="放大">+</button>
-              </div>
+              <el-icon class="pdf-tip-icon"><InfoFilled /></el-icon>
+              <span class="pdf-tip">已通过内置查看器打开，可翻页 / 缩放 / 搜索 / 打印（快捷键 Ctrl+F 搜索）</span>
             </div>
             <!-- PDF 渲染区 -->
             <div class="pdf-viewer-wrap">
-              <canvas ref="canvasRef" class="pdf-canvas" v-show="!pdfLoading && !pdfError"></canvas>
+              <iframe
+                v-if="pdfFrameUrl"
+                ref="pdfFrame"
+                class="pdf-frame"
+                :src="pdfFrameUrl"
+                @load="pdfLoading = false"
+                @error="onPdfFrameError"
+              ></iframe>
               <!-- 加载占位 -->
               <div v-if="pdfLoading" class="pdf-loading-mask">
                 <div class="pdf-loading-spinner"></div>
-                <div class="pdf-loading-bar"><div class="pdf-loading-bar-fill"></div></div>
                 <span class="pdf-loading-text">PDF 加载中...</span>
               </div>
               <!-- 错误提示 -->
@@ -130,10 +119,6 @@
                 <span>PDF 加载失败</span>
                 <span class="pdf-error-detail">{{ pdfError }}</span>
                 <el-button size="small" type="primary" @click="pdfRetry">重试</el-button>
-              </div>
-              <!-- 渲染中指示 -->
-              <div v-if="pdfRendering && !pdfLoading && !pdfError" class="pdf-rendering-indicator">
-                <el-icon class="is-loading" :size="20"><Loading /></el-icon>
               </div>
             </div>
           </div>
@@ -302,13 +287,25 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning, ArrowRight, ArrowLeft, List, Loading, Open
+  View, Warning, ArrowRight, ArrowLeft, List, Loading, Open, InfoFilled
 } from '@element-plus/icons-vue'
 
-// v3.3.9: pdfjs-dist legacy build — canvas 渲染，不使用 text-layer（避免 async iterable 问题）
-import * as pdfjsLib from 'pdfjs-dist'
-// eslint-disable-next-line import/no-unresolved
-import PdfWorkerConstructor from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline'
+// v3.4.0: PDF 预览改用 Chromium 内置 PDFium（<iframe>）。
+// 此前 pdfjs-dist 6.x 在 Electron 28 (Chromium 120) 下因 ES2025 语法/worker 兼容问题
+// 反复出现「加载后无内容」；Chromium PDFium 为系统内置渲染器，零依赖、无 worker、
+// 不额外占内存，且自带翻页/缩放/搜索/打印等功能，是最稳定方案。
+const pdfFrame = ref<HTMLIFrameElement | null>(null)
+const pdfFrameUrl = ref('')
+
+// v3.4.0: 由当前 PDF 文件 URL 拼接 PDFium 查看器参数（FitH 适应宽度，toolbar 显示原生工具条）
+function buildPdfFrameUrl(url: string): string {
+  return `${url}#view=FitH&toolbar=1&page=1`
+}
+
+// v3.4.0: 卸载 iframe 释放 PDFium 渲染资源（切换文件/离开 PDF 模式时调用）
+function unloadPdf() {
+  pdfFrameUrl.value = ''
+}
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
 interface DisplayNode extends MaterialNode {
@@ -324,144 +321,37 @@ const expandedFolders = ref<Set<string>>(new Set())
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 
-// ============ v3.3.9: PDF 状态（pdfjs-dist canvas 渲染 + 分页懒加载） ============
+// ============ v3.4.0: PDF 状态（Chromium PDFium <iframe> 渲染） ============
+// PDF 加载由 Chromium 内核处理，无需前端解析，状态仅需记录是否出错/加载中。
 const pdfLoading = ref(false)
 const pdfError = ref('')
-const pdfDoc = ref<pdfjsLib.PDFDocumentProxy | null>(null)
-const pdfCurrentPage = ref(1)
-const pdfTotalPages = ref(0)
-const pdfScale = ref(1.2)
-const pdfRendering = ref(false)
-const pdfPageInput = ref(1)
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-let renderTask: pdfjsLib.RenderTask | null = null
-let pdfLoadTimer: ReturnType<typeof setTimeout> | null = null
 
-// v3.3.9: 初始化 worker（惰性，在首次加载 PDF 时执行）
-let pdfWorkerReady = false
-function ensurePdfWorker() {
-  if (pdfWorkerReady) return
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-    if (!pdfjsLib.GlobalWorkerOptions.workerPort && typeof PdfWorkerConstructor === 'function') {
-      pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorkerConstructor() as unknown as Worker
-    }
-    pdfWorkerReady = true
-  } catch (err) {
-    console.warn('[Materials] pdf.js worker 初始化失败:', err)
-  }
-}
-
-// v3.3.9: 加载 PDF 文档
-async function loadPdf(url: string) {
-  ensurePdfWorker()
+// v3.4.0: 加载 PDF（iframe 懒挂载，卸载时清空 src 释放 PDFium 资源）
+function loadPdf(url: string) {
+  unloadPdf()
   pdfLoading.value = true
   pdfError.value = ''
-  // 销毁旧文档
-  if (pdfDoc.value) {
-    try { await pdfDoc.value.destroy() } catch { /* ignore */ }
-    pdfDoc.value = null
-  }
-  try {
-    const loadingTask = pdfjsLib.getDocument({ url })
-    const doc = await loadingTask.promise
-    pdfDoc.value = doc
-    pdfTotalPages.value = doc.numPages
-    pdfCurrentPage.value = 1
-    pdfPageInput.value = 1
-    await renderPdfPage(1)
-  } catch (err) {
-    console.error('[Materials] PDF 加载失败:', err)
-    pdfError.value = err instanceof Error ? err.message : 'PDF 加载失败'
-  } finally {
+  // 将 src 赋值放在下一次宏任务，确保先卸载旧文档再加载新文档
+  requestAnimationFrame(() => {
+    pdfFrameUrl.value = buildPdfFrameUrl(url)
     pdfLoading.value = false
-  }
-}
-
-// v3.3.9: 渲染单页到 canvas（懒加载：仅渲染当前页）
-async function renderPdfPage(pageNum: number) {
-  if (!pdfDoc.value || !canvasRef.value) return
-  // 取消正在进行的渲染
-  if (renderTask) {
-    try { renderTask.cancel() } catch { /* ignore */ }
-    renderTask = null
-  }
-  pdfRendering.value = true
-  try {
-    const page = await pdfDoc.value.getPage(pageNum)
-    const canvas = canvasRef.value
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const dpr = window.devicePixelRatio || 1
-    const viewport = page.getViewport({ scale: pdfScale.value * dpr })
-    canvas.width = viewport.width
-    canvas.height = viewport.height
-    canvas.style.width = (viewport.width / dpr) + 'px'
-    canvas.style.height = (viewport.height / dpr) + 'px'
-    renderTask = page.render({ canvasContext: ctx, viewport })
-    await renderTask.promise
-  } catch (err) {
-    // cancel 不算错误
-    if (!(err instanceof Error && err.name === 'RenderingCancelledException')) {
-      console.error('[Materials] 页面渲染失败:', err)
-    }
-  } finally {
-    pdfRendering.value = false
-    renderTask = null
-  }
-}
-
-function pdfPrevPage() {
-  if (pdfCurrentPage.value <= 1) return
-  pdfCurrentPage.value--
-  pdfPageInput.value = pdfCurrentPage.value
-  renderPdfPage(pdfCurrentPage.value)
-}
-
-function pdfNextPage() {
-  if (pdfCurrentPage.value >= pdfTotalPages.value) return
-  pdfCurrentPage.value++
-  pdfPageInput.value = pdfCurrentPage.value
-  renderPdfPage(pdfCurrentPage.value)
-}
-
-function pdfGoToPage() {
-  const n = Math.max(1, Math.min(pdfTotalPages.value, pdfPageInput.value))
-  pdfCurrentPage.value = n
-  pdfPageInput.value = n
-  renderPdfPage(n)
-}
-
-function pdfZoomIn() {
-  pdfScale.value = Math.min(pdfScale.value + 0.25, 3.0)
-  renderPdfPage(pdfCurrentPage.value)
-}
-
-function pdfZoomOut() {
-  pdfScale.value = Math.max(pdfScale.value - 0.25, 0.5)
-  renderPdfPage(pdfCurrentPage.value)
+  })
 }
 
 function pdfRetry() {
   if (currentFile.value?.url) loadPdf(currentFile.value.url)
 }
 
-// v3.3.9: 销毁 PDF 文档释放内存
-async function destroyPdf() {
-  if (renderTask) {
-    try { renderTask.cancel() } catch { /* ignore */ }
-    renderTask = null
-  }
-  if (pdfDoc.value) {
-    try { await pdfDoc.value.destroy() } catch { /* ignore */ }
-    pdfDoc.value = null
-  }
-  pdfTotalPages.value = 0
-  pdfCurrentPage.value = 1
-  pdfPageInput.value = 1
-  pdfScale.value = 1.2
-  pdfError.value = ''
+// v3.4.0: iframe 加载出错时提示（PDFium 无法打开的文件会走此回调）
+function onPdfFrameError() {
   pdfLoading.value = false
+  pdfError.value = '文件可能已损坏或不是有效的 PDF 文档'
+}
+
+function destroyPdf() {
+  unloadPdf()
+  pdfLoading.value = false
+  pdfError.value = ''
 }
 
 // ============ v3.3.8：视频状态管理（原生 <video> + Web Audio API 增益） ============
@@ -689,9 +579,9 @@ function disposeAudioResources() {
 // v3.0.0：切换文件时重置状态
 // v3.3.1：仅在「离开视频模式」时释放音频链路
 // v3.3.8：适配原生 <video> 元素生命周期
-// v3.3.9：合并 PDF 加载/销毁逻辑
+// v3.4.0：PDF 走 PDFium iframe（懒挂载 + 卸载释放）
 watch(() => currentFile.value, async (newVal, oldVal) => {
-  // v3.3.9: 离开 PDF 模式时销毁文档
+  // v3.4.0: 离开 PDF 模式时卸载 iframe 释放渲染资源
   if (oldVal?.ext === '.pdf' && newVal?.ext !== '.pdf') {
     await destroyPdf()
   }
@@ -1219,12 +1109,12 @@ if (typeof document !== 'undefined') {
 
 /* 预览区 */
 .file-preview {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .preview-container {
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }
@@ -1241,79 +1131,25 @@ if (typeof document !== 'undefined') {
 .pdf-toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   padding: 8px 12px;
   background: var(--mo-surface-hover, rgba(255, 255, 255, 0.04));
   border-radius: 8px;
   flex-shrink: 0;
 }
 
-.pdf-nav-group,
-.pdf-zoom-group {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.pdf-tip-icon {
+  font-size: 14px;
+  color: var(--mo-primary, #409eff);
+  flex-shrink: 0;
 }
 
-.pdf-btn {
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: var(--mo-text-1, #fff);
-  font-size: 16px;
-  cursor: pointer;
-  padding: 4px 10px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  height: 28px;
-  transition: all 0.15s;
-}
-
-.pdf-btn:hover:not(:disabled) {
-  background: var(--mo-primary, #409eff);
-  border-color: transparent;
-  color: #fff;
-}
-
-.pdf-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.pdf-btn.active {
-  background: var(--mo-primary, #409eff);
-  color: #fff;
-}
-
-.page-input {
-  width: 48px;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  color: var(--mo-text-1, #fff);
-  font-size: 13px;
-  height: 28px;
-  outline: none;
-}
-
-.page-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-}
-
-.page-total {
+.pdf-tip {
   font-size: 12px;
   color: var(--mo-text-3, #888);
-  min-width: 32px;
-}
-
-.zoom-label {
-  font-size: 12px;
-  color: var(--mo-text-2, #ccc);
-  min-width: 48px;
-  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* v3.3.2：PDF 查看器容器 */
@@ -1369,53 +1205,18 @@ if (typeof document !== 'undefined') {
   to { transform: rotate(360deg); }
 }
 
-.pdf-loading-bar {
-  width: 200px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.pdf-loading-bar-fill {
-  height: 100%;
-  background: var(--mo-primary, #409eff);
-  border-radius: 2px;
-  animation: pdf-load-progress 2s ease-in-out infinite;
-}
-
-@keyframes pdf-load-progress {
-  0% { width: 0%; transform: translateX(-100%); }
-  50% { width: 60%; }
-  100% { width: 100%; transform: translateX(200%); }
-}
-
 .pdf-loading-text {
   font-size: 13px;
   color: var(--mo-text-3, #888);
 }
 
-.pdf-canvas {
-  max-width: 100%;
-  height: auto;
+.pdf-frame {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: none;
   border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}
-
-.pdf-rendering-indicator {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: rgba(0, 0, 0, 0.5);
-  border-radius: 50%;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  backdrop-filter: blur(4px);
-  z-index: 3;
+  background: #fff;
 }
 
 .pdf-error-detail {
@@ -1693,12 +1494,11 @@ if (typeof document !== 'undefined') {
   flex-shrink: 0;
 }
 
-/* v3.3.9: 播放列表弹出面板 */
+/* v3.4.0: 播放列表弹出面板 — 定位在控制栏上方，确保始终可见 */
 .video-playlist-popover {
   position: absolute;
   right: 20px;
-  bottom: 100%;
-  margin-bottom: 8px;
+  bottom: 50px;
   width: 340px;
   max-height: 320px;
   background: var(--mo-surface, #1e2030);
