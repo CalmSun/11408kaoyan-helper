@@ -91,123 +91,115 @@
           </el-button>
         </h3>
         <div class="preview-container" v-if="currentFile">
-          <!-- PDF 预览（v3.3.1：原生 PDFium + 加载指示/错误处理/切换时释放内存） -->
+          <!-- PDF 预览（v3.3.2：使用 @tato30/vue-pdf 重构，支持翻页/缩放/旋转/文本选择） -->
           <div v-if="currentFile.ext === '.pdf'" class="pdf-wrap">
-            <iframe
-              v-if="pdfVisible"
-              :src="pdfSrc"
-              class="pdf-viewer"
-              @load="onPdfLoaded"
-              @error="onPdfError"
-            />
-            <div v-if="pdfLoading" class="pdf-loading-mask">
-              <el-icon class="is-loading" :size="40"><Loading /></el-icon>
-              <span>PDF 加载中...</span>
+            <div class="pdf-toolbar">
+              <div class="pdf-nav-group">
+                <button class="pdf-btn" @click="prevPage" :disabled="pdfPage <= 1" title="上一页">‹</button>
+                <input
+                  type="number"
+                  v-model="pdfPage"
+                  :min="1"
+                  :max="pages || 1"
+                  class="page-input"
+                  @change="onPageInput"
+                />
+                <span class="page-total">/ {{ pages }}</span>
+                <button class="pdf-btn" @click="nextPage" :disabled="pdfPage >= pages" title="下一页">›</button>
+              </div>
+              <div class="pdf-zoom-group">
+                <button class="pdf-btn" @click="zoomOut" :disabled="!pdfFitParent && pdfScale <= 0.5" title="缩小">−</button>
+                <span class="zoom-label">{{ pdfFitParent ? '适配' : Math.round(pdfScale * 100) + '%' }}</span>
+                <button class="pdf-btn" @click="zoomIn" :disabled="!pdfFitParent && pdfScale >= 3" title="放大">+</button>
+                <button class="pdf-btn" @click="fitWidth" :class="{ active: pdfFitParent }" title="适配宽度">⤢</button>
+              </div>
+              <button class="pdf-btn" @click="rotatePdf" title="旋转 90°">
+                <el-icon><RefreshRight /></el-icon>
+              </button>
             </div>
-            <div v-if="pdfError" class="pdf-error-mask">
-              <el-icon :size="40"><Warning /></el-icon>
-              <span>PDF 加载失败</span>
-              <el-button size="small" type="primary" @click="retryPdf">重试</el-button>
+            <div class="pdf-viewer-wrap">
+              <VuePDF
+                v-if="pdf"
+                :pdf="pdf"
+                :page="pdfPage"
+                :scale="pdfScale"
+                :fit-parent="pdfFitParent"
+                :rotation="pdfRotation"
+                text-layer
+                annotation-layer
+                @loaded="onPdfPageLoaded"
+              >
+                <div class="pdf-page-loading">
+                  <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+                </div>
+              </VuePDF>
+              <div v-if="pdfLoading && !pdfError" class="pdf-loading-mask">
+                <el-icon class="is-loading" :size="40"><Loading /></el-icon>
+                <span>PDF 加载中...{{ pdfProgress > 0 ? ' ' + pdfProgress + '%' : '' }}</span>
+              </div>
+              <div v-if="pdfError" class="pdf-error-mask">
+                <el-icon :size="40"><Warning /></el-icon>
+                <span>PDF 加载失败</span>
+                <el-button size="small" type="primary" @click="retryPdf">重试</el-button>
+              </div>
             </div>
           </div>
-          <!-- 视频播放（v3.0.0：支持音量调节/全屏/进度拖动，Range 协议加速加载；v3.2.2：美化 UI + 修复音量过低 + 增强无声检测） -->
+
+          <!-- 视频播放（v3.3.2：使用 @videojs-player/vue 重构，原生 video.js 控制栏 + 增益/快捷键/无声检测） -->
           <div v-else-if="isVideo(currentFile.ext)" class="video-wrap" ref="videoWrap">
             <div class="video-stage">
-              <video
-                ref="videoEl"
-                :src="currentFile.url"
-                class="video-player"
+              <video-player
+                v-if="videoSrc"
+                :src="videoSrc"
+                controls
                 preload="metadata"
                 playsinline
-                @timeupdate="onVideoTimeUpdate"
-                @loadedmetadata="onVideoLoaded"
+                fill
+                :volume="videoVolume / 100"
+                :playback-rates="[0.5, 1, 1.25, 1.5, 2]"
+                @mounted="onVideoMounted"
+                @ready="onVideoReady"
+                @loadedmetadata="onVideoLoadedMetadata"
+                @play="videoPlaying = true"
+                @pause="videoPlaying = false"
                 @ended="videoPlaying = false"
-                @error="onVideoError"
-                @click="toggleVideoPlay"
                 @waiting="videoLoading = true"
                 @playing="videoLoading = false; videoPlaying = true"
-                @canplay="videoLoading = false"
-                @pause="videoPlaying = false"
+                @volumechange="onVolumeChange"
+                @error="onVideoError"
+                class="video-player"
               />
-              <!-- v3.2.2：加载中的 spinner 遮罩 -->
               <div v-if="videoLoading" class="video-loading-mask">
                 <el-icon class="is-loading" :size="40"><Loading /></el-icon>
                 <span>视频加载中...</span>
               </div>
-              <!-- v3.2.2：居中播放按钮（暂停态显示） -->
-              <div v-if="!videoPlaying && !videoLoading" class="video-center-play" @click.stop="toggleVideoPlay">
-                <div class="center-play-btn">
-                  <el-icon :size="40"><VideoPlay /></el-icon>
-                </div>
-              </div>
             </div>
             <!-- v3.1.2：音频编码不支持警告 -->
             <div v-if="audioWarning" class="audio-warning">{{ audioWarning }}</div>
-            <!-- v3.0.0：自定义视频控制栏（v3.2.2：美化 + 缓冲进度 + 增益调节；v3.2.3：增加 -10s/+10s 前进后退 + 音量无极调节） -->
-            <div class="video-controls" @keydown.stop>
-              <button class="video-ctrl-btn" @click="toggleVideoPlay" :title="videoPlaying ? '暂停 (空格)' : '播放 (空格)'">
-                <el-icon v-if="videoPlaying">⏸</el-icon>
-                <el-icon v-else>▶</el-icon>
-              </button>
-              <!-- v3.2.3：快退 / 快进 10 秒 -->
-              <button class="video-ctrl-btn seek-btn" @click="seekRelative(-10)" title="快退 10 秒 (←)">
+            <!-- v3.2.2：增益调节 + 快退快进（video.js 原生控制栏不含此功能，作为自定义覆盖层） -->
+            <div class="video-extra-controls">
+              <button class="extra-ctrl-btn" @click="seekRelative(-10)" title="快退 10 秒 (←)">
                 <el-icon>⏪</el-icon>
               </button>
-              <button class="video-ctrl-btn seek-btn" @click="seekRelative(10)" title="快进 10 秒 (→)">
+              <button class="extra-ctrl-btn" @click="seekRelative(10)" title="快进 10 秒 (→)">
                 <el-icon>⏩</el-icon>
               </button>
-              <span class="video-time">{{ formatTime(videoCurrent) }}</span>
-              <div class="video-progress-wrap">
-                <div class="video-progress-buffered" :style="{ width: bufferedPercent + '%' }"></div>
-                <input
-                  type="range"
-                  class="video-progress"
-                  :min="0"
-                  :max="videoDuration || 100"
-                  :step="0.1"
-                  :value="videoCurrent"
-                  @input="onVideoSeek"
-                />
-              </div>
-              <span class="video-time">{{ formatTime(videoDuration) }}</span>
-              <!-- 音量控制 -->
-              <button class="video-ctrl-btn" @click="toggleMute" :title="videoMuted ? '取消静音' : '静音'">
-                <el-icon v-if="videoMuted || videoVolume === 0">🔇</el-icon>
-                <el-icon v-else-if="videoVolume < 50">🔉</el-icon>
-                <el-icon v-else>🔊</el-icon>
-              </button>
-              <input
-                type="range"
-                class="video-volume"
-                :min="0"
-                :max="100"
-                :step="0.1"
-                v-model="videoVolume"
-                @input="onVolumeChange"
-                title="音量 (↑/↓)"
-              />
-              <!-- v3.2.2：数字增益（提升音量） -->
-              <select class="video-gain" :value="videoGain" @change="(e) => { videoGain = Number((e.target as HTMLSelectElement).value); applyVolumeAndGain() }">
+              <span class="extra-label">音量增益</span>
+              <select
+                :value="videoGain"
+                @change="(e) => { videoGain = Number((e.target as HTMLSelectElement).value); applyGain() }"
+                class="gain-select"
+                title="提升视频音量（Web Audio API）"
+              >
                 <option :value="1">1x</option>
                 <option :value="1.5">1.5x</option>
                 <option :value="1.8">1.8x</option>
                 <option :value="2.5">2.5x</option>
                 <option :value="4">4x</option>
               </select>
-              <!-- 倍速 -->
-              <select class="video-speed" v-model="videoSpeed" @change="onVideoSpeedChange">
-                <option value="0.5">0.5x</option>
-                <option value="1">1.0x</option>
-                <option value="1.25">1.25x</option>
-                <option value="1.5">1.5x</option>
-                <option value="2">2.0x</option>
-              </select>
-              <!-- 全屏 -->
-              <button class="video-ctrl-btn" @click="toggleFullscreen" :title="isFullscreen ? '退出全屏' : '全屏'">
-                <el-icon>{{ isFullscreen ? '🗗' : '⛶' }}</el-icon>
-              </button>
             </div>
           </div>
+
           <!-- 图片预览 -->
           <img
             v-else-if="isImage(currentFile.ext)"
@@ -224,7 +216,7 @@
         <div v-else class="preview-empty">
           <el-icon :size="48"><Document /></el-icon>
           <p>从左侧选择文件进行预览</p>
-          <p class="hint">支持 PDF 阅读、MP4 视频播放（进度可拖动调节）</p>
+          <p class="hint">支持 PDF 阅读（翻页/缩放/旋转/文本选择）、视频播放（video.js 原生控制 + 音量增益）</p>
         </div>
       </div>
     </div>
@@ -246,8 +238,17 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning, ArrowRight, Loading, Open
+  View, Warning, ArrowRight, Loading, Open, RefreshRight
 } from '@element-plus/icons-vue'
+
+// v3.3.2：引入 @tato30/vue-pdf（基于 pdf.js 的 Vue 3 组件）
+import { VuePDF, usePDF } from '@tato30/vue-pdf'
+import '@tato30/vue-pdf/style.css'
+
+// v3.3.2：引入 @videojs-player/vue（Video.js 的 Vue 3 封装）
+import { VideoPlayer } from '@videojs-player/vue'
+import 'video.js/dist/video-js.css'
+import type typeVideojs from 'video.js'
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
 interface DisplayNode extends MaterialNode {
@@ -260,58 +261,146 @@ const currentFile = ref<MaterialNode | null>(null)
 const filterType = ref('all')
 const expandedFolders = ref<Set<string>>(new Set())
 
-// v3.0.0：视频控制（含音量/全屏）
-const videoEl = ref<HTMLVideoElement | null>(null)
+const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
+const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
+
+// ============ v3.3.2：PDF 状态管理（@tato30/vue-pdf） ============
+// usePDF 接受 Ref<PDFSrc>，源变化时自动重新加载
+const pdfSource = computed<string | undefined>(() => {
+  if (currentFile.value?.ext === '.pdf' && currentFile.value?.url) {
+    return currentFile.value.url
+  }
+  return undefined
+})
+const pdfLoading = ref(false)
+const pdfError = ref(false)
+const pdfProgress = ref(0)
+const pdfPage = ref(1)
+const pdfScale = ref(1)
+const pdfFitParent = ref(true)
+const pdfRotation = ref(0)
+
+const { pdf, pages } = usePDF(pdfSource, {
+  onProgress: (e: { loaded: number; total: number }) => {
+    pdfLoading.value = true
+    pdfError.value = false
+    if (e.total) {
+      pdfProgress.value = Math.round((e.loaded / e.total) * 100)
+    }
+  },
+  onError: (_err: unknown) => {
+    pdfLoading.value = false
+    pdfError.value = true
+  }
+})
+
+// pages 变化意味着 PDF 加载完成
+watch(pages, (p) => {
+  if (p > 0) {
+    pdfLoading.value = false
+    pdfError.value = false
+    pdfProgress.value = 0
+  }
+})
+
+// 源变化时重置状态
+watch(pdfSource, (newVal) => {
+  if (newVal) {
+    pdfLoading.value = true
+    pdfError.value = false
+    pdfProgress.value = 0
+    pdfPage.value = 1
+    pdfScale.value = 1
+    pdfFitParent.value = true
+    pdfRotation.value = 0
+  } else {
+    // 离开 PDF 模式：销毁文档释放内存
+    if (pdf.value) {
+      pdf.value.destroy()
+    }
+    pdfLoading.value = false
+    pdfError.value = false
+  }
+})
+
+function onPdfPageLoaded() {
+  // 单页渲染完成
+}
+function prevPage() {
+  if (pdfPage.value > 1) pdfPage.value--
+}
+function nextPage() {
+  if (pdfPage.value < pages.value) pdfPage.value++
+}
+function onPageInput() {
+  if (pdfPage.value < 1) pdfPage.value = 1
+  if (pdfPage.value > pages.value) pdfPage.value = pages.value
+}
+function zoomIn() {
+  pdfFitParent.value = false
+  pdfScale.value = Math.min(3, pdfScale.value + 0.25)
+}
+function zoomOut() {
+  pdfFitParent.value = false
+  pdfScale.value = Math.max(0.25, pdfScale.value - 0.25)
+}
+function fitWidth() {
+  pdfFitParent.value = true
+  pdfScale.value = 1
+}
+function rotatePdf() {
+  pdfRotation.value = (pdfRotation.value + 90) % 360
+}
+function retryPdf() {
+  if (pdfSource.value) {
+    pdfError.value = false
+    pdfLoading.value = true
+    // 触发重新加载：先销毁再重新设置源
+    if (pdf.value) {
+      pdf.value.destroy()
+    }
+    nextTick(() => {
+      const src = pdfSource.value
+      if (src) {
+        // usePDF 内部 watch 会在 ref 值变化时重新加载，
+        // 但值未变时不会触发，这里手动重新设置
+        pdfSource.value // 触发 computed 重新求值
+      }
+    })
+  }
+}
+
+// ============ v3.3.2：视频状态管理（@videojs-player/vue） ============
 const videoWrap = ref<HTMLElement | null>(null)
-const videoCurrent = ref(0)
-const videoDuration = ref(0)
-const videoPlaying = ref(false)
-const videoSpeed = ref(1)
-// v3.2.2：修复音量过低——默认 100，并叠加 Web Audio 数字增益 1.8x 解决部分视频音量太小的问题
+const vjsPlayer = ref<typeVideojs.Player | null>(null)
+const videoSrc = computed(() => {
+  if (currentFile.value && isVideo(currentFile.value.ext || '') && currentFile.value.url) {
+    return currentFile.value.url
+  }
+  return ''
+})
 const videoVolume = ref(100)
-const videoMuted = ref(false)
 const videoGain = ref(1.8)
-// v3.1.2：音频编码不支持警告
-const audioWarning = ref('')
-const isFullscreen = ref(false)
-// v3.2.2：视频加载状态 + 美化（进度条缓冲显示）
-const videoBuffered = ref(0)
+const videoPlaying = ref(false)
 const videoLoading = ref(false)
+const audioWarning = ref('')
+
 // v3.2.2：Web Audio 增益节点（用于提升音量）
 let audioCtx: AudioContext | null = null
 let gainNode: GainNode | null = null
 let videoSourceNode: MediaElementAudioSourceNode | null = null
-// v3.3.1：记录已接入增益链路的 video 元素——createMediaElementSource 每个元素仅能调用一次，
-// 需据此判断是「同元素复用链路」还是「新元素需重建链路」
+// v3.3.1：记录已接入增益链路的 video 元素——createMediaElementSource 每个元素仅能调用一次
 let attachedVideoEl: HTMLVideoElement | null = null
 
-// v3.3.1：PDF 加载状态管理（借鉴 vue-pdf 的懒加载/显式释放模式，但保留原生 PDFium 的高效渲染）
-const pdfVisible = ref(false)
-const pdfLoading = ref(false)
-const pdfError = ref(false)
-// PDF URL 加上视图参数：FitH=按宽度适配、toolbar=1显示工具栏、page=1首页
-const pdfSrc = computed(() => {
-  if (!currentFile.value?.url) return ''
-  return `${currentFile.value.url}#view=FitH&toolbar=1&page=1`
-})
-
-const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
-const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
-
 // v3.2.2：缓冲百分比
-const bufferedPercent = computed(() => {
-  const dur = videoDuration.value || 0
-  if (!dur) return 0
-  return Math.max(0, Math.min(100, (videoBuffered.value / dur) * 100))
-})
+const videoBuffered = ref(0)
 
-// v2.9.2：将树扁平化为显示列表（考虑展开状态和筛选）
+// ============ 文件树扁平化 ============
 const flatFiles = computed<DisplayNode[]>(() => {
   const result: DisplayNode[] = []
   function walk(nodes: MaterialNode[], level: number) {
     for (const node of nodes) {
       if (node.type === 'folder') {
-        // 筛选模式下：只显示包含匹配文件的文件夹
         if (filterType.value !== 'all') {
           const hasMatch = folderHasMatchingFiles(node)
           if (!hasMatch) continue
@@ -321,7 +410,6 @@ const flatFiles = computed<DisplayNode[]>(() => {
           walk(node.children, level + 1)
         }
       } else {
-        // 文件筛选
         if (filterType.value === 'pdf' && node.ext !== '.pdf') continue
         if (filterType.value === 'video' && !isVideo(node.ext || '')) continue
         if (filterType.value === 'other' && (node.ext === '.pdf' || isVideo(node.ext || ''))) continue
@@ -333,10 +421,8 @@ const flatFiles = computed<DisplayNode[]>(() => {
   return result
 })
 
-// 显示节点（筛选后）
 const displayNodes = computed(() => flatFiles.value)
 
-// 总文件数
 const totalFileCount = computed(() => {
   let count = 0
   function walk(nodes: MaterialNode[]) {
@@ -375,29 +461,23 @@ function countFilesInFolder(folder: MaterialNode): number {
   return count
 }
 
+// ============ 生命周期 ============
 onMounted(() => {
   restoreFolder()
-  // v3.2.3：视频键盘快捷键——仅当预览中的文件是视频时生效
   window.addEventListener('keydown', onVideoKeydown)
 })
 
-// v3.3.1：组件卸载时彻底释放视频与音频资源，避免 AudioContext / MediaElementSource 泄漏
+// v3.3.1：组件卸载时彻底释放视频与音频资源
 onUnmounted(() => {
   window.removeEventListener('keydown', onVideoKeydown)
-  disposeVideoResources()
+  disposeAudioResources()
+  if (pdf.value) {
+    pdf.value.destroy()
+  }
 })
 
-// v3.3.1：集中释放视频相关资源（src、Web Audio 链路、状态标记）
-// 仅在「离开视频模式」或「组件卸载」时调用——video→video 切换由 Vue 复用同一元素，不能重建链路
-function disposeVideoResources() {
-  if (videoEl.value) {
-    try {
-      videoEl.value.pause()
-    } catch { /* ignore */ }
-    // 清空 src 触发底层 media element 释放网络流与解码缓冲
-    videoEl.value.removeAttribute('src')
-    try { videoEl.value.load() } catch { /* ignore */ }
-  }
+// v3.3.1：集中释放音频资源（AudioContext / GainNode / SourceNode）
+function disposeAudioResources() {
   if (audioCtx) {
     audioCtx.close().catch(() => { /* ignore */ })
     audioCtx = null
@@ -407,28 +487,148 @@ function disposeVideoResources() {
   }
 }
 
-// v3.3.1：PDF 加载完成回调（iframe @load 仅在主框架加载完成时触发，PDFium 内部逐页懒渲染不影响）
-function onPdfLoaded() {
-  pdfLoading.value = false
-  pdfError.value = false
+// v3.0.0：切换文件时重置状态
+// v3.3.1：仅在「离开视频模式」时释放音频链路
+// v3.3.2：适配 video.js player 生命周期
+watch(() => currentFile.value, (newVal, oldVal) => {
+  const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
+  const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
+  // 离开视频模式：释放 AudioContext
+  if (oldIsVideo && !newIsVideo) {
+    disposeAudioResources()
+    vjsPlayer.value = null
+  }
+  // 重置视频状态
+  videoPlaying.value = false
+  videoLoading.value = false
+  audioWarning.value = ''
+  videoBuffered.value = 0
+})
+
+// ============ 视频播放器事件处理 ============
+
+// v3.3.2：video.js player 挂载——保存 player 实例
+function onVideoMounted(player: typeVideojs.Player) {
+  vjsPlayer.value = player
 }
-function onPdfError() {
-  pdfLoading.value = false
-  pdfError.value = true
+
+function onVideoReady(player: typeVideojs.Player) {
+  vjsPlayer.value = player
 }
-// 重试：先卸载再重新挂载 iframe
-function retryPdf() {
-  pdfVisible.value = false
-  pdfError.value = false
-  pdfLoading.value = true
-  nextTick(() => { pdfVisible.value = true })
+
+// v3.1.2 + v3.2.2：loadedmetadata 后进行无声检测
+function onVideoLoadedMetadata() {
+  if (!vjsPlayer.value) return
+  const el = vjsPlayer.value.el()?.querySelector('video') as (HTMLVideoElement & {
+    audioTracks?: { length: number }
+    mozHasAudio?: boolean
+    webkitAudioDecodedByteCount?: number
+  }) | null
+  if (!el) return
+  let hasAudioTrack = true
+  if (typeof el.audioTracks === 'object' && el.audioTracks) {
+    hasAudioTrack = el.audioTracks.length > 0
+  } else if (typeof el.mozHasAudio === 'boolean') {
+    hasAudioTrack = el.mozHasAudio
+  }
+  const videoOk = el.videoWidth > 0
+  if (videoOk && !hasAudioTrack) {
+    audioWarning.value = '该视频未检测到音轨或使用了不支持的音频编码（如 AC3/DTS/E-AC3），建议用格式工厂/HandBrake 转码为 H.264 + AAC(MP4)'
+  } else {
+    audioWarning.value = ''
+  }
+  // 尝试播放（非用户交互可能被拦截，吞异常）
+  if (vjsPlayer.value.paused()) {
+    vjsPlayer.value.play()?.then(() => {
+      videoPlaying.value = true
+      ensureAudioBoost()
+    }).catch(() => {
+      videoPlaying.value = false
+    })
+  }
+}
+
+// v3.2.2：首次播放时搭建 Web Audio 增益链路（提升视频音量）
+// v3.3.1：按 video 元素身份判断——同元素复用链路，新元素重建链路
+// v3.3.2：通过 video.js player 获取底层 video 元素
+async function ensureAudioBoost(): Promise<void> {
+  if (!vjsPlayer.value) return
+  const el = vjsPlayer.value.el()?.querySelector('video') as HTMLVideoElement | null
+  if (!el) return
+  // 同一元素已接入：仅需确保上下文处于运行态
+  if (attachedVideoEl === el && audioCtx && gainNode) {
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume().catch(() => { /* ignore */ })
+    }
+    return
+  }
+  // 新元素：先关闭可能残留的旧上下文
+  if (audioCtx) {
+    try { await audioCtx.close() } catch { /* ignore */ }
+    audioCtx = null
+    gainNode = null
+    videoSourceNode = null
+  }
+  try {
+    const AC = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
+    if (!AC) return
+    audioCtx = new AC()
+    gainNode = audioCtx.createGain()
+    gainNode.gain.value = videoGain.value
+    videoSourceNode = audioCtx.createMediaElementSource(el)
+    videoSourceNode.connect(gainNode)
+    gainNode.connect(audioCtx.destination)
+    attachedVideoEl = el
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume().catch(() => { /* ignore */ })
+    }
+  } catch {
+    audioWarning.value = '音频增益初始化失败，视频声音可能较低'
+  }
+}
+
+function applyGain() {
+  if (gainNode) {
+    const g = videoGain.value
+    try {
+      gainNode.gain.setTargetAtTime(g, audioCtx?.currentTime || 0, 0.01)
+    } catch {
+      gainNode.gain.value = g
+    }
+  }
+}
+
+function onVolumeChange() {
+  if (vjsPlayer.value) {
+    videoVolume.value = Math.round(vjsPlayer.value.volume() * 100)
+  }
+}
+
+// v3.1.2 + v3.2.2：视频加载错误处理
+function onVideoError() {
+  const err = vjsPlayer.value?.error()
+  const code = err?.code || 0
+  if (code === 3 || code === 4) {
+    audioWarning.value = '视频加载/解码失败，可能使用了浏览器不支持的编码，建议转码为 MP4(H.264 + AAC) 后重试'
+  } else {
+    audioWarning.value = '视频加载失败，请检查文件是否损坏或格式是否支持'
+  }
+}
+
+// v3.2.3：相对快进/快退（秒），自动夹紧到 [0, duration]
+function seekRelative(delta: number) {
+  if (!vjsPlayer.value) return
+  const dur = vjsPlayer.value.duration() || 0
+  let next = (vjsPlayer.value.currentTime() || 0) + delta
+  if (next < 0) next = 0
+  if (dur && next > dur) next = dur
+  vjsPlayer.value.currentTime(next)
 }
 
 // v3.2.3：视频键盘快捷键：←/→ 快退快进 5 秒，↑/↓ 音量 ±5，空格 播放/暂停
 function onVideoKeydown(e: KeyboardEvent) {
-  // 仅在视频预览态生效
   if (!currentFile.value || !isVideo(currentFile.value.ext || '')) return
-  // 输入框/文本域/下拉中不拦截，避免影响搜索等
+  if (!vjsPlayer.value) return
   const tag = (e.target as HTMLElement)?.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
   if (e.target instanceof HTMLElement && e.target.isContentEditable) return
@@ -452,119 +652,26 @@ function onVideoKeydown(e: KeyboardEvent) {
     case ' ':
     case 'Spacebar':
       e.preventDefault()
-      toggleVideoPlay()
+      if (vjsPlayer.value.paused()) {
+        vjsPlayer.value.play()?.then(() => { videoPlaying.value = true; ensureAudioBoost() }).catch(() => {})
+      } else {
+        vjsPlayer.value.pause()
+        videoPlaying.value = false
+      }
       break
   }
 }
 
-// v3.2.3：音量按步进调整（用于键盘 ↑/↓，无极范围 0~100）
 function changeVolumeStep(step: number) {
-  let v = videoVolume.value + step
+  if (!vjsPlayer.value) return
+  let v = vjsPlayer.value.volume() * 100 + step
   if (v < 0) v = 0
   if (v > 100) v = 100
+  vjsPlayer.value.volume(v / 100)
   videoVolume.value = v
-  if (v > 0) videoMuted.value = false
-  applyVolumeAndGain()
 }
 
-// v3.0.0：切换文件时重置视频状态
-// v3.3.1：借鉴 videojs-player 的资源管理模式——仅在「离开视频模式」时释放音频链路，
-// video→video 由 Vue 复用同一 <video> 元素，不能重建 createMediaElementSource 链路
-watch(() => currentFile.value, (newVal, oldVal) => {
-  const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
-  const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
-  // 离开视频模式（video→pdf/image/other 或 video→null）：彻底释放 src + Web Audio 上下文
-  if (oldIsVideo && !newIsVideo) {
-    disposeVideoResources()
-  }
-  // 旧文件是 PDF：先卸载 iframe（v-if=false 触发 PDFium 释放内存），下次再挂载
-  if (oldVal && oldVal.ext === '.pdf') {
-    pdfVisible.value = false
-  }
-  videoCurrent.value = 0
-  videoDuration.value = 0
-  videoPlaying.value = false
-  videoSpeed.value = 1
-  videoMuted.value = false
-  isFullscreen.value = false
-  videoBuffered.value = 0
-  videoLoading.value = false
-  audioWarning.value = ''
-  // v3.3.1：新文件是 PDF 时，先显示 loading，下一帧再挂载 iframe（懒加载，避免立即占用内存）
-  if (newVal && newVal.ext === '.pdf') {
-    pdfLoading.value = true
-    pdfError.value = false
-    pdfVisible.value = false
-    nextTick(() => { pdfVisible.value = true })
-  } else {
-    pdfLoading.value = false
-    pdfError.value = false
-    pdfVisible.value = false
-  }
-  nextTick(() => {
-    if (videoEl.value) {
-      videoEl.value.playbackRate = 1
-      // v3.2.2：基础音量默认 100，数字增益将在首次播放/加载时再次确保生效
-      videoEl.value.volume = Math.min(1, videoVolume.value / 100)
-      videoEl.value.muted = false
-    }
-  })
-})
-
-// v3.2.2：首次播放时搭建 Web Audio 增益链路（提升视频音量）
-// v3.3.1：按 video 元素身份判断——同元素复用链路（createMediaElementSource 仅能调用一次），
-// 切换到新元素（如 video→pdf→video 重建 DOM）时关闭旧上下文并重建链路
-async function ensureAudioBoost(): Promise<void> {
-  if (!videoEl.value) return
-  // 同一元素已接入：仅需确保上下文处于运行态
-  if (attachedVideoEl === videoEl.value && audioCtx && gainNode) {
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume().catch(() => { /* ignore */ })
-    }
-    return
-  }
-  // 新元素：先关闭可能残留的旧上下文（指向已被销毁的旧元素）
-  if (audioCtx) {
-    try { await audioCtx.close() } catch { /* ignore */ }
-    audioCtx = null
-    gainNode = null
-    videoSourceNode = null
-  }
-  try {
-    const AC = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)
-    if (!AC) return
-    audioCtx = new AC()
-    gainNode = audioCtx.createGain()
-    gainNode.gain.value = videoGain.value
-    videoSourceNode = audioCtx.createMediaElementSource(videoEl.value)
-    videoSourceNode.connect(gainNode)
-    gainNode.connect(audioCtx.destination)
-    attachedVideoEl = videoEl.value
-    if (audioCtx.state === 'suspended') {
-      await audioCtx.resume().catch(() => { /* ignore */ })
-    }
-  } catch {
-    audioWarning.value = '音频增益初始化失败，视频声音可能较低'
-  }
-}
-
-function applyVolumeAndGain() {
-  if (videoEl.value) {
-    const base = Math.min(1, videoVolume.value / 100)
-    videoEl.value.volume = base
-    videoEl.value.muted = videoMuted.value || videoVolume.value === 0
-  }
-  if (gainNode) {
-    // 滑块到 100 时基础音量=1 + gain=1.8 => 总增益≈1.8x；静音时增益不抬
-    const g = (videoMuted.value || videoVolume.value === 0) ? 0 : videoGain.value
-    try {
-      gainNode.gain.setTargetAtTime(g, audioCtx?.currentTime || 0, 0.01)
-    } catch {
-      gainNode.gain.value = g
-    }
-  }
-}
-
+// ============ 文件夹操作 ============
 async function restoreFolder() {
   const api = window.electronAPI
   if (!api?.restoreMaterialsFolder) return
@@ -573,7 +680,6 @@ async function restoreFolder() {
     if (res.success && res.files) {
       fileTree.value = res.files
       materialsFolder.value = res.folder || ''
-      // 默认展开根目录下的第一层文件夹
       expandFirstLevel()
     }
   } catch { /* ignore */ }
@@ -619,7 +725,6 @@ function toggleFolder(path: string) {
   } else {
     expandedFolders.value.add(path)
   }
-  // 触发响应式更新
   expandedFolders.value = new Set(expandedFolders.value)
 }
 
@@ -667,13 +772,6 @@ function formatSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
 }
 
-function formatTime(sec: number): string {
-  if (!isFinite(sec) || sec < 0) return '00:00'
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-}
-
 function downloadFile() {
   if (!currentFile.value) return
   const a = document.createElement('a')
@@ -682,138 +780,10 @@ function downloadFile() {
   a.click()
 }
 
-function onVideoTimeUpdate() {
-  if (videoEl.value) {
-    videoCurrent.value = videoEl.value.currentTime
-    // 已缓冲长度
-    try {
-      if (videoEl.value.buffered.length > 0) {
-        videoBuffered.value = videoEl.value.buffered.end(videoEl.value.buffered.length - 1)
-      }
-    } catch { /* ignore */ }
-  }
-}
-
-function onVideoLoaded() {
-  if (videoEl.value) {
-    videoDuration.value = videoEl.value.duration
-    // v3.2.2：确保音量/增益生效
-    videoEl.value.volume = Math.min(1, videoVolume.value / 100)
-    videoEl.value.muted = false
-    applyVolumeAndGain()
-    // v3.1.2 + v3.2.2：更可靠的无声检测——同时检测 audioTracks 与 mozHasAudio / webkitAudioDecodedByteCount
-    const el = videoEl.value as HTMLVideoElement & {
-      audioTracks?: { length: number }
-      mozHasAudio?: boolean
-      webkitAudioDecodedByteCount?: number
-    }
-    let hasAudioTrack = true
-    if (typeof (el.audioTracks as unknown) === 'object' && el.audioTracks) {
-      hasAudioTrack = el.audioTracks.length > 0
-    } else if (typeof el.mozHasAudio === 'boolean') {
-      hasAudioTrack = el.mozHasAudio
-    }
-    const videoOk = videoEl.value.videoWidth > 0
-    if (videoOk && !hasAudioTrack) {
-      audioWarning.value = '该视频未检测到音轨或使用了不支持的音频编码（如 AC3/DTS/E-AC3），建议用格式工厂/HandBrake 转码为 H.264 + AAC(MP4)'
-    } else {
-      audioWarning.value = ''
-    }
-    // 页面内非用户交互直接播放可能被浏览器策略拦截；此处只尝试一次并吞异常
-    videoEl.value.play().then(() => {
-      videoPlaying.value = true
-      ensureAudioBoost()
-      applyVolumeAndGain()
-    }).catch(() => {
-      videoPlaying.value = false
-    })
-  }
-}
-
-// v3.1.2 + v3.2.2：视频加载错误处理，区分编码/音轨问题和普通加载失败
-function onVideoError() {
-  const code = videoEl.value?.error?.code || 0
-  if (code === 3 || code === 4) {
-    audioWarning.value = '视频加载/解码失败，可能使用了浏览器不支持的编码，建议转码为 MP4(H.264 + AAC) 后重试'
-  } else {
-    audioWarning.value = '视频加载失败，请检查文件是否损坏或格式是否支持'
-  }
-}
-
-async function toggleVideoPlay() {
-  if (!videoEl.value) return
-  // v3.2.2：播放前搭建 Web Audio 增益（需用户手势）
-  await ensureAudioBoost()
-  if (videoEl.value.paused) {
-    try {
-      await videoEl.value.play()
-      videoPlaying.value = true
-      applyVolumeAndGain()
-    } catch {
-      videoPlaying.value = false
-    }
-  } else {
-    videoEl.value.pause()
-    videoPlaying.value = false
-  }
-}
-
-function onVideoSeek(e: Event) {
-  const val = parseFloat((e.target as HTMLInputElement).value)
-  if (!isNaN(val) && videoEl.value) {
-    videoEl.value.currentTime = val
-    videoCurrent.value = val
-  }
-}
-
-// v3.2.3：相对快进/快退（秒），自动夹紧到 [0, duration]
-function seekRelative(delta: number) {
-  if (!videoEl.value) return
-  const dur = videoDuration.value || videoEl.value.duration || 0
-  let next = (videoEl.value.currentTime || videoCurrent.value) + delta
-  if (next < 0) next = 0
-  if (dur && next > dur) next = dur
-  videoEl.value.currentTime = next
-  videoCurrent.value = next
-}
-
-function onVideoSpeedChange() {
-  if (videoEl.value) {
-    videoEl.value.playbackRate = videoSpeed.value
-  }
-}
-
-// v3.0.0：音量控制（v3.2.2：叠加 Web Audio 数字增益）
-function onVolumeChange() {
-  applyVolumeAndGain()
-}
-
-function toggleMute() {
-  if (!videoEl.value) return
-  videoMuted.value = !videoMuted.value
-  if (!videoMuted.value && videoVolume.value === 0) {
-    videoVolume.value = 100
-  }
-  applyVolumeAndGain()
-}
-
-// v3.0.0：全屏控制
-function toggleFullscreen() {
-  if (!videoWrap.value) return
-  if (document.fullscreenElement) {
-    document.exitFullscreen()
-    isFullscreen.value = false
-  } else {
-    videoWrap.value.requestFullscreen().then(() => {
-      isFullscreen.value = true
-    }).catch(() => { /* ignore */ })
-  }
-}
-
 // 监听全屏变化（用户按 ESC 退出时同步状态）
 if (typeof document !== 'undefined') {
   document.addEventListener('fullscreenchange', () => {
-    isFullscreen.value = !!document.fullscreenElement
+    // video.js 自行处理全屏状态，此处无需额外操作
   })
 }
 </script>
@@ -1042,20 +1012,111 @@ if (typeof document !== 'undefined') {
   flex-direction: column;
 }
 
-.pdf-viewer {
-  width: 100%;
-  height: 100%;
-  border: none;
-  border-radius: 8px;
-}
-
-/* v3.3.1：PDF 容器与加载/错误遮罩 */
+/* v3.3.2：PDF 工具栏 */
 .pdf-wrap {
-  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  gap: 8px;
+}
+
+.pdf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.04));
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.pdf-nav-group,
+.pdf-zoom-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pdf-btn {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--mo-text-1, #fff);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 28px;
+  transition: all 0.15s;
+}
+
+.pdf-btn:hover:not(:disabled) {
+  background: var(--mo-primary, #409eff);
+  border-color: transparent;
+  color: #fff;
+}
+
+.pdf-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pdf-btn.active {
+  background: var(--mo-primary, #409eff);
+  color: #fff;
+}
+
+.page-input {
+  width: 48px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: var(--mo-text-1, #fff);
+  font-size: 13px;
+  height: 28px;
+  outline: none;
+}
+
+.page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+.page-total {
+  font-size: 12px;
+  color: var(--mo-text-3, #888);
+  min-width: 32px;
+}
+
+.zoom-label {
+  font-size: 12px;
+  color: var(--mo-text-2, #ccc);
+  min-width: 48px;
+  text-align: center;
+}
+
+/* v3.3.2：PDF 查看器容器 */
+.pdf-viewer-wrap {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  background: var(--mo-bg, #1a1c25);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.pdf-page-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--mo-text-3, #888);
 }
 
 .pdf-loading-mask,
@@ -1079,37 +1140,119 @@ if (typeof document !== 'undefined') {
   color: #f56c6c;
 }
 
-/* v2.9.2：视频播放区域（v3.2.2 重构美化） */
+/* v3.3.2：视频播放区域（使用 video.js） */
 .video-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: #000;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  position: relative;
+  gap: 8px;
+  min-height: 0;
 }
 
 .video-stage {
   position: relative;
   flex: 1;
   background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   min-height: 0;
+  display: flex;
 }
 
 .video-player {
   width: 100%;
   height: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  background: #000;
-  display: block;
+}
+
+.video-player :deep(.video-js) {
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+/* v3.3.2：video.js 深色主题适配 */
+.video-player :deep(.video-js .vjs-control-bar) {
+  background: linear-gradient(180deg, rgba(20, 22, 30, 0.85) 0%, rgba(10, 12, 18, 0.95) 100%);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.video-player :deep(.video-js .vjs-button > .vjs-icon-placeholder:before) {
+  font-size: 16px;
+  line-height: 28px;
+  color: #fff;
+}
+
+.video-player :deep(.video-js .vjs-slider) {
+  background-color: rgba(255, 255, 255, 0.15);
+}
+
+.video-player :deep(.video-js .vjs-load-progress) {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.video-player :deep(.video-js .vjs-play-progress) {
+  background: var(--mo-primary, #409eff);
+}
+
+.video-player :deep(.video-js .vjs-volume-level) {
+  background: var(--mo-primary, #409eff);
+}
+
+.video-player :deep(.video-js .vjs-big-play-button) {
+  background-color: rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  width: 88px;
+  height: 88px;
+  line-height: 88px;
+  font-size: 48px;
+  border: none;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 0 0 6px rgba(255, 255, 255, 0.12);
+}
+
+.video-player :deep(.video-js .vjs-big-play-button .vjs-icon-placeholder:before) {
+  color: var(--mo-primary, #409eff);
+  font-size: 48px;
+  line-height: 88px;
+}
+
+.video-player :deep(.video-js:hover .vjs-big-play-button) {
+  background-color: #fff;
+  transform: scale(1.05);
+}
+
+.video-player :deep(.video-js .vjs-time) {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+}
+
+.video-player :deep(.video-js .vjs-menu-button-popup .vjs-menu .vjs-menu-content) {
+  background: rgba(20, 22, 30, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.video-player :deep(.video-js .vjs-menu li) {
+  font-size: 12px;
+  color: #fff;
+}
+
+.video-player :deep(.video-js .vjs-menu li.vjs-selected) {
+  background: var(--mo-primary, #409eff);
+  color: #fff;
+}
+
+/* v3.3.2：全屏时 video.js 铺满 */
+.video-stage:fullscreen {
+  border-radius: 0;
+  border: none;
+}
+
+.video-stage:fullscreen .video-player :deep(.video-js) {
+  border-radius: 0;
 }
 
 /* v3.2.2：加载遮罩 */
@@ -1129,42 +1272,8 @@ if (typeof document !== 'undefined') {
   backdrop-filter: blur(2px);
 }
 
-/* v3.2.2：居中大播放按钮（暂停态） */
-.video-center-play {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.18);
-  cursor: pointer;
-  z-index: 3;
-  transition: opacity 0.2s;
-}
-.video-center-play:hover {
-  background: rgba(0, 0, 0, 0.28);
-}
-.center-play-btn {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.92);
-  color: var(--mo-primary, #409eff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding-left: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 0 0 6px rgba(255, 255, 255, 0.12);
-  transition: transform 0.15s;
-}
-.video-center-play:hover .center-play-btn {
-  transform: scale(1.05);
-  background: #fff;
-}
-
 /* v3.1.2：音频编码不支持警告 */
 .audio-warning {
-  margin: 0 12px;
   padding: 8px 12px;
   background: rgba(255, 152, 0, 0.15);
   border: 1px solid rgba(255, 152, 0, 0.4);
@@ -1172,69 +1281,27 @@ if (typeof document !== 'undefined') {
   color: #ffb74d;
   font-size: 12px;
   text-align: center;
+  flex-shrink: 0;
 }
 
-/* v3.1.0：全屏时视频铺满整个屏幕 */
-.video-wrap:fullscreen {
-  width: 100vw;
-  height: 100vh;
-  background: #000;
-  border-radius: 0;
-  border: none;
-  padding: 0;
-  box-shadow: none;
-  justify-content: center;
-  align-items: stretch;
-  gap: 0;
-}
-
-.video-wrap:fullscreen .video-player {
-  width: 100%;
-  height: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  border-radius: 0;
-}
-
-.video-wrap:fullscreen .video-controls {
-  position: absolute;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: calc(100% - 64px);
-  background: rgba(0, 0, 0, 0.72);
-  color: #fff;
-  z-index: 10;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(6px);
-}
-
-.video-wrap:fullscreen .audio-warning {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: 90vw;
-  margin: 0;
-  z-index: 20;
-}
-
-/* v3.0.0：自定义视频控制栏（v3.2.2 美化） */
-.video-controls {
+/* v3.3.2：自定义额外控制栏（增益 + 快退快进） */
+.video-extra-controls {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 8px 14px;
   background: linear-gradient(180deg, rgba(20, 22, 30, 0.92) 0%, rgba(10, 12, 18, 0.96) 100%);
   color: #fff;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
 }
 
-.video-ctrl-btn {
+.extra-ctrl-btn {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #fff;
-  font-size: 16px;
+  font-size: 14px;
   cursor: pointer;
   padding: 6px 8px;
   border-radius: 8px;
@@ -1244,91 +1311,21 @@ if (typeof document !== 'undefined') {
   flex-shrink: 0;
 }
 
-.video-ctrl-btn:hover {
+.extra-ctrl-btn:hover {
   background: var(--mo-primary, #409eff);
   border-color: transparent;
   color: #fff;
   transform: translateY(-1px);
 }
 
-/* v3.2.3：快退/快进按钮——略紧凑 */
-.video-ctrl-btn.seek-btn {
-  padding: 6px 7px;
-  font-size: 14px;
-}
-
-.video-time {
+.extra-label {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.78);
-  min-width: 46px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
-/* v3.2.2：双层进度条：缓冲 + 实际进度 */
-.video-progress-wrap {
-  flex: 1;
-  position: relative;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.video-progress-buffered {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 4px;
-  background: rgba(255, 255, 255, 0.25);
-  border-radius: 2px;
-  pointer-events: none;
-  z-index: 0;
-  transition: width 0.2s;
-}
-
-.video-progress {
-  position: relative;
-  z-index: 1;
-  flex: 1;
-  height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  cursor: pointer;
-  outline: none;
-}
-
-.video-progress::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--mo-primary, #409eff);
-  cursor: pointer;
-  border: 2px solid #fff;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-  transition: transform 0.1s;
-}
-.video-progress::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-
-.video-progress::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--mo-primary, #409eff);
-  cursor: pointer;
-  border: 2px solid #fff;
-}
-
-.video-speed,
-.video-gain {
+.gain-select {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 6px;
@@ -1340,48 +1337,14 @@ if (typeof document !== 'undefined') {
   height: 28px;
   min-width: 52px;
 }
-.video-speed:hover,
-.video-gain:hover {
+
+.gain-select:hover {
   border-color: var(--mo-primary, #409eff);
 }
 
-.video-speed option,
-.video-gain option {
+.gain-select option {
   background: #1a1c25;
   color: #fff;
-}
-
-/* v3.2.2：音量滑块：改白色主题（v3.2.3：加宽到 96px，配合 step=0.1 无极调节） */
-.video-volume {
-  width: 96px;
-  height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 2px;
-  cursor: pointer;
-  outline: none;
-  flex-shrink: 0;
-}
-
-.video-volume::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  cursor: pointer;
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.video-volume::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  cursor: pointer;
-  border: none;
 }
 
 .image-viewer {

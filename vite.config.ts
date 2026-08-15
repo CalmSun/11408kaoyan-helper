@@ -17,6 +17,19 @@ export default defineConfig({
     }
   },
   root: resolve(__dirname, 'src/renderer'),
+  // v3.3.2：pdf.js 需要 top-level await 支持
+  optimizeDeps: {
+    esbuildOptions: {
+      supported: {
+        'top-level-await': true
+      }
+    }
+  },
+  esbuild: {
+    supported: {
+      'top-level-await': true
+    }
+  },
   build: {
     outDir: resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,
@@ -26,7 +39,10 @@ export default defineConfig({
         manualChunks: {
           'vendor-vue': ['vue', 'vue-router', 'pinia'],
           'vendor-element-plus': ['element-plus', '@element-plus/icons-vue'],
-          'vendor-echarts': ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers']
+          'vendor-echarts': ['echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers'],
+          // v3.3.2：pdf.js 与 video.js 独立分包
+          'vendor-pdf': ['@tato30/vue-pdf', 'pdfjs-dist'],
+          'vendor-video': ['video.js', '@videojs-player/vue']
         }
       }
     }
