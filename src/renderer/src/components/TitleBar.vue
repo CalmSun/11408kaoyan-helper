@@ -5,10 +5,16 @@
       <span class="titlebar-title">11408考研助手</span>
       <span v-if="!transparent" class="titlebar-page">{{ pageTitle }}</span>
 
-      <!-- v3.1.0：音乐组件移到左侧 -->
+      <!-- v3.1.0：音乐组件移到左侧（v3.2.6：新增喜爱按钮 + 心动模式按钮移入） -->
       <div class="music-widget" v-if="!transparent">
-        <button class="mini-btn" title="选择音乐文件夹" @click="handlePickFolder">
-          <el-icon :size="13"><Folder /></el-icon>
+        <!-- v3.2.6：心动模式按钮（原顶栏右侧，现移至音乐组件区，替代原文件夹按钮） -->
+        <button
+          class="mini-btn heartbeat-btn"
+          :class="{ on: music.heartbeatMode }"
+          :title="music.heartbeatMode ? '心动模式播放中' : '网易云心动模式（随机播放喜欢的歌单）'"
+          @click="handleHeartbeat"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 12.5 C7 12.5 1.5 9 1.5 5 A3 3 0 0 1 7 3.5 A3 3 0 0 1 12.5 5 C12.5 9 7 12.5 7 12.5 Z" :fill="music.heartbeatMode ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
         </button>
 
         <template v-if="music.hasMusic">
@@ -20,6 +26,16 @@
             :title="currentLyricText"
             @click="goToMusic"
           >{{ currentLyricText }}</span>
+          <!-- v3.2.6：顶栏喜爱歌曲按钮（与音乐页状态一致，使用 isSongLiked 直接读取缓存） -->
+          <button
+            class="mini-btn like-mini-btn"
+            :class="{ on: isCurrentTrackLiked }"
+            :title="isCurrentTrackLiked ? '取消喜欢' : '喜欢该音乐'"
+            :disabled="!music.currentTrack?.id || music.likingSongId === music.currentTrack?.id"
+            @click="handleToggleLikeSong"
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13"><path d="M6.5 11.5 C6.5 11.5 1 8.5 1 4.5 A2.8 2.8 0 0 1 6.5 3 A2.8 2.8 0 0 1 12 4.5 C12 8.5 6.5 11.5 6.5 11.5 Z" :fill="isCurrentTrackLiked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
+          </button>
           <button class="mini-btn" :title="music.isPlaying ? '暂停' : '播放'" @click="music.toggle()">
             <svg v-if="!music.isPlaying" width="10" height="10" viewBox="0 0 10 10"><path d="M2 1 L9 5 L2 9 Z" fill="currentColor"/></svg>
             <svg v-else width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/><rect x="6" y="1" width="2.5" height="8" rx="0.5" fill="currentColor"/></svg>
@@ -231,17 +247,6 @@
         <el-icon :size="14"><Search /></el-icon>
       </button>
 
-      <!-- v3.1.3：网易云心动模式按钮 -->
-      <button
-        class="mini-btn heartbeat-btn"
-        v-if="!transparent"
-        :class="{ on: music.heartbeatMode }"
-        :title="music.heartbeatMode ? '心动模式播放中' : '网易云心动模式（随机播放喜欢的歌单）'"
-        @click="handleHeartbeat"
-      >
-        <svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 12.5 C7 12.5 1.5 9 1.5 5 A3 3 0 0 1 7 3.5 A3 3 0 0 1 12.5 5 C12.5 9 7 12.5 7 12.5 Z" :fill="music.heartbeatMode ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></svg>
-      </button>
-
       <!-- 护眼模式 -->
       <button class="mini-btn eyecare-btn" :class="{ on: eyeCareOn }" :title="eyeCareOn ? '关闭护眼模式' : '开启护眼模式'" @click="toggleEye">
         <svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2 C9 2 11 6 11 6 C11 6 9 10 6 10 C3 10 1 6 1 6 C1 6 3 2 6 2 Z" fill="none" stroke="currentColor" stroke-width="1"/><circle cx="6" cy="6" r="1.8" fill="currentColor"/></svg>
@@ -353,7 +358,7 @@ import {
   type WeatherCity
 } from '@/utils/weather'
 import { ElMessage } from 'element-plus'
-import { Reading, Sunny, Moon, UserFilled, Folder, List, Search, Headset } from '@element-plus/icons-vue'
+import { Reading, Sunny, Moon, UserFilled, Folder, List, Search } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 
 interface Props {
@@ -415,6 +420,33 @@ const currentLyricText = computed(() => {
 // v3.0.0：点击歌词跳转到音乐页面
 function goToMusic() {
   router.push('/music')
+}
+
+// v3.2.6：顶栏当前歌曲喜爱状态——优先直接从 likelist 缓存读取，确保与音乐页/列表完全一致
+const isCurrentTrackLiked = computed(() => {
+  const id = music.currentTrack?.id
+  if (!id) return false
+  // 双重来源：缓存 Set 或 currentLiked，优先缓存（避免 watch 延迟导致短暂不一致）
+  if (music.likedSongIds?.has(id)) return true
+  return !!music.currentLiked
+})
+
+// v3.2.6：顶栏喜爱按钮点击（复用 store 的 toggleSongLike，该方法已处理 API 与缓存更新）
+async function handleToggleLikeSong() {
+  const id = music.currentTrack?.id
+  if (!id) return
+  if (!music.neteaseLoggedIn) {
+    ElMessage.warning('请先登录网易云账号')
+    return
+  }
+  const wasLiked = isCurrentTrackLiked.value
+  const success = await music.toggleSongLike(id)
+  if (success) {
+    // 同步 currentLiked（使音乐页卡片按钮立即同步）
+    music.currentLiked = !wasLiked
+  } else {
+    ElMessage.warning('操作失败，请检查是否已登录')
+  }
 }
 
 // v2.9.2：格式化播放时间
@@ -538,11 +570,6 @@ function goToSettings() {
 // v2.9.0：跳转到学习资料页面
 function goMaterials() {
   router.push('/materials')
-}
-
-// v2.9.0：跳转到音乐播放页面
-function goMusic() {
-  router.push('/music')
 }
 
 // v3.1.5：网易云心动模式（使用官方 intelligence list API）
@@ -1489,5 +1516,35 @@ onMounted(() => {
   background: var(--mo-danger);
   border-color: var(--mo-danger);
   color: #fff;
+}
+
+/* v3.2.6：顶栏心动模式按钮 & 喜爱按钮激活态红色（与音乐页一致） */
+.heartbeat-btn.on {
+  background: #ff6b6b !important;
+  border-color: #ff6b6b !important;
+  color: #fff !important;
+}
+.heartbeat-btn:hover {
+  color: #ff6b6b;
+}
+.heartbeat-btn.on:hover {
+  opacity: 0.9;
+  color: #fff !important;
+}
+.like-mini-btn.on {
+  background: #ff6b6b !important;
+  border-color: #ff6b6b !important;
+  color: #fff !important;
+}
+.like-mini-btn:hover {
+  color: #ff6b6b;
+}
+.like-mini-btn.on:hover {
+  opacity: 0.9;
+  color: #fff !important;
+}
+.like-mini-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>

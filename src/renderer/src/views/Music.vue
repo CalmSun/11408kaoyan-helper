@@ -860,13 +860,6 @@ function onPlaylistTab() {
   }
 }
 
-// v3.1.5：切换到热搜 Tab 时加载
-function onHotSearchTab() {
-  if (music.hotSearchList.length === 0) {
-    music.fetchHotSearch()
-  }
-}
-
 // v3.1.5：切换到排行榜 Tab 时加载
 function onToplistTab() {
   if (music.toplistList.length === 0) {
@@ -976,8 +969,10 @@ async function handleCommentLike(comment: { commentId: number; likedCount: numbe
 // 切换歌曲时检查喜欢状态 + 获取热门评论
 watch(() => music.currentTrack?.id, (newId) => {
   if (newId && music.currentTrack?.source === 'online') {
-    // v3.1.9：先重置喜欢状态，避免显示上一首的状态
-    music.currentLiked = false
+    // v3.2.6：无闪烁——先读缓存 likedSongIds，命中立即显示，不命中则显示 false
+    //   随后 checkSongLikeStatus 会再校验一次（必要时补拉 likelist）并修正状态
+    const cachedLiked = music.isSongLiked(newId)
+    music.currentLiked = cachedLiked
     music.checkSongLikeStatus(newId)
     music.fetchSongComments(newId, 1, 20, 1)
   } else {
@@ -1097,10 +1092,13 @@ onUnmounted(() => {
   padding: 20px;
   backdrop-filter: var(--glass-filter, blur(12px));
   position: relative;
-  overflow: hidden;
+  /* v3.2.6：移除 overflow:hidden，避免内部 hover transform 与 backdrop-filter
+     GPU 层叠加时绘制到相邻卡片上层（盖住别的卡片的视觉问题） */
+  overflow: visible;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  isolation: isolate;
 }
 
 /* v3.1.2：播放器卡片限制最大宽度，避免过宽 */
@@ -1654,14 +1652,18 @@ onUnmounted(() => {
   background: var(--mo-primary, #409eff);
 }
 
-/* v3.1.2：歌单网格自适应列数 */
+/* v3.1.2：歌单网格自适应列数
+   v3.2.6：overflow-x:visible + isolation:isolate 防止网格项 hover 上浮时与 backdrop-filter
+     叠加"盖住"相邻卡片；每项使用独立定位层（position:relative + z-index:0/1） */
 .user-playlists-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 14px;
   max-height: 460px;
+  overflow-x: visible;
   overflow-y: auto;
   padding-right: 4px;
+  isolation: isolate;
 }
 
 .user-playlists-grid::-webkit-scrollbar {
@@ -1674,11 +1676,19 @@ onUnmounted(() => {
 
 .playlist-grid-item {
   cursor: pointer;
-  transition: transform 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
+  /* v3.2.6：显式定位层，避免 hover 时与 backdrop-filter 卡的 GPU 层叠加绘制错乱 */
+  position: relative;
+  z-index: 0;
+  border-radius: 10px; /* 匹配封面圆角，使 hover 阴影贴合 */
 }
 
 .playlist-grid-item:hover {
-  transform: translateY(-2px);
+  /* v3.2.6：用阴影替代 translateY(-2px) 上浮，减少 GPU 层重叠；
+     保留轻微上移但加 z-index:1，确保只在网格层内显示，不溢出盖其他卡片 */
+  transform: translateY(-1px);
+  z-index: 1;
+  box-shadow: 0 4px 14px rgba(31, 64, 130, 0.12);
 }
 
 .playlist-cover {
@@ -1919,32 +1929,49 @@ onUnmounted(() => {
   object-fit: contain;
 }
 
-/* v3.1.5：排行榜（flex 规则见上方 .toplist-card） */
+/* v3.1.5：排行榜（flex 规则见上方 .toplist-card）
+   v3.2.6：改为 2 列网格——飙升榜/新歌榜等两榜同一行展示 */
 .toplist-list {
-  max-height: 420px;
+  max-height: 480px;
   overflow-y: auto;
   padding-right: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  isolation: isolate;
 }
 
 .toplist-item {
   display: flex;
-  gap: 10px;
-  padding: 10px;
-  border-radius: 8px;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 10px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  position: relative;
+  z-index: 0;
+  text-align: center;
 }
 
 .toplist-item:hover {
   background: var(--mo-bg-2);
+  border-color: var(--glass-border, var(--mo-border));
+  box-shadow: 0 4px 14px rgba(31, 64, 130, 0.10);
+  transform: translateY(-1px);
+  z-index: 1;
 }
 
 .toplist-cover {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
+  width: 80px;
+  height: 80px;
+  border-radius: 10px;
   object-fit: cover;
   flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .toplist-cover.placeholder {
@@ -1956,35 +1983,49 @@ onUnmounted(() => {
 }
 
 .toplist-info {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
 }
 
 .toplist-name {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--mo-text-1);
-  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .toplist-update {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--mo-text-3);
-  margin-bottom: 6px;
 }
 
 .toplist-preview {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
+  margin-top: 2px;
+  text-align: left;
 }
 
 .toplist-track-preview {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--mo-text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.4;
+}
+
+@media (max-width: 1100px) {
+  .toplist-list {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* v3.1.8：热门评论卡片 */

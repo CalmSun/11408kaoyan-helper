@@ -991,21 +991,39 @@ export const useMusicStore = defineStore('music', () => {
     return liked
   }
 
-  /** 切换歌曲喜欢状态 */
+  /** 切换歌曲喜欢状态
+   *  v3.2.6：乐观更新——点击立即更新本地 UI，API 失败自动回滚
+   */
   async function toggleLikeSong(songId: number, currentState?: boolean): Promise<boolean> {
     const api = window.electronAPI
     if (!api?.neteaseLike || !songId) return false
+    if (likingSongId.value === songId) return false // 防重复
     likingSongId.value = songId
-    const isLiked = currentState !== undefined ? !currentState : !currentLiked.value
+    const targetLiked = currentState !== undefined ? !currentState : !currentLiked.value
+    // v3.2.6：乐观更新——立即变更 UI 状态
+    currentLiked.value = targetLiked
+    setLiked(songId, targetLiked)
+    let ok = false
     try {
-      const res = await api.neteaseLike(songId, isLiked)
+      const res = await api.neteaseLike(songId, targetLiked)
       if (res.success) {
-        currentLiked.value = res.liked
-        setLiked(songId, res.liked)
-        return true
+        // 以服务端返回状态为准做最终校正（通常与目标一致）
+        if (res.liked !== undefined && res.liked !== targetLiked) {
+          currentLiked.value = res.liked
+          setLiked(songId, res.liked)
+        }
+        ok = true
       }
     } catch { /* ignore */ }
-    return false
+    finally {
+      // v3.2.6：失败时回滚 UI 状态
+      if (!ok) {
+        currentLiked.value = !targetLiked
+        setLiked(songId, !targetLiked)
+      }
+      likingSongId.value = null
+    }
+    return ok
   }
 
   async function likeSong(songId: number, like: boolean): Promise<boolean> {
@@ -1106,42 +1124,46 @@ export const useMusicStore = defineStore('music', () => {
   /** 切换评论点赞状态
    *  v3.2.0：调用 /comment/like 接口
    *  v3.2.1：修复点赞按钮不能再次选中——likingCommentId 未在结束时重置导致按钮永久禁用
-   *  - 成功后更新本地缓存与 likedCount
-   *  - 无论成功失败，在 finally 中复位 likingCommentId
+   *  v3.2.6：乐观更新——点击立即变更 UI 状态，失败自动回滚
    */
   async function toggleCommentLike(commentId: number, currentLiked: boolean): Promise<boolean> {
     const api = window.electronAPI
     if (!api?.neteaseCommentLike) return false
     const songId = currentCommentSongId.value
     if (!songId || !commentId) return false
-    // 防止对同一条评论重复点击
-    if (likingCommentId.value === commentId) return false
+    if (likingCommentId.value === commentId) return false // 防重复
     likingCommentId.value = commentId
     const nextState = !currentLiked
+    const delta = nextState ? 1 : -1
+    // v3.2.6：乐观更新——立即变更本地状态与计数
+    setCommentLiked(commentId, nextState)
+    const applyDeltaToComments = (d: number) => {
+      const updateComment = (c: NetEaseComment) => {
+        if (c.commentId === commentId) {
+          c.likedCount = Math.max(0, c.likedCount + d)
+        }
+      }
+      songComments.value.forEach(updateComment)
+      if (currentHotComment.value && currentHotComment.value.commentId === commentId) {
+        currentHotComment.value = {
+          ...currentHotComment.value,
+          likedCount: Math.max(0, currentHotComment.value.likedCount + d)
+        }
+      }
+    }
+    applyDeltaToComments(delta)
     let ok = false
     try {
       const res = await api.neteaseCommentLike(songId, commentId, nextState)
-      if (res.success) {
-        setCommentLiked(commentId, nextState)
-        // 更新评论列表中的 likedCount
-        const delta = nextState ? 1 : -1
-        const updateComment = (c: NetEaseComment) => {
-          if (c.commentId === commentId) {
-            c.likedCount = Math.max(0, c.likedCount + delta)
-          }
-        }
-        songComments.value.forEach(updateComment)
-        if (currentHotComment.value && currentHotComment.value.commentId === commentId) {
-          currentHotComment.value = {
-            ...currentHotComment.value,
-            likedCount: Math.max(0, currentHotComment.value.likedCount + delta)
-          }
-        }
-        ok = true
-      }
+      ok = !!res.success
     } catch { /* ignore */ }
     finally {
-      // v3.2.1：必须复位，否则按钮 :disabled 永久为 true，表现为"不能选中"
+      // v3.2.6：失败时回滚 UI 状态与计数
+      if (!ok) {
+        setCommentLiked(commentId, currentLiked)
+        applyDeltaToComments(-delta) // 撤销计数变更
+      }
+      // v3.2.1：必须复位，否则按钮 :disabled 永久为 true
       likingCommentId.value = null
     }
     return ok

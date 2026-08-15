@@ -340,7 +340,9 @@ html.dark .app-bg-decor::after {
     var(--glass-shadow-hover),
     inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.15)),
     inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom));
-  transform: translateY(-1px);
+  /* v3.2.6：移除 translateY(-1px) 上浮，避免与相邻卡片的 backdrop-filter
+     GPU 层叠加导致 hover 阴影/高光"盖住"其它卡片的视觉异常 */
+  isolation: isolate;
 }
 
 .glass-strong,
