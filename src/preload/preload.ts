@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pickMaterialsFolder: () => ipcRenderer.invoke('materials:pick-folder'),
   restoreMaterialsFolder: () => ipcRenderer.invoke('materials:restore-folder'),
   listMaterialsFiles: () => ipcRenderer.invoke('materials:list-files'),
+  // v3.2.9：系统默认应用打开资料文件
+  openMaterialsExternal: (token: string) => ipcRenderer.invoke('materials:open-external', token),
   // v2.9.0：默认浏览器打开外部链接
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
   // v2.9.0：网易云音乐 API

@@ -413,22 +413,25 @@ if (!gotTheLock) {
     // v3.0.0：资料协议：显式支持 Range 请求（视频拖动进度/快速加载），
     // 此前用 net.fetch(file://) 在部分 Electron 版本下 Range 支持不稳定，
     // 改用 fs.createReadStream + 206 Partial Content 确保 seek 正常。
-    protocol.handle('kaoyan-material', (request) => {
+    // v3.2.9：异步 stat 避免阻塞主线程；highWaterMark 提升大文件读取吞吐量
+    protocol.handle('kaoyan-material', async (request) => {
       try {
         const url = new URL(request.url)
         const token = decodeURIComponent(url.host + url.pathname).replace(/^\/+/, '').split('/')[0]
         const file = materialsWhitelist.get(token)
-        if (!file || !fs.existsSync(file)) {
+        if (!file) {
           return new Response('not found', { status: 404 })
         }
         const resolved = path.resolve(file)
         if (!materialsRootDir || !resolved.startsWith(path.resolve(materialsRootDir) + path.sep)) {
           return new Response('forbidden', { status: 403 })
         }
-        const stat = fs.statSync(resolved)
+        const stat = await fs.promises.stat(resolved)
         const total = stat.size
         const rangeHeader = request.headers.get('range')
         const mime = getMimeType(resolved)
+        // v3.2.9：512KB 缓冲区，减少大文件读取的系统调用次数
+        const HWM = 512 * 1024
 
         if (rangeHeader) {
           const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader)
@@ -443,7 +446,7 @@ if (!gotTheLock) {
                 headers: { 'Content-Range': `bytes */${total}` }
               })
             }
-            const stream = fs.createReadStream(resolved, { start, end })
+            const stream = fs.createReadStream(resolved, { start, end, highWaterMark: HWM })
             const body = new ReadableStream({
               start(controller) {
                 stream.on('data', chunk => { try { controller.enqueue(chunk) } catch { /* ignore */ } })
@@ -464,7 +467,7 @@ if (!gotTheLock) {
           }
         }
         // 无 Range：返回完整文件
-        const stream = fs.createReadStream(resolved)
+        const stream = fs.createReadStream(resolved, { highWaterMark: HWM })
         const body = new ReadableStream({
           start(controller) {
             stream.on('data', chunk => { try { controller.enqueue(chunk) } catch { /* ignore */ } })
@@ -803,6 +806,30 @@ ipcMain.handle('materials:list-files', async () => {
   materialsWhitelist.clear()
   const files = scanMaterialsFolder(materialsRootDir)
   return { success: true, files, folder: materialsRootDir }
+})
+
+// v3.2.9：使用系统默认应用打开资料文件（PDF/视频等）
+ipcMain.handle('materials:open-external', async (_e, token: string) => {
+  try {
+    if (!token || typeof token !== 'string') {
+      return { success: false, message: '无效的文件标识' }
+    }
+    const file = materialsWhitelist.get(token)
+    if (!file || !fs.existsSync(file)) {
+      return { success: false, message: '文件不存在或已被移除' }
+    }
+    const resolved = path.resolve(file)
+    if (!materialsRootDir || !resolved.startsWith(path.resolve(materialsRootDir) + path.sep)) {
+      return { success: false, message: '文件路径不在资料文件夹内' }
+    }
+    const errorMessage = await shell.openPath(resolved)
+    if (errorMessage) {
+      return { success: false, message: errorMessage }
+    }
+    return { success: true }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
 })
 
 // ── v2.9.0：默认浏览器打开外部链接 ──

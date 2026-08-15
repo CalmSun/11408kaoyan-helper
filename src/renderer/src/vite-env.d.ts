@@ -69,6 +69,8 @@ interface ElectronAPI {
     files?: MaterialNode[]
     folder?: string
   }>
+  // v3.2.9：系统默认应用打开资料文件
+  openMaterialsExternal: (token: string) => Promise<{ success: boolean; message?: string }>
   // v2.9.0：默认浏览器打开外部链接
   openExternalUrl: (url: string) => Promise<{ success: boolean; message?: string }>
   // v2.9.0：网易云音乐 API

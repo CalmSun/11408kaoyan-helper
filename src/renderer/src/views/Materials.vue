@@ -77,7 +77,18 @@
       <div class="file-preview glass-card">
         <h3 class="section-title">
           <el-icon><View /></el-icon>
-          {{ currentFile?.name || '选择文件预览' }}
+          <span class="preview-title-name">{{ currentFile?.name || '选择文件预览' }}</span>
+          <el-button
+            v-if="currentFile"
+            size="small"
+            link
+            type="primary"
+            class="open-external-btn"
+            @click="openExternal"
+            title="使用系统默认应用打开此文件"
+          >
+            <el-icon><Open /></el-icon> 默认应用打开
+          </el-button>
         </h3>
         <div class="preview-container" v-if="currentFile">
           <!-- PDF 预览 -->
@@ -219,9 +230,10 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning, ArrowRight, Loading
+  View, Warning, ArrowRight, Loading, Open
 } from '@element-plus/icons-vue'
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
@@ -513,6 +525,25 @@ function openFile(file: MaterialNode) {
   currentFile.value = file
 }
 
+// v3.2.9：使用系统默认应用打开当前文件
+async function openExternal() {
+  if (!currentFile.value?.url) return
+  const api = window.electronAPI
+  if (!api?.openMaterialsExternal) {
+    ElMessage.warning('当前环境不支持此操作')
+    return
+  }
+  const token = currentFile.value.url.replace('kaoyan-material://', '')
+  try {
+    const res = await api.openMaterialsExternal(token)
+    if (!res.success) {
+      ElMessage.error(res.message || '打开失败')
+    }
+  } catch {
+    ElMessage.error('打开失败，请重试')
+  }
+}
+
 function isVideo(ext: string): boolean {
   return VIDEO_EXTS.includes(ext.toLowerCase())
 }
@@ -751,6 +782,19 @@ if (typeof document !== 'undefined') {
   gap: 6px;
   margin: 0 0 14px 0;
   flex-shrink: 0;
+}
+
+.preview-title-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.open-external-btn {
+  flex-shrink: 0;
+  font-weight: 400;
 }
 
 .file-count {
