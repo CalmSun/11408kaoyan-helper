@@ -102,8 +102,9 @@
                 @load="pdfLoading = false"
               ></iframe>
               <div v-if="pdfLoading && !pdfError" class="pdf-loading-mask">
-                <el-icon class="is-loading" :size="40"><Loading /></el-icon>
-                <span>PDF 加载中...</span>
+                <div class="pdf-loading-spinner"></div>
+                <div class="pdf-loading-bar"><div class="pdf-loading-bar-fill"></div></div>
+                <span class="pdf-loading-text">PDF 加载中...</span>
               </div>
               <div v-if="pdfError" class="pdf-error-mask">
                 <el-icon :size="40"><Warning /></el-icon>
@@ -112,7 +113,7 @@
             </div>
           </div>
 
-          <!-- 视频播放（v3.3.8：原生 <video> + 增益/快捷键/无声检测） -->
+          <!-- 视频播放（v3.3.8：原生 <video> + 增益/快捷键/无声检测/连播列表） -->
           <div v-else-if="isVideo(currentFile.ext)" class="video-wrap" ref="videoWrap">
             <div class="video-stage">
               <video
@@ -125,40 +126,88 @@
                 @loadedmetadata="onVideoLoadedMetadata"
                 @play="videoPlaying = true"
                 @pause="videoPlaying = false"
-                @ended="videoPlaying = false"
+                @ended="onVideoEnded"
                 @waiting="videoLoading = true"
                 @playing="videoLoading = false; videoPlaying = true"
                 @volumechange="onVolumeChange"
                 @error="onVideoError"
               ></video>
               <div v-if="videoLoading" class="video-loading-mask">
-                <el-icon class="is-loading" :size="40"><Loading /></el-icon>
+                <el-icon class="is-loading" :size="36"><Loading /></el-icon>
                 <span>视频加载中...</span>
               </div>
+              <!-- Video navigation overlay (prev/next) -->
+              <button v-if="currentVideoIndex > 0" class="video-nav-btn video-nav-prev" @click="playPrevVideo" title="上一个 (Shift+←)">
+                <el-icon><ArrowLeft /></el-icon>
+              </button>
+              <button v-if="currentVideoIndex >= 0 && currentVideoIndex < videoPlaylist.length - 1" class="video-nav-btn video-nav-next" @click="playNextVideo" title="下一个 (Shift+→)">
+                <el-icon><ArrowRight /></el-icon>
+              </button>
             </div>
-            <!-- v3.1.2：音频编码不支持警告 -->
+            <!-- Audio warning -->
             <div v-if="audioWarning" class="audio-warning">{{ audioWarning }}</div>
-            <!-- v3.2.2：增益调节 + 快退快进（原生控制栏不含此功能，作为自定义覆盖层） -->
-            <div class="video-extra-controls">
-              <button class="extra-ctrl-btn" @click="seekRelative(-10)" title="快退 10 秒 (←)">
-                <el-icon>⏪</el-icon>
-              </button>
-              <button class="extra-ctrl-btn" @click="seekRelative(10)" title="快进 10 秒 (→)">
-                <el-icon>⏩</el-icon>
-              </button>
-              <span class="extra-label">音量增益</span>
-              <select
-                :value="videoGain"
-                @change="(e) => { videoGain = Number((e.target as HTMLSelectElement).value); applyGain() }"
-                class="gain-select"
-                title="提升视频音量（Web Audio API）"
-              >
-                <option :value="1">1x</option>
-                <option :value="1.5">1.5x</option>
-                <option :value="1.8">1.8x</option>
-                <option :value="2.5">2.5x</option>
-                <option :value="4">4x</option>
-              </select>
+            <!-- Video controls bar -->
+            <div class="video-controls-bar">
+              <div class="video-controls-left">
+                <button class="vc-btn" @click="seekRelative(-10)" title="快退 10 秒 (←)">
+                  <span style="font-size:16px">⏪</span>
+                </button>
+                <button class="vc-btn" @click="seekRelative(10)" title="快进 10 秒 (→)">
+                  <span style="font-size:16px">⏩</span>
+                </button>
+                <span class="vc-separator"></span>
+                <span class="vc-label">音量增益</span>
+                <select
+                  :value="videoGain"
+                  @change="(e) => { videoGain = Number((e.target as HTMLSelectElement).value); applyGain() }"
+                  class="vc-select"
+                  title="提升视频音量（Web Audio API）"
+                >
+                  <option :value="1">1x</option>
+                  <option :value="1.5">1.5x</option>
+                  <option :value="1.8">1.8x</option>
+                  <option :value="2.5">2.5x</option>
+                  <option :value="4">4x</option>
+                </select>
+              </div>
+              <div class="video-controls-right">
+                <button
+                  class="vc-btn vc-toggle"
+                  :class="{ active: autoPlayNext }"
+                  @click="toggleAutoPlay"
+                  title="自动连播下一个视频"
+                >
+                  <el-icon><VideoPlay /></el-icon>
+                  <span>连播</span>
+                </button>
+                <span class="vc-playlist-info" v-if="currentVideoIndex >= 0">
+                  {{ currentVideoIndex + 1 }} / {{ videoPlaylist.length }}
+                </span>
+              </div>
+            </div>
+            <!-- Playlist panel -->
+            <div class="video-playlist" v-if="videoPlaylist.length > 1">
+              <div class="playlist-header">
+                <span class="playlist-title">
+                  <el-icon><List /></el-icon>
+                  播放列表
+                </span>
+                <span class="playlist-count">{{ videoPlaylist.length }} 个视频</span>
+              </div>
+              <div class="playlist-items">
+                <div
+                  v-for="(v, idx) in videoPlaylist"
+                  :key="v.path"
+                  class="playlist-item"
+                  :class="{ active: idx === currentVideoIndex, played: idx < currentVideoIndex }"
+                  @click="playVideoAt(idx)"
+                >
+                  <span class="playlist-index">{{ idx + 1 }}</span>
+                  <span class="playlist-name" :title="v.name">{{ v.name }}</span>
+                  <el-icon v-if="idx === currentVideoIndex && videoPlaying" class="playlist-playing-icon is-loading"><Loading /></el-icon>
+                  <el-icon v-else-if="idx === currentVideoIndex" class="playlist-playing-icon"><VideoPlay /></el-icon>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -200,7 +249,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning, ArrowRight, Loading, Open
+  View, Warning, ArrowRight, ArrowLeft, List, Loading, Open
 } from '@element-plus/icons-vue'
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
@@ -220,15 +269,22 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 // ============ v3.3.8：PDF 状态管理（Chromium 内置 PDFium via iframe） ============
 const pdfLoading = ref(false)
 const pdfError = ref(false)
+let pdfLoadTimer: ReturnType<typeof setTimeout> | null = null
 
 // Reset loading state when file changes
 watch(() => currentFile.value, (newFile) => {
   if (newFile?.ext === '.pdf') {
     pdfLoading.value = true
     pdfError.value = false
+    // Auto-hide loading after 15s (some PDFs may take long but PDFium doesn't emit load event for very large files)
+    if (pdfLoadTimer) clearTimeout(pdfLoadTimer)
+    pdfLoadTimer = setTimeout(() => {
+      pdfLoading.value = false
+    }, 15000)
   } else {
     pdfLoading.value = false
     pdfError.value = false
+    if (pdfLoadTimer) { clearTimeout(pdfLoadTimer); pdfLoadTimer = null }
   }
 })
 
@@ -256,6 +312,57 @@ let attachedVideoEl: HTMLVideoElement | null = null
 
 // v3.2.2：缓冲百分比
 const videoBuffered = ref(0)
+
+// ============ v3.3.9：视频播放列表 / 自动连播 ============
+const videoPlaylist = computed<MaterialNode[]>(() => {
+  const videos: MaterialNode[] = []
+  function walk(nodes: MaterialNode[]) {
+    for (const n of nodes) {
+      if (n.type === 'folder' && n.children) walk(n.children)
+      else if (n.type === 'file' && isVideo(n.ext || '')) videos.push(n)
+    }
+  }
+  walk(fileTree.value)
+  return videos
+})
+
+const currentVideoIndex = computed(() => {
+  if (!currentFile.value || !isVideo(currentFile.value.ext || '')) return -1
+  return videoPlaylist.value.findIndex(v => v.path === currentFile.value!.path)
+})
+
+const autoPlayNext = ref(localStorage.getItem('materials-autoplay') !== 'false')
+
+function toggleAutoPlay() {
+  autoPlayNext.value = !autoPlayNext.value
+  localStorage.setItem('materials-autoplay', String(autoPlayNext.value))
+}
+
+function playNextVideo() {
+  const idx = currentVideoIndex.value
+  if (idx < 0 || idx >= videoPlaylist.value.length - 1) return
+  openFile(videoPlaylist.value[idx + 1])
+}
+
+function playPrevVideo() {
+  const idx = currentVideoIndex.value
+  if (idx <= 0) return
+  openFile(videoPlaylist.value[idx - 1])
+}
+
+function playVideoAt(idx: number) {
+  if (idx >= 0 && idx < videoPlaylist.value.length) {
+    openFile(videoPlaylist.value[idx])
+  }
+}
+
+function onVideoEnded() {
+  videoPlaying.value = false
+  if (autoPlayNext.value) {
+    // Small delay before next video
+    setTimeout(() => playNextVideo(), 800)
+  }
+}
 
 // ============ 文件树扁平化 ============
 const flatFiles = computed<DisplayNode[]>(() => {
@@ -482,13 +589,11 @@ function onVideoKeydown(e: KeyboardEvent) {
   if (e.target instanceof HTMLElement && e.target.isContentEditable) return
   switch (e.key) {
     case 'ArrowLeft':
-      e.preventDefault()
-      seekRelative(-5)
-      break
+      if (e.shiftKey) { e.preventDefault(); playPrevVideo(); return }
+      e.preventDefault(); seekRelative(-5); break
     case 'ArrowRight':
-      e.preventDefault()
-      seekRelative(5)
-      break
+      if (e.shiftKey) { e.preventDefault(); playNextVideo(); return }
+      e.preventDefault(); seekRelative(5); break
     case 'ArrowUp':
       e.preventDefault()
       changeVolumeStep(5)
@@ -978,7 +1083,6 @@ if (typeof document !== 'undefined') {
   color: var(--mo-text-3, #888);
 }
 
-.pdf-loading-mask,
 .pdf-error-mask {
   position: absolute;
   inset: 0;
@@ -987,16 +1091,63 @@ if (typeof document !== 'undefined') {
   gap: 10px;
   align-items: center;
   justify-content: center;
-  background: var(--mo-surface, #1a1c25);
-  color: var(--mo-text-2, #ccc);
+  background: rgba(245, 108, 108, 0.08);
+  color: #f56c6c;
   font-size: 14px;
   z-index: 2;
   border-radius: 8px;
 }
 
-.pdf-error-mask {
-  background: rgba(245, 108, 108, 0.08);
-  color: #f56c6c;
+.pdf-loading-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  background: var(--mo-surface, #1a1c25);
+  z-index: 2;
+  border-radius: 8px;
+}
+
+.pdf-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(64, 158, 255, 0.15);
+  border-top-color: var(--mo-primary, #409eff);
+  border-radius: 50%;
+  animation: pdf-spin 0.8s linear infinite;
+}
+
+@keyframes pdf-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pdf-loading-bar {
+  width: 200px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pdf-loading-bar-fill {
+  height: 100%;
+  background: var(--mo-primary, #409eff);
+  border-radius: 2px;
+  animation: pdf-load-progress 2s ease-in-out infinite;
+}
+
+@keyframes pdf-load-progress {
+  0% { width: 0%; transform: translateX(-100%); }
+  50% { width: 60%; }
+  100% { width: 100%; transform: translateX(200%); }
+}
+
+.pdf-loading-text {
+  font-size: 13px;
+  color: var(--mo-text-3, #888);
 }
 
 /* v3.3.2：视频播放区域（使用 video.js） */
@@ -1029,98 +1180,10 @@ if (typeof document !== 'undefined') {
   border-radius: 14px;
 }
 
-.video-player {
-  width: 100%;
-  height: 100%;
-}
-
-.video-player :deep(.video-js) {
-  width: 100%;
-  height: 100%;
-  border-radius: 14px;
-  overflow: hidden;
-  font-size: 13px;
-}
-
-/* v3.3.2：video.js 深色主题适配 */
-.video-player :deep(.video-js .vjs-control-bar) {
-  background: linear-gradient(180deg, rgba(20, 22, 30, 0.85) 0%, rgba(10, 12, 18, 0.95) 100%);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-.video-player :deep(.video-js .vjs-button > .vjs-icon-placeholder:before) {
-  font-size: 16px;
-  line-height: 28px;
-  color: #fff;
-}
-
-.video-player :deep(.video-js .vjs-slider) {
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-.video-player :deep(.video-js .vjs-load-progress) {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.video-player :deep(.video-js .vjs-play-progress) {
-  background: var(--mo-primary, #409eff);
-}
-
-.video-player :deep(.video-js .vjs-volume-level) {
-  background: var(--mo-primary, #409eff);
-}
-
-.video-player :deep(.video-js .vjs-big-play-button) {
-  background-color: rgba(255, 255, 255, 0.92);
-  border-radius: 50%;
-  width: 88px;
-  height: 88px;
-  line-height: 88px;
-  font-size: 48px;
-  border: none;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), 0 0 0 6px rgba(255, 255, 255, 0.12);
-}
-
-.video-player :deep(.video-js .vjs-big-play-button .vjs-icon-placeholder:before) {
-  color: var(--mo-primary, #409eff);
-  font-size: 48px;
-  line-height: 88px;
-}
-
-.video-player :deep(.video-js:hover .vjs-big-play-button) {
-  background-color: #fff;
-  transform: scale(1.05);
-}
-
-.video-player :deep(.video-js .vjs-time) {
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 12px;
-}
-
-.video-player :deep(.video-js .vjs-menu-button-popup .vjs-menu .vjs-menu-content) {
-  background: rgba(20, 22, 30, 0.95);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-}
-
-.video-player :deep(.video-js .vjs-menu li) {
-  font-size: 12px;
-  color: #fff;
-}
-
-.video-player :deep(.video-js .vjs-menu li.vjs-selected) {
-  background: var(--mo-primary, #409eff);
-  color: #fff;
-}
-
-/* v3.3.2：全屏时 video.js 铺满 */
+/* v3.3.2：全屏时铺满 */
 .video-stage:fullscreen {
   border-radius: 0;
   border: none;
-}
-
-.video-stage:fullscreen .video-player :deep(.video-js) {
-  border-radius: 0;
 }
 
 /* v3.2.2：加载遮罩 */
@@ -1152,48 +1215,66 @@ if (typeof document !== 'undefined') {
   flex-shrink: 0;
 }
 
-/* v3.3.2：自定义额外控制栏（增益 + 快退快进） */
-.video-extra-controls {
+/* Video controls bar */
+.video-controls-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding: 8px 14px;
   background: linear-gradient(180deg, rgba(20, 22, 30, 0.92) 0%, rgba(10, 12, 18, 0.96) 100%);
-  color: #fff;
   border-radius: 10px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
 }
 
-.extra-ctrl-btn {
+.video-controls-left,
+.video-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.vc-btn {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #fff;
-  font-size: 14px;
+  font-size: 13px;
   cursor: pointer;
-  padding: 6px 8px;
+  padding: 5px 10px;
   border-radius: 8px;
   display: flex;
   align-items: center;
+  gap: 4px;
   transition: all 0.15s;
-  flex-shrink: 0;
+  height: 30px;
 }
 
-.extra-ctrl-btn:hover {
+.vc-btn:hover {
   background: var(--mo-primary, #409eff);
   border-color: transparent;
   color: #fff;
-  transform: translateY(-1px);
 }
 
-.extra-label {
+.vc-btn.vc-toggle.active {
+  background: var(--mo-primary, #409eff);
+  border-color: transparent;
+  color: #fff;
+}
+
+.vc-separator {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 4px;
+}
+
+.vc-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.78);
-  flex-shrink: 0;
-  margin-left: auto;
+  color: rgba(255, 255, 255, 0.7);
 }
 
-.gain-select {
+.vc-select {
   font-size: 12px;
   padding: 4px 8px;
   border-radius: 6px;
@@ -1201,18 +1282,156 @@ if (typeof document !== 'undefined') {
   background: rgba(255, 255, 255, 0.05);
   color: #fff;
   cursor: pointer;
-  flex-shrink: 0;
   height: 28px;
   min-width: 52px;
+  outline: none;
+  transition: border-color 0.15s;
 }
 
-.gain-select:hover {
+.vc-select:hover {
   border-color: var(--mo-primary, #409eff);
 }
 
-.gain-select option {
+.vc-select option {
   background: #1a1c25;
   color: #fff;
+}
+
+.vc-playlist-info {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Video navigation overlay buttons */
+.video-nav-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #fff;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  opacity: 0;
+  transition: all 0.2s;
+  backdrop-filter: blur(4px);
+}
+
+.video-stage:hover .video-nav-btn {
+  opacity: 0.85;
+}
+
+.video-nav-btn:hover {
+  opacity: 1 !important;
+  background: var(--mo-primary, #409eff);
+  border-color: transparent;
+}
+
+.video-nav-prev { left: 12px; }
+.video-nav-next { right: 12px; }
+
+/* Video playlist */
+.video-playlist {
+  flex-shrink: 0;
+  max-height: 200px;
+  display: flex;
+  flex-direction: column;
+  background: var(--mo-surface);
+  border: 1px solid var(--mo-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.playlist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--mo-border);
+  flex-shrink: 0;
+}
+
+.playlist-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mo-text-1);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.playlist-count {
+  font-size: 11px;
+  color: var(--mo-text-3);
+}
+
+.playlist-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.12s;
+}
+
+.playlist-item:hover {
+  background: var(--mo-surface-hover);
+}
+
+.playlist-item.active {
+  background: rgba(64, 158, 255, 0.12);
+}
+
+.playlist-item.played {
+  opacity: 0.5;
+}
+
+.playlist-index {
+  font-size: 11px;
+  color: var(--mo-text-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 20px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.playlist-item.active .playlist-index {
+  color: var(--mo-primary, #409eff);
+  font-weight: 700;
+}
+
+.playlist-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--mo-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-item.active .playlist-name {
+  color: var(--mo-primary, #409eff);
+  font-weight: 500;
+}
+
+.playlist-playing-icon {
+  font-size: 12px;
+  color: var(--mo-primary, #409eff);
+  flex-shrink: 0;
 }
 
 .image-viewer {

@@ -17,19 +17,6 @@ export default defineConfig({
     }
   },
   root: resolve(__dirname, 'src/renderer'),
-  // v3.3.2：pdf.js 需要 top-level await 支持
-  optimizeDeps: {
-    esbuildOptions: {
-      supported: {
-        'top-level-await': true
-      }
-    }
-  },
-  esbuild: {
-    supported: {
-      'top-level-await': true
-    }
-  },
   build: {
     outDir: resolve(__dirname, 'dist/renderer'),
     emptyOutDir: true,
