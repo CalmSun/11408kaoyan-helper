@@ -17,6 +17,9 @@
       </main>
     </div>
 
+    <!-- v3.3.0：番茄钟小浮窗（非番茄钟页面显示，可拖动） -->
+    <PomodoroMini :visible="showMiniPomodoro" />
+
     <!-- 番茄钟完成提醒（全局渲染，切换页面后依然弹出） -->
     <Transition name="alert-fade">
       <div v-if="pmd.showAlert" class="alert-overlay" @click="pmd.dismissAlert()">
@@ -42,6 +45,7 @@ import { initTheme, initCustomBg } from '@/utils/theme'
 import { initDataSync } from '@/utils/datasync'
 import SideNav from '@/components/SideNav.vue'
 import TitleBar from '@/components/TitleBar.vue'
+import PomodoroMini from '@/components/PomodoroMini.vue'
 
 // 启动时应用已保存的主题（浅色/深色/跟随系统）与自定义背景
 initTheme()
@@ -55,6 +59,9 @@ const pmd = usePomodoroStore()
 const isSidebarCollapsed = ref(false)
 
 const isLoginPage = computed(() => route.path === '/login')
+const isPomodoroPage = computed(() => route.path === '/pomodoro')
+// v3.3.0：小浮窗显示逻辑：非登录页 + 非番茄钟页面；另外用户未开启番茄钟也未使用过的场景不强制显示
+const showMiniPomodoro = computed(() => !isLoginPage.value && !isPomodoroPage.value)
 
 // v2.8.0：强制全屏改为开启即生效（与番茄钟运行状态解耦）：
 // 开关打开立即进入全屏隐藏系统任务栏，关闭立即退出
