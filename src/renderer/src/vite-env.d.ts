@@ -80,7 +80,7 @@ interface ElectronAPI {
     total?: number
     message?: string
   }>
-  neteaseSongUrl: (ids: number[]) => Promise<{
+  neteaseSongUrl: (ids: number[], level?: string) => Promise<{
     success: boolean
     urls?: { id: number; url: string | null; br: number }[]
     message?: string

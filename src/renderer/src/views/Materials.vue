@@ -245,6 +245,16 @@ import {
 import { VuePDF, usePDF } from '@tato30/vue-pdf'
 import '@tato30/vue-pdf/style.css'
 
+// v3.3.3：修复 Electron file:// 环境下 pdf.js worker 无法从 data URL 加载的问题
+// @tato30/vue-pdf 默认用 ?url 导入 worker（内联为 base64 data URL），
+// 在 webSecurity:true + file:// 下 new Worker(dataURL,{type:"module"}) 会被同源策略阻止。
+// 改用 Vite ?worker&inline 导入，生成 blob URL Worker 实例，通过 workerPort 注入。
+import { GlobalWorkerOptions } from 'pdfjs-dist'
+import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline'
+if (!GlobalWorkerOptions.workerPort) {
+  GlobalWorkerOptions.workerPort = new PdfWorker()
+}
+
 // v3.3.2：引入 @videojs-player/vue（Video.js 的 Vue 3 封装）
 import { VideoPlayer } from '@videojs-player/vue'
 import 'video.js/dist/video-js.css'

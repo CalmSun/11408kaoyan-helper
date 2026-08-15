@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
   // v2.9.0：网易云音乐 API
   neteaseSearch: (keyword: string, limit?: number, offset?: number) => ipcRenderer.invoke('netease:search', keyword, limit, offset),
-  neteaseSongUrl: (ids: number[]) => ipcRenderer.invoke('netease:song-url', ids),
+  neteaseSongUrl: (ids: number[], level?: string) => ipcRenderer.invoke('netease:song-url', ids, level),
   neteaseLyric: (id: number) => ipcRenderer.invoke('netease:lyric', id),
   // v2.9.2：网易云登录与歌单
   neteaseQrKey: () => ipcRenderer.invoke('netease:qr-key'),

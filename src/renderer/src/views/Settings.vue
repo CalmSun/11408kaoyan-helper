@@ -117,6 +117,30 @@
       </el-form>
     </GlassCard>
 
+    <!-- v3.3.3：音乐播放设置 -->
+    <GlassCard class="card setting-section">
+      <h3 class="section-title">
+        <el-icon><Headset /></el-icon>
+        音乐播放
+      </h3>
+      <el-form label-width="120px" style="max-width: 500px;">
+        <el-form-item label="在线音质">
+          <el-select
+            v-model="musicQualityLevel"
+            @change="handleQualityChange"
+            style="width: 200px;"
+          >
+            <el-option label="标准 (128kbps)" value="standard" />
+            <el-option label="较高 (192kbps)" value="higher" />
+            <el-option label="极高 (320kbps MP3)" value="exhigh" />
+            <el-option label="无损 (FLAC)" value="lossless" />
+            <el-option label="Hi-Res (母带级)" value="hires" />
+          </el-select>
+          <span class="unit-desc">影响在线歌曲播放音质（无损/Hi-Res 需登录 VIP 账号）</span>
+        </el-form-item>
+      </el-form>
+    </GlassCard>
+
     <!-- 数据管理 -->
     <GlassCard class="card setting-section">
       <h3 class="section-title">
@@ -250,6 +274,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
+import { useMusicStore } from '@/stores/music'
 import { exportAllData, importAllData, clearAllStorage } from '@/utils/storage'
 import { themeMode, setThemeMode, applyCustomBg, initCustomBg, CUSTOM_BG_URL, type ThemeMode, liquidGlass, setLiquidGlass } from '@/utils/theme'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -263,15 +288,31 @@ import {
   User,
   Setting,
   Link,
-  Box
+  Box,
+  Headset
 } from '@element-plus/icons-vue'
 
 const store = useMainStore()
 const userStore = useUserStore()
+const musicStore = useMusicStore()
 const router = useRouter()
 
 // 从 package.json 读取版本号（通过 Vite define 注入）
 const appVersion = __APP_VERSION__
+
+// v3.3.3：在线歌曲音质等级
+const musicQualityLevel = ref(musicStore.qualityLevel)
+function handleQualityChange(level: string) {
+  musicStore.setQualityLevel(level)
+  const labelMap: Record<string, string> = {
+    standard: '标准',
+    higher: '较高',
+    exhigh: '极高',
+    lossless: '无损',
+    hires: 'Hi-Res'
+  }
+  ElMessage.success(`音质已切换为：${labelMap[level] || level}（下一首生效）`)
+}
 
 // 外观主题
 const currentThemeMode = ref<ThemeMode>(themeMode.value)

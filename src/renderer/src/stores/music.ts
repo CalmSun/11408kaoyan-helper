@@ -40,6 +40,13 @@ export const useMusicStore = defineStore('music', () => {
   const volume = ref(1.0)
   const shuffle = ref<boolean>(getStorage('musicShuffle', false))
 
+  // v3.3.3：在线歌曲音质等级（standard/higher/exhigh/lossless/hires）
+  const qualityLevel = ref<string>(getStorage('musicQualityLevel', 'exhigh'))
+  function setQualityLevel(level: string) {
+    qualityLevel.value = level
+    setStorage('musicQualityLevel', level)
+  }
+
   // v2.8.2：歌词相关状态
   const lyricLines = ref<{ time: number; text: string }[]>([])
   const currentLyricIndex = ref(-1)
@@ -112,7 +119,7 @@ export const useMusicStore = defineStore('music', () => {
     try {
       const api = window.electronAPI
       if (api?.neteaseSongUrl) {
-        const res = await api.neteaseSongUrl([track.id])
+        const res = await api.neteaseSongUrl([track.id], qualityLevel.value)
         const urlInfo = res.urls?.find(u => u.id === track.id)
         if (urlInfo?.url) {
           // 更新播放列表中的 URL
@@ -313,7 +320,7 @@ export const useMusicStore = defineStore('music', () => {
         try {
           const api = window.electronAPI
           if (api?.neteaseSongUrl) {
-            const res = await api.neteaseSongUrl([track.id])
+            const res = await api.neteaseSongUrl([track.id], qualityLevel.value)
             const urlInfo = res.urls?.find(u => u.id === track.id)
             if (urlInfo?.url) {
               const idx = currentIndex.value
@@ -451,7 +458,7 @@ export const useMusicStore = defineStore('music', () => {
     const api = window.electronAPI
     if (!api?.neteaseSongUrl) return false
     try {
-      const res = await api.neteaseSongUrl([song.id])
+      const res = await api.neteaseSongUrl([song.id], qualityLevel.value)
       const urlInfo = res.urls?.find(u => u.id === song.id)
       if (!urlInfo?.url) return false
       const track: MusicTrack = {
@@ -480,7 +487,7 @@ export const useMusicStore = defineStore('music', () => {
     const api = window.electronAPI
     if (!api?.neteaseSongUrl) return false
     try {
-      const res = await api.neteaseSongUrl([song.id])
+      const res = await api.neteaseSongUrl([song.id], qualityLevel.value)
       const urlInfo = res.urls?.find(u => u.id === song.id)
       if (!urlInfo?.url) return false
       playlist.value.push({
@@ -706,7 +713,7 @@ export const useMusicStore = defineStore('music', () => {
       const allTracks: MusicTrack[] = []
       for (let i = 0; i < tracks.length; i += 20) {
         const batch = tracks.slice(i, i + 20)
-        const res = await api.neteaseSongUrl(batch.map(t => t.id))
+        const res = await api.neteaseSongUrl(batch.map(t => t.id), qualityLevel.value)
         const urlMap = new Map((res.urls || []).map(u => [u.id, u.url]))
         for (const t of batch) {
           const url = urlMap.get(t.id)
@@ -748,7 +755,7 @@ export const useMusicStore = defineStore('music', () => {
     try {
       for (let i = 0; i < tracks.length; i += 20) {
         const batch = tracks.slice(i, i + 20)
-        const res = await api.neteaseSongUrl(batch.map(t => t.id))
+        const res = await api.neteaseSongUrl(batch.map(t => t.id), qualityLevel.value)
         const urlMap = new Map((res.urls || []).map(u => [u.id, u.url]))
         for (const t of batch) {
           const url = urlMap.get(t.id)
@@ -1269,7 +1276,7 @@ export const useMusicStore = defineStore('music', () => {
       const allTracks: MusicTrack[] = []
       for (let i = 0; i < tracks.length; i += 20) {
         const batch = tracks.slice(i, i + 20)
-        const res = await api.neteaseSongUrl(batch.map(t => t.id))
+        const res = await api.neteaseSongUrl(batch.map(t => t.id), qualityLevel.value)
         const urlMap = new Map((res.urls || []).map(u => [u.id, u.url]))
         for (const t of batch) {
           const url = urlMap.get(t.id)
@@ -1312,6 +1319,8 @@ export const useMusicStore = defineStore('music', () => {
     isPlaying,
     volume,
     shuffle,
+    qualityLevel,
+    setQualityLevel,
     currentTrack,
     hasMusic,
     lyricLines,

@@ -1227,23 +1227,30 @@ ipcMain.handle('netease:search', async (_e, keyword: string, limit = 30, offset 
   }
 })
 
-ipcMain.handle('netease:song-url', async (_e, ids: number[]) => {
+ipcMain.handle('netease:song-url', async (_e, ids: number[], level?: string) => {
   try {
+    // v3.3.3：支持音质等级选择（standard/higher/exhigh/lossless/hires）
+    const qualityLevel = level || 'exhigh'
     // v3.1.2：优先使用新版 /song/url/v1 接口，失败时降级到旧版
     let data: { data?: Array<{ id: number; url: string | null; br?: number }> }
     try {
       data = await neteaseSmartRequest('/song/url/v1', {
         id: ids.join(','),
-        level: 'standard'
+        level: qualityLevel
       }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
       // 如果 v1 返回空 url，降级到旧版
       if (!data.data || data.data.every(d => !d.url)) {
         throw new Error('v1 returned empty urls')
       }
     } catch {
+      // v3.3.3：降级时根据音质等级映射 br 值
+      const brMap: Record<string, number> = {
+        standard: 128000, higher: 192000, exhigh: 320000,
+        lossless: 999000, hires: 999000
+      }
       data = await neteaseSmartRequest('/song/enhance/player/url', {
         ids,
-        br: 320000
+        br: brMap[qualityLevel] || 320000
       }) as { data?: Array<{ id: number; url: string | null; br?: number }> }
     }
     const urls = (data.data || []).map(d => ({ id: d.id, url: d.url, br: d.br || 0 }))
