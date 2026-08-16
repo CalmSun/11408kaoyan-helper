@@ -28,6 +28,7 @@
           <el-radio-group v-model="filterType" size="small">
             <el-radio-button value="all">全部</el-radio-button>
             <el-radio-button value="pdf">PDF</el-radio-button>
+            <el-radio-button value="doc">文档</el-radio-button>
             <el-radio-button value="video">视频</el-radio-button>
             <el-radio-button value="other">其他</el-radio-button>
           </el-radio-group>
@@ -61,6 +62,8 @@
             >
               <div class="file-icon" :class="getIconClass(node.ext || '')">
                 <el-icon v-if="node.ext === '.pdf'"><Document /></el-icon>
+                <el-icon v-else-if="node.ext === '.docx'"><Document /></el-icon>
+                <el-icon v-else-if="node.ext === '.xlsx'"><Files /></el-icon>
                 <el-icon v-else-if="isVideo(node.ext || '')"><VideoPlay /></el-icon>
                 <el-icon v-else><Files /></el-icon>
               </div>
@@ -124,7 +127,6 @@
                 v-if="pdfFrameUrl"
                 ref="pdfFrame"
                 class="pdf-frame"
-                :key="pdfFrameKey"
                 :src="pdfFrameUrl"
                 @load="pdfLoading = false"
                 @error="onPdfFrameError"
@@ -140,6 +142,52 @@
                 <span>PDF 加载失败</span>
                 <span class="pdf-error-detail">{{ pdfError }}</span>
                 <el-button size="small" type="primary" @click="pdfRetry">重试</el-button>
+              </div>
+            </div>
+          </div>
+
+          <!-- v3.4.3：docx 文档预览（vue-office） -->
+          <div v-else-if="currentFile.ext === '.docx'" class="doc-wrap">
+            <div class="doc-viewer-wrap">
+              <VueOfficeDocx
+                v-if="docSrc"
+                :src="docSrc"
+                style="height: 100%; width: 100%;"
+                @rendered="onDocRendered"
+                @error="onDocError"
+              />
+              <div v-if="docLoading" class="doc-loading-mask">
+                <div class="doc-loading-spinner"></div>
+                <span class="doc-loading-text">文档加载中...</span>
+              </div>
+              <div v-if="docError" class="doc-error-mask">
+                <el-icon :size="40"><Warning /></el-icon>
+                <span>文档加载失败</span>
+                <span class="doc-error-detail">{{ docError }}</span>
+                <el-button size="small" type="primary" @click="docRetry">重试</el-button>
+              </div>
+            </div>
+          </div>
+
+          <!-- v3.4.3：xlsx 表格预览（vue-office） -->
+          <div v-else-if="currentFile.ext === '.xlsx'" class="doc-wrap">
+            <div class="doc-viewer-wrap">
+              <VueOfficeExcel
+                v-if="docSrc"
+                :src="docSrc"
+                style="height: 100%; width: 100%;"
+                @rendered="onDocRendered"
+                @error="onDocError"
+              />
+              <div v-if="docLoading" class="doc-loading-mask">
+                <div class="doc-loading-spinner"></div>
+                <span class="doc-loading-text">表格加载中...</span>
+              </div>
+              <div v-if="docError" class="doc-error-mask">
+                <el-icon :size="40"><Warning /></el-icon>
+                <span>表格加载失败</span>
+                <span class="doc-error-detail">{{ docError }}</span>
+                <el-button size="small" type="primary" @click="docRetry">重试</el-button>
               </div>
             </div>
           </div>
@@ -287,7 +335,7 @@
         <div v-else class="preview-empty">
           <el-icon :size="48"><Document /></el-icon>
           <p>从左侧选择文件进行预览</p>
-          <p class="hint">支持 PDF 阅读（分页懒加载/缩放/页码导航）、视频播放（倍速/增益/连播/播放列表）</p>
+          <p class="hint">支持 PDF 阅读（页码导航/进度记忆）、Word/Excel 文档预览（docx/xlsx）、视频播放（倍速/增益/连播/播放列表）</p>
         </div>
       </div>
     </div>
@@ -305,7 +353,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
@@ -321,7 +369,6 @@ import VueOfficeExcel from '@vue-office/excel'
 // 不额外占内存，且自带翻页/缩放/搜索/打印等功能，是最稳定方案。
 const pdfFrame = ref<HTMLIFrameElement | null>(null)
 const pdfFrameUrl = ref('')
-const pdfFrameKey = ref(0) // v3.4.3：强制刷新 iframe（hash 变化时重新挂载）
 
 // v3.4.0: 由当前 PDF 文件 URL 拼接 PDFium 查看器参数（FitH 适应宽度，toolbar 显示原生工具条）
 // v3.4.1: 支持 page 参数——打开时恢复到上次阅读页码
@@ -334,10 +381,8 @@ const pdfPage = ref(1)
 const pdfPageInput = ref(1)
 
 // v3.4.0: 卸载 iframe 释放 PDFium 渲染资源（切换文件/离开 PDF 模式时调用）
-// v3.4.3：递增 key 强制重新挂载 iframe，解决 hash 变化不触发 reload 的问题
 function unloadPdf() {
   pdfFrameUrl.value = ''
-  pdfFrameKey.value++ // v3.4.3：强制重新挂载
 }
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
@@ -393,9 +438,24 @@ function unloadDoc() {
   docLoading.value = false
 }
 
+// v3.4.3：文档渲染完成（docx / xlsx）
+function onDocRendered() {
+  docLoading.value = false
+}
+
+// v3.4.3：文档渲染失败（docx / xlsx）
+function onDocError(e: unknown) {
+  docLoading.value = false
+  docError.value = e instanceof Error ? e.message : '文档解析失败'
+}
+
+// v3.4.3：文档加载重试
+function docRetry() {
+  if (currentFile.value?.url) loadDoc(currentFile.value.url)
+}
+
 // v3.4.0: 加载 PDF（iframe 懒挂载，卸载时清空 src 释放 PDFium 资源）
 // v3.4.1: 打开时恢复到上次阅读页码
-// v3.4.3：使用 nextTick + key 强制重新挂载，确保 iframe 重新加载
 function loadPdf(url: string) {
   unloadPdf()
   pdfLoading.value = true
@@ -405,12 +465,8 @@ function loadPdf(url: string) {
   const startPage = prog?.pdfPage && prog.pdfPage > 0 ? prog.pdfPage : 1
   pdfPage.value = startPage
   pdfPageInput.value = startPage
-  // 使用 nextTick 确保先卸载旧文档再加载新文档
-  nextTick(() => {
-    pdfFrameUrl.value = buildPdfFrameUrl(url, startPage)
-    pdfFrameKey.value++
-    pdfLoading.value = false
-  })
+  // 打开时直接指定起始页码，由 iframe 加载完成后关闭 loading
+  pdfFrameUrl.value = buildPdfFrameUrl(url, startPage)
 }
 
 // v3.4.1: PDF 页码导航（±1 页）并保存进度
@@ -420,8 +476,7 @@ function goPdfPage(delta: number) {
   jumpPdfPage(target)
 }
 
-// v3.4.1: 跳转到指定页码（重载 iframe 的 page 参数）并保存进度
-// v3.4.3：通过 pdfFrameKey 强制重新挂载 iframe，解决 hash 变化不触发 reload 的问题
+// v3.4.3：PDF 页码导航 — 仅更新 iframe hash，无需重载整个 PDF
 function jumpPdfPage(target: number) {
   if (!Number.isFinite(target)) return
   if (target < 1) target = 1
@@ -430,15 +485,8 @@ function jumpPdfPage(target: number) {
   if (currentFile.value) saveProgress(currentFile.value.path, { pdfPage: target })
   const url = currentFile.value?.url
   if (!url) return
-  pdfLoading.value = true
-  pdfError.value = ''
-  // 先清空 src 再赋值新 URL，配合 :key 强制重新挂载
-  pdfFrameUrl.value = ''
-  nextTick(() => {
-    pdfFrameUrl.value = buildPdfFrameUrl(url, target)
-    pdfFrameKey.value++
-    pdfLoading.value = false
-  })
+  // 仅更新 hash 即可跳转页码，Chromium PDFium 不会重新加载 PDF
+  pdfFrameUrl.value = buildPdfFrameUrl(url, target)
 }
 
 function pdfRetry() {
@@ -608,8 +656,9 @@ const flatFiles = computed<DisplayNode[]>(() => {
         }
       } else {
         if (filterType.value === 'pdf' && node.ext !== '.pdf') continue
+        if (filterType.value === 'doc' && !DOC_EXTS.includes(node.ext || '')) continue
         if (filterType.value === 'video' && !isVideo(node.ext || '')) continue
-        if (filterType.value === 'other' && (node.ext === '.pdf' || isVideo(node.ext || ''))) continue
+        if (filterType.value === 'other' && (node.ext === '.pdf' || DOC_EXTS.includes(node.ext || '') || isVideo(node.ext || ''))) continue
         result.push({ ...node, level })
       }
     }
@@ -639,8 +688,9 @@ function folderHasMatchingFiles(folder: MaterialNode): boolean {
       if (folderHasMatchingFiles(child)) return true
     } else {
       if (filterType.value === 'pdf' && child.ext === '.pdf') return true
+      if (filterType.value === 'doc' && DOC_EXTS.includes(child.ext || '')) return true
       if (filterType.value === 'video' && isVideo(child.ext || '')) return true
-      if (filterType.value === 'other' && child.ext !== '.pdf' && !isVideo(child.ext || '')) return true
+      if (filterType.value === 'other' && child.ext !== '.pdf' && !DOC_EXTS.includes(child.ext || '') && !isVideo(child.ext || '')) return true
     }
   }
   return false
@@ -739,8 +789,27 @@ onMounted(async () => {
 })
 
 // v3.4.1：keep-alive 激活（从其他页面返回学习资料页）时恢复键盘监听
+// v3.4.3：返回时恢复 PDF 页码和文档进度
 onActivated(() => {
   window.addEventListener('keydown', onVideoKeydown)
+  // 恢复当前文件进度
+  if (currentFile.value) {
+    if (currentFile.value.ext === '.pdf') {
+      const prog = loadProgress()[currentFile.value.path]
+      if (prog?.pdfPage) {
+        pdfPage.value = prog.pdfPage
+        pdfPageInput.value = prog.pdfPage
+      }
+    } else if (isVideo(currentFile.value.ext || '')) {
+      const el = nativeVideo.value
+      if (el) {
+        const prog = loadProgress()[currentFile.value.path]
+        if (prog?.videoTime && prog.videoTime > 5 && prog.videoDuration && prog.videoTime < prog.videoDuration - 5) {
+          el.currentTime = prog.videoTime
+        }
+      }
+    }
+  }
 })
 
 // v3.4.1：keep-alive 失活（切换到其他页面）时：
@@ -798,6 +867,14 @@ watch(() => currentFile.value, async (newVal, oldVal) => {
   // 进入 PDF 模式：加载文档
   if (newVal?.ext === '.pdf' && newVal.url) {
     await loadPdf(newVal.url)
+  }
+  // v3.4.3：离开 docx/xlsx 模式时卸载文档
+  if (oldVal && DOC_EXTS.includes(oldVal.ext || '') && !(newVal && DOC_EXTS.includes(newVal.ext || ''))) {
+    unloadDoc()
+  }
+  // v3.4.3：进入 docx/xlsx 模式：加载文档
+  if (newVal && DOC_EXTS.includes(newVal.ext || '') && newVal.url) {
+    await loadDoc(newVal.url)
   }
   const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
   const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
@@ -1135,6 +1212,7 @@ function isImage(ext: string): boolean {
 
 function getIconClass(ext: string): string {
   if (ext === '.pdf') return 'icon-pdf'
+  if (DOC_EXTS.includes(ext)) return 'icon-doc'
   if (isVideo(ext)) return 'icon-video'
   return 'icon-other'
 }
@@ -1406,6 +1484,12 @@ body.liquid-glass .glass-card:hover {
   color: #67c23a;
 }
 
+/* v3.4.3：docx/xlsx 文档图标 */
+.icon-doc {
+  background: rgba(64, 158, 255, 0.12);
+  color: #409eff;
+}
+
 .icon-other {
   background: rgba(144, 147, 153, 0.1);
   color: #909399;
@@ -1617,6 +1701,75 @@ body.liquid-glass .glass-card:hover {
   word-break: break-all;
 }
 
+/* v3.4.3：vue-office 文档预览（docx / xlsx） */
+.doc-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 8px;
+}
+
+.doc-viewer-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  position: relative;
+  background: var(--mo-surface, #fff);
+  border-radius: 8px;
+  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
+}
+
+.doc-loading-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  background: var(--mo-surface, #f5f6f8);
+  z-index: 2;
+  border-radius: 8px;
+}
+
+.doc-loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(64, 158, 255, 0.15);
+  border-top-color: var(--mo-primary, #409eff);
+  border-radius: 50%;
+  animation: pdf-spin 0.8s linear infinite;
+}
+
+.doc-loading-text {
+  font-size: 13px;
+  color: var(--mo-text-3, #888);
+}
+
+.doc-error-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 108, 108, 0.08);
+  color: #f56c6c;
+  font-size: 14px;
+  z-index: 2;
+  border-radius: 8px;
+}
+
+.doc-error-detail {
+  font-size: 12px;
+  color: var(--mo-text-3, #888);
+  max-width: 300px;
+  text-align: center;
+  word-break: break-all;
+}
+
 /* v3.3.2：视频播放区域（使用 video.js） */
 .video-wrap {
   flex: 1;
@@ -1792,8 +1945,9 @@ body.liquid-glass .glass-card:hover {
 
 .video-nav-btn:hover {
   opacity: 1 !important;
-  background: var(--mo-primary, #409eff);
-  border-color: transparent;
+  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
+  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
+  color: var(--mo-text-1, #222);
 }
 
 .video-nav-prev { left: 12px; }
@@ -1951,8 +2105,8 @@ body.liquid-glass .glass-card:hover {
 }
 
 .playlist-action-btn:hover:not(:disabled) {
-  background: var(--mo-primary, #409eff);
-  color: #fff;
+  background: var(--mo-surface, rgba(255, 255, 255, 0.15));
+  color: var(--mo-text-1, #fff);
 }
 
 .playlist-action-btn:disabled {

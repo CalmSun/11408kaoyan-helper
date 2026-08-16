@@ -124,7 +124,10 @@ function getMimeType(filePath: string): string {
     '.htm': 'text/html; charset=utf-8',
     '.json': 'application/json',
     '.epub': 'application/epub+zip',
-    '.mobi': 'application/x-mobipocket-ebook'
+    '.mobi': 'application/x-mobipocket-ebook',
+    // v3.4.3：Office 文档预览（vue-office）需要正确的 MIME 类型
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
   }
   return map[ext] || 'application/octet-stream'
 }
