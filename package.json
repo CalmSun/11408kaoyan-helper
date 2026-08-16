@@ -43,7 +43,7 @@
     "appId": "com.kaoyan.helper",
     "productName": "11408考研助手",
     "directories": {
-      "output": "release-v344"
+      "output": "release-v345"
     },
     "extraResources": [
       {

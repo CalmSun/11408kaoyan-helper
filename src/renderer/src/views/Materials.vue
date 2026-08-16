@@ -146,8 +146,35 @@
             </div>
           </div>
 
-          <!-- v3.4.4：Office 文档预览（docx / xlsx，@open-file-viewer/core officePlugin） -->
+          <!-- v3.4.5：Office 文档预览（docx / xlsx，@open-file-viewer/core officePlugin） -->
           <div v-else-if="isDocumentFile(currentFile.ext)" class="doc-wrap">
+            <!-- v3.4.5：文档工具栏（玻璃风格，与 PDF 工具栏一致）：
+                 分页导航（docx 有分页；xlsx 无分页自动隐藏）+ 阅读进度提示 -->
+            <div class="doc-toolbar">
+              <div v-if="docTotalPages > 0" class="doc-page-nav">
+                <button class="doc-page-btn" :disabled="docPage <= 1" @click="goDocPage(-1)" title="上一页">
+                  <el-icon><ArrowLeft /></el-icon>
+                </button>
+                <span class="doc-page-indicator">
+                  第
+                  <input
+                    v-model.number="docPageInput"
+                    class="doc-page-input"
+                    type="number"
+                    min="1"
+                    :max="docTotalPages"
+                    @change="jumpDocPage(docPageInput)"
+                    title="输入页码后回车跳转"
+                  />
+                  / {{ docTotalPages }} 页
+                </span>
+                <button class="doc-page-btn" :disabled="docPage >= docTotalPages" @click="goDocPage(1)" title="下一页">
+                  <el-icon><ArrowRight /></el-icon>
+                </button>
+              </div>
+              <el-icon class="pdf-tip-icon"><InfoFilled /></el-icon>
+              <span class="pdf-tip">滚动阅读自动记忆页码，返回后自动恢复进度；缩放 / 全屏 / 搜索见下方工具栏</span>
+            </div>
             <!-- 阅读进度条（滚动节流更新，避免频繁写 localStorage） -->
             <div class="doc-progress-wrap" title="阅读进度">
               <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
@@ -376,12 +403,17 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 // v3.4.3：文档预览支持（docx / xlsx）
 const DOC_EXTS = ['.docx', '.xlsx']
 
-// ============ v3.4.4：@open-file-viewer/core 文档预览状态（docx / xlsx） ============
+// ============ v3.4.5：@open-file-viewer/core 文档预览状态（docx / xlsx） ============
 // 使用动态 import 避免常驻核心包体积，仅在打开文档时加载
 const viewerContainer = ref<HTMLElement | null>(null)
 let viewerInstance: any = null
 const viewerCreating = ref(false)
 const viewerError = ref('')
+// v3.4.5：docx 分页跟踪（页码 + 总页数）—— open-file-viewer 把 docx 每页渲染为
+// .ofv-docx-page-frame 块，通过滚动位置计算当前页；xlsx 无分页，仅用滚动百分比
+const docPage = ref(1)
+const docPageInput = ref(1)
+const docTotalPages = ref(0)
 // v3.4.4：文档阅读进度（0-100），驱动顶部进度条
 const docProgress = ref(0)
 // v3.4.4：进度节流 —— 滚动只更新进度条，每 1.5s 才写一次 localStorage
@@ -389,12 +421,12 @@ let lastDocProgressSave = 0
 let docScrollRestoreAttempt = 0
 const DOC_PROGRESS_SAVE_INTERVAL = 1500
 
-// v3.4.4：判断是否为可预览的 Office 文档
+// v3.4.5：判断是否为可预览的 Office 文档
 function isDocumentFile(ext: string): boolean {
   return DOC_EXTS.includes(ext)
 }
 
-// v3.4.4：定位实际滚动容器 —— officePlugin 将内容渲染进核心自建的滚动容器：
+// v3.4.5：定位实际滚动容器 —— officePlugin 将内容渲染进核心自建的滚动容器：
 //   docx → .ofv-viewport（纵向滚动）；xlsx → .ofv-table-scroll（表格独立滚动区）。
 // 统一按「实际发生溢出的容器」查找，确保进度读取/恢复都落在正确的元素上
 function getDocumentScrollEl(): HTMLElement | null {
@@ -408,7 +440,36 @@ function getDocumentScrollEl(): HTMLElement | null {
   return container
 }
 
-// v3.4.4：文档滚动 → 更新进度条 + 节流保存（读取真实滚动元素，避免进度恒为 0）
+// v3.4.5：获取 docx 的分页块（每个 section.ofv-docx 被包裹进 .ofv-docx-page-frame）
+function getDocPageFrames(): HTMLElement[] {
+  if (!viewerContainer.value) return []
+  return Array.from(viewerContainer.value.querySelectorAll<HTMLElement>('.ofv-docx-page-frame'))
+}
+
+// v3.4.5：计算当前页 = 视口顶部命中的分页块（底部仍在视口内的第一页），
+// 底部兜底为最后一页，保证滚到文末时页码正确
+function updateDocPage() {
+  const frames = getDocPageFrames()
+  if (frames.length === 0) return
+  if (docTotalPages.value !== frames.length) docTotalPages.value = frames.length
+  const scroller = getDocumentScrollEl()
+  if (!scroller) return
+  const viewportTop = scroller.getBoundingClientRect().top
+  let current = frames.length - 1
+  for (let i = 0; i < frames.length; i++) {
+    if (frames[i].getBoundingClientRect().bottom > viewportTop + 2) {
+      current = i
+      break
+    }
+  }
+  const page = current + 1
+  if (page !== docPage.value) {
+    docPage.value = page
+    docPageInput.value = page
+  }
+}
+
+// v3.4.4：文档滚动 → 更新进度条 + 页码 + 节流保存（读取真实滚动元素，避免进度恒为 0）
 function onDocumentScroll(e: Event) {
   const el = (e.target as HTMLElement) || getDocumentScrollEl()
   if (!el) return
@@ -416,6 +477,8 @@ function onDocumentScroll(e: Event) {
   if (max <= 0) return
   const progress = Math.min(100, Math.max(0, Math.round((el.scrollTop / max) * 100)))
   if (progress !== docProgress.value) docProgress.value = progress
+  // v3.4.5：docx 分页跟踪（xlsx 无分页块则跳过）
+  updateDocPage()
   const now = Date.now()
   if (now - lastDocProgressSave >= DOC_PROGRESS_SAVE_INTERVAL) {
     lastDocProgressSave = now
@@ -423,18 +486,48 @@ function onDocumentScroll(e: Event) {
   }
 }
 
-// v3.4.4：保存文档滚动进度（切换 / 离开 / 卸载时兜底调用）
-function saveDocumentProgress(progress = docProgress.value) {
-  if (!currentFile.value) return
-  saveProgress(currentFile.value.path, { scrollProgress: progress })
+// v3.4.5：保存文档阅读进度 —— docx 记录页码（docPage）+ 滚动百分比兜底；
+// xlsx 仅记录滚动百分比（scrollProgress）
+function saveDocumentProgress(progress = docProgress.value, filePath?: string) {
+  const path = filePath || currentFile.value?.path
+  if (!path) return
+  saveProgress(path, { docPage: docPage.value, scrollProgress: progress })
 }
 
-// v3.4.4：创建文档预览（动态加载 @open-file-viewer/core）
+// v3.4.5：跳到指定页（docx）—— 滚动到对应分页块，错误页码自动夹紧
+function jumpDocPage(page: number) {
+  if (!Number.isFinite(page)) return
+  const frames = getDocPageFrames()
+  if (frames.length === 0) return
+  const p = Math.min(frames.length, Math.max(1, Math.round(page)))
+  const scroller = getDocumentScrollEl()
+  if (!scroller) return
+  const target = frames[p - 1]
+  const top = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 16
+  try {
+    scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+  } catch {
+    scroller.scrollTop = Math.max(0, top)
+  }
+  docPage.value = p
+  docPageInput.value = p
+  saveDocumentProgress() // 手动跳页立即落盘
+}
+
+// v3.4.5：上一页 / 下一页
+function goDocPage(delta: number) {
+  jumpDocPage(docPage.value + delta)
+}
+
+// v3.4.5：创建文档预览（动态加载 @open-file-viewer/core）
 async function openDocumentViewer(file: MaterialNode) {
   destroyDocumentViewer()
   viewerCreating.value = true
   viewerError.value = ''
   docProgress.value = 0
+  docPage.value = 1
+  docPageInput.value = 1
+  docTotalPages.value = 0
   lastDocProgressSave = 0
   try {
     const { createViewer, officePlugin } = await import('@open-file-viewer/core')
@@ -449,12 +542,13 @@ async function openDocumentViewer(file: MaterialNode) {
       width: '100%',
       theme: 'auto',
       locale: 'zh-CN',
-      // 文档工具栏：缩放 / 全屏 / 搜索（禁用下载/打印/旋转，规避自定义协议下的兼容问题）
+      // v3.4.5：内置工具栏负责 缩放 / 全屏 / 搜索（禁用下载/打印/旋转，规避自定义协议兼容问题）
       toolbar: { zoom: true, fullscreen: true, search: true, download: false, print: false, rotate: false },
       plugins: [officePlugin()],
       onLoad: () => {
         viewerCreating.value = false
-        restoreDocumentScroll()
+        syncDocPageState()
+        restoreDocumentProgress()
       },
       onError: (err: unknown) => {
         viewerCreating.value = false
@@ -467,28 +561,63 @@ async function openDocumentViewer(file: MaterialNode) {
   }
 }
 
-// v3.4.4：恢复文档滚动进度（office 内容异步渲染，逐帧重试直至达到目标位置）
-function restoreDocumentScroll() {
+// v3.4.5：同步分页状态（总页数 + 当前页），供 onLoad 首次统计
+function syncDocPageState() {
+  const frames = getDocPageFrames()
+  if (frames.length === 0) return
+  if (docTotalPages.value !== frames.length) docTotalPages.value = frames.length
+  updateDocPage()
+}
+
+// v3.4.5：恢复文档阅读进度 —— docx 优先恢复页码（页码跳转比百分比更稳，
+// 布局/缩放变化不影响定位）；xlsx 用滚动百分比恢复
+function restoreDocumentProgress() {
   if (!viewerContainer.value || !currentFile.value) return
   const prog = loadProgress()[currentFile.value.path]
-  const target = typeof prog?.scrollProgress === 'number' ? prog.scrollProgress : 0
-  if (!(target > 0)) return
+  const savedPage = typeof prog?.docPage === 'number' ? prog.docPage : 0
+  const savedScroll = typeof prog?.scrollProgress === 'number' ? prog.scrollProgress : 0
+  if (savedPage > 0) { restoreDocPage(savedPage); return }
+  if (savedScroll > 0) restoreDocScroll(savedScroll)
+}
+
+// v3.4.5：恢复 docx 页码（内容异步渲染，逐帧重试直至分页块就绪并定位成功）
+function restoreDocPage(page: number) {
   docScrollRestoreAttempt = 0
   const apply = () => {
-    const el = getDocumentScrollEl()
-    if (!el) { if (docScrollRestoreAttempt++ < 50) requestAnimationFrame(apply); return }
-    const max = el.scrollHeight - el.clientHeight
-    if (max <= 0) { if (docScrollRestoreAttempt++ < 50) requestAnimationFrame(apply); return }
-    el.scrollTop = (max * target) / 100
-    const reached = Math.abs(el.scrollTop - (max * target) / 100) < 8
-    if (!reached && docScrollRestoreAttempt++ < 50) requestAnimationFrame(apply)
+    const frames = getDocPageFrames()
+    const scroller = getDocumentScrollEl()
+    const target = frames.length > 0 ? frames[Math.min(frames.length - 1, Math.max(0, page - 1))] : null
+    // 分页块或滚动容器尚未就绪，或目标页高度仍为 0（未渲染完成）→ 继续重试
+    if (!scroller || !target || !(target.getBoundingClientRect().height > 0)) {
+      if (docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply)
+      return
+    }
+    const top = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 16
+    scroller.scrollTop = Math.max(0, top) // 直接定位（instant），恢复时不带动画
+    docPage.value = page
+    docPageInput.value = page
   }
   requestAnimationFrame(apply)
 }
 
-// v3.4.4：销毁文档预览（先兜底保存进度，再释放核心实例）
+// v3.4.5：恢复 xlsx / 无分页文档的滚动百分比
+function restoreDocScroll(target: number) {
+  docScrollRestoreAttempt = 0
+  const apply = () => {
+    const el = getDocumentScrollEl()
+    if (!el) { if (docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply); return }
+    const max = el.scrollHeight - el.clientHeight
+    if (max <= 0) { if (docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply); return }
+    el.scrollTop = (max * target) / 100
+    const reached = Math.abs(el.scrollTop - (max * target) / 100) < 8
+    if (!reached && docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply)
+  }
+  requestAnimationFrame(apply)
+}
+
+// v3.4.4：销毁文档预览（释放核心实例；进度保存由调用方/监听器负责，
+// 避免 currentFile 已切换到新文件时把进度写到错误的路径下）
 function destroyDocumentViewer() {
-  saveDocumentProgress()
   if (viewerInstance) {
     try { viewerInstance.destroy() } catch { /* ignore */ }
     viewerInstance = null
@@ -496,6 +625,9 @@ function destroyDocumentViewer() {
   viewerCreating.value = false
   viewerError.value = ''
   docProgress.value = 0
+  docPage.value = 1
+  docPageInput.value = 1
+  docTotalPages.value = 0
 }
 
 // ============ v3.4.0: PDF 状态（Chromium PDFium <iframe> 渲染） ============
@@ -766,7 +898,9 @@ interface MaterialProgressEntry {
   pdfPage?: number
   videoTime?: number
   videoDuration?: number
-  // v3.4.4：Office 文档阅读进度（滚动百分比 0-100）
+  // v3.4.5：Office 文档（docx）阅读页码
+  docPage?: number
+  // v3.4.4：Office 文档阅读进度（滚动百分比 0-100，xlsx 及无分页文档用）
   scrollProgress?: number
   updatedAt?: number
 }
@@ -841,7 +975,7 @@ onMounted(async () => {
 
 // v3.4.1：keep-alive 激活（从其他页面返回学习资料页）时恢复键盘监听
 // v3.4.3：返回时恢复 PDF 页码和文档进度
-// v3.4.4：返回时恢复 Office 文档滚动进度
+// v3.4.5：返回时恢复 Office 文档页码/滚动进度
 onActivated(() => {
   window.addEventListener('keydown', onVideoKeydown)
   // 恢复当前文件进度
@@ -853,7 +987,7 @@ onActivated(() => {
         pdfPageInput.value = prog.pdfPage
       }
     } else if (isDocumentFile(currentFile.value.ext || '')) {
-      restoreDocumentScroll()
+      restoreDocumentProgress()
     } else if (isVideo(currentFile.value.ext || '')) {
       const el = nativeVideo.value
       if (el) {
@@ -922,6 +1056,11 @@ function disposeAudioResources() {
 // v3.3.8：适配原生 <video> 元素生命周期
 // v3.4.0：PDF 走 PDFium iframe（懒挂载 + 卸载释放）
 watch(() => currentFile.value, async (newVal, oldVal) => {
+  // v3.4.5：切换前兜底保存旧文档进度 —— 此时 currentFile 已指向新文件，
+  // 但 docPage / docProgress ref 仍属于旧文档，用 oldVal.path 落盘
+  if (oldVal && DOC_EXTS.includes(oldVal.ext || '')) {
+    saveDocumentProgress(docProgress.value, oldVal.path)
+  }
   // v3.4.0: 离开 PDF 模式时卸载 iframe 释放渲染资源
   if (oldVal?.ext === '.pdf' && newVal?.ext !== '.pdf') {
     await destroyPdf()
@@ -1773,6 +1912,85 @@ body.liquid-glass .glass-card:hover {
   position: relative;
 }
 
+/* v3.4.5：文档工具栏（玻璃风格，与 PDF 工具栏一致） */
+.doc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.04));
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+/* v3.4.5：docx 分页导航控件 */
+.doc-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.doc-page-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
+  border-radius: 6px;
+  background: var(--mo-surface, rgba(255,255,255,0.06));
+  color: var(--mo-text-2, #ccc);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.doc-page-btn:hover:not(:disabled) {
+  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
+  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
+  color: var(--mo-text-1, #222);
+}
+
+.doc-page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.doc-page-indicator {
+  font-size: 12px;
+  color: var(--mo-text-2, #ccc);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.doc-page-input {
+  width: 44px;
+  height: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--mo-text-1, #eee);
+  background: var(--mo-surface, rgba(255,255,255,0.06));
+  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.15s;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.doc-page-input::-webkit-outer-spin-button,
+.doc-page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.doc-page-input:focus {
+  border-color: var(--mo-primary, #409eff);
+}
+
 /* v3.4.4：文档阅读进度条（顶部细条，随滚动实时更新） */
 .doc-progress-wrap {
   height: 3px;
@@ -1802,6 +2020,22 @@ body.liquid-glass .glass-card:hover {
 /* v3.4.4：open-file-viewer 核心内层（缩放按钮等）跟随全局主题色 */
 .doc-viewer-wrap :deep(.ofv-root) {
   --ofv-accent: var(--mo-primary, #409eff);
+}
+
+/* v3.4.5：内置工具栏（缩放/全屏/搜索）玻璃风格化，贴合全局视觉 */
+.doc-viewer-wrap :deep(.ofv-toolbar) {
+  background: var(--mo-surface, rgba(255, 255, 255, 0.05));
+  border-bottom: 1px solid var(--mo-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px 8px 0 0;
+  min-height: 40px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.doc-viewer-wrap :deep(.ofv-toolbar button) {
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 8px;
 }
 
 .doc-loading-mask {
