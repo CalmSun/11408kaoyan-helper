@@ -179,7 +179,7 @@
             <div class="doc-progress-wrap" title="阅读进度">
               <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
             </div>
-            <div ref="viewerContainer" class="doc-viewer-wrap" @scroll.passive="onDocumentScroll($event)"></div>
+            <div ref="viewerContainer" class="doc-viewer-wrap"></div>
             <div v-if="viewerCreating" class="doc-loading-mask">
               <div class="doc-loading-spinner"></div>
               <span class="doc-loading-text">文档加载中...</span>
@@ -403,36 +403,35 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 // v3.4.3：文档预览支持（docx / xlsx）
 const DOC_EXTS = ['.docx', '.xlsx']
 
-// ============ v3.4.5：@open-file-viewer/core 文档预览状态（docx / xlsx） ============
-// 使用动态 import 避免常驻核心包体积，仅在打开文档时加载
+// ============ v3.4.6：@open-file-viewer/core 文档预览状态（docx / xlsx） ============
 const viewerContainer = ref<HTMLElement | null>(null)
 let viewerInstance: any = null
 const viewerCreating = ref(false)
 const viewerError = ref('')
-// v3.4.5：docx 分页跟踪（页码 + 总页数）—— open-file-viewer 把 docx 每页渲染为
-// .ofv-docx-page-frame 块，通过滚动位置计算当前页；xlsx 无分页，仅用滚动百分比
+
 const docPage = ref(1)
 const docPageInput = ref(1)
 const docTotalPages = ref(0)
-// v3.4.4：文档阅读进度（0-100），驱动顶部进度条
 const docProgress = ref(0)
-// v3.4.4：进度节流 —— 滚动只更新进度条，每 1.5s 才写一次 localStorage
+
 let lastDocProgressSave = 0
 let docScrollRestoreAttempt = 0
 const DOC_PROGRESS_SAVE_INTERVAL = 1500
 
-// v3.4.5：判断是否为可预览的 Office 文档
+let docScrollListener: (() => void) | null = null
+let docPageObserver: IntersectionObserver | null = null
+let docMutationObserver: MutationObserver | null = null
+let docScrollEl: HTMLElement | null = null
+
 function isDocumentFile(ext: string): boolean {
   return DOC_EXTS.includes(ext)
 }
 
-// v3.4.5：定位实际滚动容器 —— officePlugin 将内容渲染进核心自建的滚动容器：
-//   docx → .ofv-viewport（纵向滚动）；xlsx → .ofv-table-scroll（表格独立滚动区）。
-// 统一按「实际发生溢出的容器」查找，确保进度读取/恢复都落在正确的元素上
+// v3.4.6：定位实际滚动容器 —— officePlugin 将内容渲染进核心自建的滚动容器
 function getDocumentScrollEl(): HTMLElement | null {
   const container = viewerContainer.value
   if (!container) return null
-  const candidates = ['.ofv-viewport', '.ofv-table-scroll', '.ofv-docx-document']
+  const candidates = ['.ofv-viewport', '.ofv-table-scroll']
   for (const sel of candidates) {
     const el = container.querySelector<HTMLElement>(sel)
     if (el && el.scrollHeight > el.clientHeight + 1) return el
@@ -440,15 +439,65 @@ function getDocumentScrollEl(): HTMLElement | null {
   return container
 }
 
-// v3.4.5：获取 docx 的分页块（每个 section.ofv-docx 被包裹进 .ofv-docx-page-frame）
+// v3.4.6：获取 docx 的分页块
 function getDocPageFrames(): HTMLElement[] {
   if (!viewerContainer.value) return []
   return Array.from(viewerContainer.value.querySelectorAll<HTMLElement>('.ofv-docx-page-frame'))
 }
 
-// v3.4.5：计算当前页 = 视口顶部命中的分页块（底部仍在视口内的第一页），
-// 底部兜底为最后一页，保证滚到文末时页码正确
-function updateDocPage() {
+// v3.4.6：通过 IntersectionObserver 跟踪当前页（比滚动位置计算更准确）
+function setupPageObserver() {
+  if (!viewerContainer.value) return
+  const frames = getDocPageFrames()
+  if (frames.length === 0) return
+
+  docTotalPages.value = frames.length
+
+  if (docPageObserver) {
+    docPageObserver.disconnect()
+    docPageObserver = null
+  }
+
+  if (typeof IntersectionObserver === 'undefined') {
+    updateDocPageByScroll()
+    return
+  }
+
+  const scroller = getDocumentScrollEl()
+  if (!scroller) return
+
+  docPageObserver = new IntersectionObserver((entries) => {
+    let bestIndex = -1
+    let bestRatio = 0
+    for (const entry of entries) {
+      if (entry.intersectionRatio > bestRatio) {
+        bestRatio = entry.intersectionRatio
+        const idx = frames.indexOf(entry.target as HTMLElement)
+        if (idx >= 0) bestIndex = idx
+      }
+    }
+    if (bestIndex >= 0) {
+      const page = bestIndex + 1
+      if (page !== docPage.value) {
+        docPage.value = page
+        docPageInput.value = page
+      }
+    }
+  }, {
+    root: scroller,
+    rootMargin: '0px',
+    threshold: [0, 0.1, 0.25, 0.5, 0.75, 1]
+  })
+
+  for (const frame of frames) {
+    docPageObserver.observe(frame)
+  }
+
+  updateDocPageByScroll()
+}
+
+// v3.4.6：滚动位置计算兜底
+function updateDocPageByScroll() {
   const frames = getDocPageFrames()
   if (frames.length === 0) return
   if (docTotalPages.value !== frames.length) docTotalPages.value = frames.length
@@ -469,16 +518,15 @@ function updateDocPage() {
   }
 }
 
-// v3.4.4：文档滚动 → 更新进度条 + 页码 + 节流保存（读取真实滚动元素，避免进度恒为 0）
-function onDocumentScroll(e: Event) {
-  const el = (e.target as HTMLElement) || getDocumentScrollEl()
+// v3.4.6：文档滚动处理 —— 更新进度条 + 页码 + 节流保存
+function handleDocScroll() {
+  const el = docScrollEl || getDocumentScrollEl()
   if (!el) return
   const max = el.scrollHeight - el.clientHeight
   if (max <= 0) return
   const progress = Math.min(100, Math.max(0, Math.round((el.scrollTop / max) * 100)))
   if (progress !== docProgress.value) docProgress.value = progress
-  // v3.4.5：docx 分页跟踪（xlsx 无分页块则跳过）
-  updateDocPage()
+  if (!docPageObserver) updateDocPageByScroll()
   const now = Date.now()
   if (now - lastDocProgressSave >= DOC_PROGRESS_SAVE_INTERVAL) {
     lastDocProgressSave = now
@@ -486,15 +534,50 @@ function onDocumentScroll(e: Event) {
   }
 }
 
-// v3.4.5：保存文档阅读进度 —— docx 记录页码（docPage）+ 滚动百分比兜底；
-// xlsx 仅记录滚动百分比（scrollProgress）
+// v3.4.6：绑定滚动监听（在 viewer 创建后调用）
+function bindDocScrollListener() {
+  unbindDocScrollListener()
+  const el = getDocumentScrollEl()
+  if (!el) return
+  docScrollEl = el
+  docScrollListener = () => handleDocScroll()
+  el.addEventListener('scroll', docScrollListener, { passive: true })
+}
+
+function unbindDocScrollListener() {
+  if (docScrollListener && docScrollEl) {
+    docScrollEl.removeEventListener('scroll', docScrollListener)
+    docScrollListener = null
+  }
+  docScrollEl = null
+}
+
+// v3.4.6：MutationObserver 监听文档 DOM 变化（分页块异步渲染就绪后自动绑定）
+function setupDocMutationObserver() {
+  if (!viewerContainer.value) return
+  if (docMutationObserver) {
+    docMutationObserver.disconnect()
+    docMutationObserver = null
+  }
+  docMutationObserver = new MutationObserver(() => {
+    const frames = getDocPageFrames()
+    if (frames.length > 0 && frames.length !== docTotalPages.value) {
+      docTotalPages.value = frames.length
+      setupPageObserver()
+    }
+    if (!docScrollEl) bindDocScrollListener()
+  })
+  docMutationObserver.observe(viewerContainer.value, { childList: true, subtree: true })
+}
+
+// v3.4.6：保存文档阅读进度
 function saveDocumentProgress(progress = docProgress.value, filePath?: string) {
   const path = filePath || currentFile.value?.path
   if (!path) return
   saveProgress(path, { docPage: docPage.value, scrollProgress: progress })
 }
 
-// v3.4.5：跳到指定页（docx）—— 滚动到对应分页块，错误页码自动夹紧
+// v3.4.6：跳到指定页（docx）
 function jumpDocPage(page: number) {
   if (!Number.isFinite(page)) return
   const frames = getDocPageFrames()
@@ -511,15 +594,14 @@ function jumpDocPage(page: number) {
   }
   docPage.value = p
   docPageInput.value = p
-  saveDocumentProgress() // 手动跳页立即落盘
+  saveDocumentProgress()
 }
 
-// v3.4.5：上一页 / 下一页
 function goDocPage(delta: number) {
   jumpDocPage(docPage.value + delta)
 }
 
-// v3.4.5：创建文档预览（动态加载 @open-file-viewer/core）
+// v3.4.6：创建文档预览
 async function openDocumentViewer(file: MaterialNode) {
   destroyDocumentViewer()
   viewerCreating.value = true
@@ -529,11 +611,12 @@ async function openDocumentViewer(file: MaterialNode) {
   docPageInput.value = 1
   docTotalPages.value = 0
   lastDocProgressSave = 0
+
   try {
     const { createViewer, officePlugin } = await import('@open-file-viewer/core')
-    // 等待 DOM 挂载
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await new Promise(resolve => setTimeout(resolve, 80))
     if (!viewerContainer.value) { viewerCreating.value = false; return }
+
     viewerInstance = createViewer({
       container: viewerContainer.value,
       file: file.url,
@@ -542,12 +625,20 @@ async function openDocumentViewer(file: MaterialNode) {
       width: '100%',
       theme: 'auto',
       locale: 'zh-CN',
-      // v3.4.5：内置工具栏负责 缩放 / 全屏 / 搜索（禁用下载/打印/旋转，规避自定义协议兼容问题）
-      toolbar: { zoom: true, fullscreen: true, search: true, download: false, print: false, rotate: false },
+      toolbar: {
+        zoom: true,
+        fullscreen: true,
+        search: true,
+        download: false,
+        print: false,
+        rotate: false
+      },
       plugins: [officePlugin()],
       onLoad: () => {
         viewerCreating.value = false
-        syncDocPageState()
+        bindDocScrollListener()
+        setupPageObserver()
+        setupDocMutationObserver()
         restoreDocumentProgress()
       },
       onError: (err: unknown) => {
@@ -561,16 +652,7 @@ async function openDocumentViewer(file: MaterialNode) {
   }
 }
 
-// v3.4.5：同步分页状态（总页数 + 当前页），供 onLoad 首次统计
-function syncDocPageState() {
-  const frames = getDocPageFrames()
-  if (frames.length === 0) return
-  if (docTotalPages.value !== frames.length) docTotalPages.value = frames.length
-  updateDocPage()
-}
-
-// v3.4.5：恢复文档阅读进度 —— docx 优先恢复页码（页码跳转比百分比更稳，
-// 布局/缩放变化不影响定位）；xlsx 用滚动百分比恢复
+// v3.4.6：恢复文档阅读进度
 function restoreDocumentProgress() {
   if (!viewerContainer.value || !currentFile.value) return
   const prog = loadProgress()[currentFile.value.path]
@@ -580,44 +662,52 @@ function restoreDocumentProgress() {
   if (savedScroll > 0) restoreDocScroll(savedScroll)
 }
 
-// v3.4.5：恢复 docx 页码（内容异步渲染，逐帧重试直至分页块就绪并定位成功）
+// v3.4.6：恢复 docx 页码
 function restoreDocPage(page: number) {
   docScrollRestoreAttempt = 0
   const apply = () => {
     const frames = getDocPageFrames()
     const scroller = getDocumentScrollEl()
-    const target = frames.length > 0 ? frames[Math.min(frames.length - 1, Math.max(0, page - 1))] : null
-    // 分页块或滚动容器尚未就绪，或目标页高度仍为 0（未渲染完成）→ 继续重试
-    if (!scroller || !target || !(target.getBoundingClientRect().height > 0)) {
-      if (docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply)
+    const targetIdx = Math.min(frames.length - 1, Math.max(0, page - 1))
+    const target = frames.length > 0 ? frames[targetIdx] : null
+    if (!scroller || !target || target.getBoundingClientRect().height <= 0) {
+      if (docScrollRestoreAttempt++ < 300) requestAnimationFrame(apply)
       return
     }
     const top = scroller.scrollTop + target.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 16
-    scroller.scrollTop = Math.max(0, top) // 直接定位（instant），恢复时不带动画
+    scroller.scrollTop = Math.max(0, top)
     docPage.value = page
     docPageInput.value = page
   }
   requestAnimationFrame(apply)
 }
 
-// v3.4.5：恢复 xlsx / 无分页文档的滚动百分比
+// v3.4.6：恢复 xlsx / 无分页文档的滚动百分比
 function restoreDocScroll(target: number) {
   docScrollRestoreAttempt = 0
   const apply = () => {
     const el = getDocumentScrollEl()
-    if (!el) { if (docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply); return }
+    if (!el) { if (docScrollRestoreAttempt++ < 300) requestAnimationFrame(apply); return }
     const max = el.scrollHeight - el.clientHeight
-    if (max <= 0) { if (docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply); return }
+    if (max <= 0) { if (docScrollRestoreAttempt++ < 300) requestAnimationFrame(apply); return }
     el.scrollTop = (max * target) / 100
     const reached = Math.abs(el.scrollTop - (max * target) / 100) < 8
-    if (!reached && docScrollRestoreAttempt++ < 200) requestAnimationFrame(apply)
+    if (!reached && docScrollRestoreAttempt++ < 300) requestAnimationFrame(apply)
   }
   requestAnimationFrame(apply)
 }
 
-// v3.4.4：销毁文档预览（释放核心实例；进度保存由调用方/监听器负责，
-// 避免 currentFile 已切换到新文件时把进度写到错误的路径下）
+// v3.4.6：销毁文档预览
 function destroyDocumentViewer() {
+  unbindDocScrollListener()
+  if (docPageObserver) {
+    docPageObserver.disconnect()
+    docPageObserver = null
+  }
+  if (docMutationObserver) {
+    docMutationObserver.disconnect()
+    docMutationObserver = null
+  }
   if (viewerInstance) {
     try { viewerInstance.destroy() } catch { /* ignore */ }
     viewerInstance = null
@@ -987,6 +1077,8 @@ onActivated(() => {
         pdfPageInput.value = prog.pdfPage
       }
     } else if (isDocumentFile(currentFile.value.ext || '')) {
+      bindDocScrollListener()
+      setupPageObserver()
       restoreDocumentProgress()
     } else if (isVideo(currentFile.value.ext || '')) {
       const el = nativeVideo.value
