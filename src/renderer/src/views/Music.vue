@@ -1093,14 +1093,22 @@ onUnmounted(() => {
   height: 100%;
 }
 
-/* v3.1.0：统一卡片样式，与其他页面保持一致 */
+/* v3.1.0：统一卡片样式，与其他页面保持一致
+   v3.4.2：视觉参数改用全局 --glass-* / --mo-radius 变量，与 <GlassCard> 完全一致，
+   修复液态玻璃模式下圆角/模糊/高光等效果在本页不生效的问题 */
 .glass-card {
-  background: var(--mo-surface);
-  border: 1px solid var(--mo-border);
-  border-radius: var(--mo-radius);
-  padding: 20px;
-  backdrop-filter: var(--glass-filter, blur(12px));
   position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--mo-radius);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom));
+  transition: box-shadow 0.25s ease;
+  padding: 20px;
   /* v3.2.6：移除 overflow:hidden，避免内部 hover transform 与 backdrop-filter
      GPU 层叠加时绘制到相邻卡片上层（盖住别的卡片的视觉问题） */
   overflow: visible;
@@ -1108,6 +1116,54 @@ onUnmounted(() => {
   flex-direction: column;
   min-height: 0;
   isolation: isolate;
+}
+
+/* v3.4.2：液态高光层（顶部渐变光 + 左上镜面光斑），与全局 .glass-card--card::before 一致。
+   z-index:-1 + isolation:isolate 使内容天然位于高光之上，无需逐子元素提升 z-index */
+.glass-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(120% 60% at 18% 0%, rgba(255, 255, 255, var(--glass-highlight-corner)) 0%, transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, var(--glass-highlight-top)) 0%, transparent 32%);
+}
+
+/* v3.4.2：液态玻璃模式下：菲涅尔镜面反射 + 色差边缘 + 噪声纹理（与全局一致） */
+body.liquid-glass .glass-card::before {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-highlight-top) * 1.5)) 0%, transparent 30%),
+    linear-gradient(90deg, rgba(255,255,255,var(--glass-highlight-corner)) 0%, transparent 15%, transparent 85%, rgba(255,255,255,var(--glass-highlight-corner)) 100%),
+    linear-gradient(0deg, rgba(255,255,255,var(--glass-highlight-bottom)) 0%, transparent 20%);
+}
+body.liquid-glass .glass-card {
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
+    inset 1px 0 0 rgba(255, 100, 100, 0.02),
+    inset -1px 0 0 rgba(100, 100, 255, 0.02);
+}
+body.liquid-glass .glass-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.025;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+body.liquid-glass .glass-card:hover {
+  box-shadow:
+    0 8px 28px rgba(31, 64, 130, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.08)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
+    inset 1px 0 0 rgba(255, 100, 100, 0.03),
+    inset -1px 0 0 rgba(100, 100, 255, 0.03);
 }
 
 /* v3.1.2：播放器卡片限制最大宽度，避免过宽 */

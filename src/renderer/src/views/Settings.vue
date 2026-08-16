@@ -332,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
@@ -393,10 +393,14 @@ function handleThemeChange(mode: ThemeMode) {
 }
 
 // v3.0.0：液态玻璃模式
-const liquidGlassOn = ref(liquidGlass.value)
+// v3.4.2：改为双向绑定共享状态（theme.ts 的 liquidGlass），与顶栏液态玻璃按钮实时同步，
+// 避免在设置页开启/关闭后，顶栏按钮状态不同步的问题
+const liquidGlassOn = computed({
+  get: () => liquidGlass.value,
+  set: (on: boolean) => setLiquidGlass(on)
+})
 
 function handleLiquidGlassChange(on: boolean) {
-  setLiquidGlass(on)
   ElMessage.success(on ? '已开启液态玻璃效果' : '已关闭液态玻璃效果')
 }
 

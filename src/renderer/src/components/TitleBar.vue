@@ -230,6 +230,8 @@
 
       <span class="titlebar-countdown">距考研 {{ store.daysUntilExam }} 天</span>
       <span class="titlebar-date">{{ todayStr }}</span>
+      <!-- v3.4.2：顶栏当前时间显示 -->
+      <span class="titlebar-time">{{ timeStr }}</span>
     </div>
 
     <div class="titlebar-right">
@@ -330,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
@@ -385,7 +387,12 @@ const pageTitleMap: Record<string, string> = {
 }
 
 const pageTitle = computed(() => pageTitleMap[route.path] ?? '')
-const todayStr = computed(() => dayjs().format('YYYY年MM月DD日 ddd'))
+
+// v3.4.2：顶栏实时时间（每秒更新一次，日期随其联动）
+const now = ref(Date.now())
+let clockTimer: number | null = null
+const todayStr = computed(() => dayjs(now.value).format('YYYY年MM月DD日 ddd'))
+const timeStr = computed(() => dayjs(now.value).format('HH:mm:ss'))
 
 // v2.9.0：歌词显示窗口（当前行上下各2行）
 const visibleLyrics = computed(() => {
@@ -631,10 +638,22 @@ watch(() => music.neteaseLoggedIn, (logged) => {
 })
 
 onMounted(() => {
+  // v3.4.2：启动时钟定时器（每秒刷新当前时间）
+  clockTimer = window.setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
   initWeather()
   // v3.1.5：如果已登录网易云，加载用户详情与账号信息
   if (music.neteaseLoggedIn && music.neteaseUser?.id && (!music.neteaseUserDetail || !music.neteaseUserAccount)) {
     loadNeteaseUserDetail()
+  }
+})
+
+onUnmounted(() => {
+  // v3.4.2：卸载时清除时钟定时器，避免内存泄漏
+  if (clockTimer !== null) {
+    clearInterval(clockTimer)
+    clockTimer = null
   }
 })
 </script>
@@ -713,6 +732,18 @@ onMounted(() => {
 
 .titlebar-date {
   color: var(--mo-text-3);
+}
+
+/* v3.4.2：顶栏当前时间 */
+.titlebar-time {
+  color: var(--mo-text-1);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--mo-surface);
+  border: 1px solid var(--glass-border);
 }
 
 /* 天气展示（可点击查看详情，v2.7.1） */

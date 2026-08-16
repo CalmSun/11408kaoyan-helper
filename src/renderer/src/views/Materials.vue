@@ -611,9 +611,10 @@ function countFilesInFolder(folder: MaterialNode): number {
   return count
 }
 
-// ============ v3.4.1：学习进度保存（PDF 页码 / 视频播放位置） ============
-// 以文件 path 为 key 存 localStorage，切换页面/关闭应用后下次打开自动恢复
+// ============ v3.4.2：学习进度保存（PDF 页码 / 视频播放位置 / 当前文件路径）
+// 以文件 path 为 key 存 localStorage，重新打开应用后自动恢复上次文件与进度
 const PROGRESS_KEY = 'materials-progress'
+const CURRENT_FILE_KEY = 'materials-current-file'
 
 interface MaterialProgressEntry {
   pdfPage?: number
@@ -681,9 +682,13 @@ function restoreVideoProgress(el: HTMLVideoElement) {
 }
 
 // ============ 生命周期 ============
-onMounted(() => {
-  restoreFolder()
+onMounted(async () => {
+  await restoreFolder()
+  // v3.4.2：文件树恢复后，自动打开上次查看的文件并恢复阅读/播放进度
+  restoreCurrentFile()
   // v3.4.1：keep-alive 下键盘监听改由 onActivated/onDeactivated 控制
+  // v3.4.2：应用退出前兜底保存当前视频进度
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 // v3.4.1：keep-alive 激活（从其他页面返回学习资料页）时恢复键盘监听
@@ -706,10 +711,22 @@ onDeactivated(() => {
 // v3.3.1：组件卸载时彻底释放视频与音频资源
 onUnmounted(() => {
   window.removeEventListener('keydown', onVideoKeydown)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+  // v3.4.2：卸载前保存当前视频进度（重启后可接续）
+  if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
+    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+  }
   disposeAudioResources()
   // v3.3.9: 销毁 PDF 文档释放内存
   destroyPdf()
 })
+
+// v3.4.2：应用退出前兜底保存当前视频进度（页面卸载/关窗/退出时触发）
+function handleBeforeUnload() {
+  if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
+    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+  }
+}
 
 // v3.3.1：集中释放音频资源（AudioContext / GainNode / SourceNode）
 function disposeAudioResources() {
@@ -982,11 +999,64 @@ function toggleFolder(path: string) {
 
 function openFile(file: MaterialNode) {
   currentFile.value = file
+  // v3.4.2：记录当前文件路径，重启后自动恢复
+  saveCurrentFilePath()
   // v3.3.9: 打开视频时更新播放列表为同级文件夹视频
   if (file.type === 'file' && isVideo(file.ext || '')) {
     updateVideoPlaylist(file)
     videoPoster.value = '' // 重置封面
   }
+}
+
+// v3.4.2：保存当前文件路径（localStorage）
+function saveCurrentFilePath() {
+  try {
+    if (currentFile.value?.path) {
+      localStorage.setItem(CURRENT_FILE_KEY, currentFile.value.path)
+    } else {
+      localStorage.removeItem(CURRENT_FILE_KEY)
+    }
+  } catch { /* ignore */ }
+}
+
+// v3.4.2：在文件树中按 path 查找文件节点
+function findNodeByPath(nodes: MaterialNode[], path: string): MaterialNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.children) {
+      const found = findNodeByPath(node.children, path)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+// v3.4.2：展开到目标文件所在的所有祖先文件夹，保证恢复的文件在树中可见
+function expandToPath(nodes: MaterialNode[], targetPath: string): boolean {
+  for (const node of nodes) {
+    if (node.type !== 'folder') continue
+    const containsDirect = node.children?.some(c => c.path === targetPath) === true
+    const containsDeep = containsDirect || expandToPath(node.children || [], targetPath)
+    if (containsDeep) {
+      expandedFolders.value.add(node.path)
+      return true
+    }
+  }
+  return false
+}
+
+// v3.4.2：应用启动后自动打开上次查看的文件（同时自动恢复其阅读/播放进度）
+function restoreCurrentFile() {
+  if (currentFile.value) return
+  try {
+    const saved = localStorage.getItem(CURRENT_FILE_KEY)
+    if (!saved) return
+    expandToPath(fileTree.value, saved)
+    const node = findNodeByPath(fileTree.value, saved)
+    if (node && node.type === 'file') {
+      openFile(node)
+    }
+  } catch { /* ignore */ }
 }
 
 // v3.2.9：使用系统默认应用打开当前文件
@@ -1092,16 +1162,69 @@ if (typeof document !== 'undefined') {
 }
 
 .glass-card {
-  background: var(--mo-surface);
-  border: 1px solid var(--mo-border);
-  border-radius: 16px;
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--mo-radius);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom));
+  transition: box-shadow 0.25s ease;
   padding: 20px;
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  isolation: isolate;
+}
+
+/* v3.4.2：液态高光层（与全局 .glass-card--card::before 一致，修复液态玻璃模式不生效） */
+.glass-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(120% 60% at 18% 0%, rgba(255, 255, 255, var(--glass-highlight-corner)) 0%, transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, var(--glass-highlight-top)) 0%, transparent 32%);
+}
+
+/* v3.4.2：液态玻璃模式下：菲涅尔镜面反射 + 色差边缘 + 噪声纹理（与全局一致） */
+body.liquid-glass .glass-card::before {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-highlight-top) * 1.5)) 0%, transparent 30%),
+    linear-gradient(90deg, rgba(255,255,255,var(--glass-highlight-corner)) 0%, transparent 15%, transparent 85%, rgba(255,255,255,var(--glass-highlight-corner)) 100%),
+    linear-gradient(0deg, rgba(255,255,255,var(--glass-highlight-bottom)) 0%, transparent 20%);
+}
+body.liquid-glass .glass-card {
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
+    inset 1px 0 0 rgba(255, 100, 100, 0.02),
+    inset -1px 0 0 rgba(100, 100, 255, 0.02);
+}
+body.liquid-glass .glass-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.025;
+  z-index: -1;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+body.liquid-glass .glass-card:hover {
+  box-shadow:
+    0 8px 28px rgba(31, 64, 130, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.08)),
+    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
+    inset 1px 0 0 rgba(255, 100, 100, 0.03),
+    inset -1px 0 0 rgba(100, 100, 255, 0.03);
 }
 
 .section-title {
