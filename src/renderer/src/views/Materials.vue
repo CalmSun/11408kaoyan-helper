@@ -146,49 +146,22 @@
             </div>
           </div>
 
-          <!-- v3.4.3：docx 文档预览（vue-office） -->
-          <div v-else-if="currentFile.ext === '.docx'" class="doc-wrap">
-            <div class="doc-viewer-wrap">
-              <VueOfficeDocx
-                v-if="docSrc"
-                :src="docSrc"
-                style="height: 100%; width: 100%;"
-                @rendered="onDocRendered"
-                @error="onDocError"
-              />
-              <div v-if="docLoading" class="doc-loading-mask">
-                <div class="doc-loading-spinner"></div>
-                <span class="doc-loading-text">文档加载中...</span>
-              </div>
-              <div v-if="docError" class="doc-error-mask">
-                <el-icon :size="40"><Warning /></el-icon>
-                <span>文档加载失败</span>
-                <span class="doc-error-detail">{{ docError }}</span>
-                <el-button size="small" type="primary" @click="docRetry">重试</el-button>
-              </div>
+          <!-- v3.4.4：Office 文档预览（docx / xlsx，@open-file-viewer/core officePlugin） -->
+          <div v-else-if="isDocumentFile(currentFile.ext)" class="doc-wrap">
+            <!-- 阅读进度条（滚动节流更新，避免频繁写 localStorage） -->
+            <div class="doc-progress-wrap" title="阅读进度">
+              <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
             </div>
-          </div>
-
-          <!-- v3.4.3：xlsx 表格预览（vue-office） -->
-          <div v-else-if="currentFile.ext === '.xlsx'" class="doc-wrap">
-            <div class="doc-viewer-wrap">
-              <VueOfficeExcel
-                v-if="docSrc"
-                :src="docSrc"
-                style="height: 100%; width: 100%;"
-                @rendered="onDocRendered"
-                @error="onDocError"
-              />
-              <div v-if="docLoading" class="doc-loading-mask">
-                <div class="doc-loading-spinner"></div>
-                <span class="doc-loading-text">表格加载中...</span>
-              </div>
-              <div v-if="docError" class="doc-error-mask">
-                <el-icon :size="40"><Warning /></el-icon>
-                <span>表格加载失败</span>
-                <span class="doc-error-detail">{{ docError }}</span>
-                <el-button size="small" type="primary" @click="docRetry">重试</el-button>
-              </div>
+            <div ref="viewerContainer" class="doc-viewer-wrap" @scroll.passive="onDocumentScroll($event)"></div>
+            <div v-if="viewerCreating" class="doc-loading-mask">
+              <div class="doc-loading-spinner"></div>
+              <span class="doc-loading-text">文档加载中...</span>
+            </div>
+            <div v-if="viewerError" class="doc-error-mask">
+              <el-icon :size="40"><Warning /></el-icon>
+              <span>文档加载失败</span>
+              <span class="doc-error-detail">{{ viewerError }}</span>
+              <el-button size="small" type="primary" @click="openDocumentViewer(currentFile)">重试</el-button>
             </div>
           </div>
 
@@ -359,9 +332,11 @@ import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
   View, Warning, ArrowRight, ArrowLeft, List, Loading, Open, InfoFilled
 } from '@element-plus/icons-vue'
-// v3.4.3：vue-office 文档预览（docx / xlsx）
-import VueOfficeDocx from '@vue-office/docx'
-import VueOfficeExcel from '@vue-office/excel'
+// v3.4.4：Office 文档预览改用 @open-file-viewer/core（officePlugin 按需动态加载）
+// open-file-viewer 的 officePlugin 统一支持 docx/xlsx/pptx/rtf/odt 等，包体仅在打开文档时加载，
+// 避免常驻体积。PDF 仍用 PDFium iframe —— 因 open-file-viewer 依赖 pdfjs-dist 6.x，
+// 在 Electron 28 (Chromium 120) 存在 ES2025 语法兼容问题（见项目历史教训）。
+import '@open-file-viewer/core/style.css'
 
 // v3.4.0: PDF 预览改用 Chromium 内置 PDFium（<iframe>）。
 // 此前 pdfjs-dist 6.x 在 Electron 28 (Chromium 120) 下因 ES2025 语法/worker 兼容问题
@@ -401,58 +376,132 @@ const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
 // v3.4.3：文档预览支持（docx / xlsx）
 const DOC_EXTS = ['.docx', '.xlsx']
 
+// ============ v3.4.4：@open-file-viewer/core 文档预览状态（docx / xlsx） ============
+// 使用动态 import 避免常驻核心包体积，仅在打开文档时加载
+const viewerContainer = ref<HTMLElement | null>(null)
+let viewerInstance: any = null
+const viewerCreating = ref(false)
+const viewerError = ref('')
+// v3.4.4：文档阅读进度（0-100），驱动顶部进度条
+const docProgress = ref(0)
+// v3.4.4：进度节流 —— 滚动只更新进度条，每 1.5s 才写一次 localStorage
+let lastDocProgressSave = 0
+let docScrollRestoreAttempt = 0
+const DOC_PROGRESS_SAVE_INTERVAL = 1500
+
+// v3.4.4：判断是否为可预览的 Office 文档
+function isDocumentFile(ext: string): boolean {
+  return DOC_EXTS.includes(ext)
+}
+
+// v3.4.4：定位实际滚动容器 —— officePlugin 将内容渲染进核心自建的滚动容器：
+//   docx → .ofv-viewport（纵向滚动）；xlsx → .ofv-table-scroll（表格独立滚动区）。
+// 统一按「实际发生溢出的容器」查找，确保进度读取/恢复都落在正确的元素上
+function getDocumentScrollEl(): HTMLElement | null {
+  const container = viewerContainer.value
+  if (!container) return null
+  const candidates = ['.ofv-viewport', '.ofv-table-scroll', '.ofv-docx-document']
+  for (const sel of candidates) {
+    const el = container.querySelector<HTMLElement>(sel)
+    if (el && el.scrollHeight > el.clientHeight + 1) return el
+  }
+  return container
+}
+
+// v3.4.4：文档滚动 → 更新进度条 + 节流保存（读取真实滚动元素，避免进度恒为 0）
+function onDocumentScroll(e: Event) {
+  const el = (e.target as HTMLElement) || getDocumentScrollEl()
+  if (!el) return
+  const max = el.scrollHeight - el.clientHeight
+  if (max <= 0) return
+  const progress = Math.min(100, Math.max(0, Math.round((el.scrollTop / max) * 100)))
+  if (progress !== docProgress.value) docProgress.value = progress
+  const now = Date.now()
+  if (now - lastDocProgressSave >= DOC_PROGRESS_SAVE_INTERVAL) {
+    lastDocProgressSave = now
+    saveDocumentProgress(progress)
+  }
+}
+
+// v3.4.4：保存文档滚动进度（切换 / 离开 / 卸载时兜底调用）
+function saveDocumentProgress(progress = docProgress.value) {
+  if (!currentFile.value) return
+  saveProgress(currentFile.value.path, { scrollProgress: progress })
+}
+
+// v3.4.4：创建文档预览（动态加载 @open-file-viewer/core）
+async function openDocumentViewer(file: MaterialNode) {
+  destroyDocumentViewer()
+  viewerCreating.value = true
+  viewerError.value = ''
+  docProgress.value = 0
+  lastDocProgressSave = 0
+  try {
+    const { createViewer, officePlugin } = await import('@open-file-viewer/core')
+    // 等待 DOM 挂载
+    await new Promise(resolve => setTimeout(resolve, 50))
+    if (!viewerContainer.value) { viewerCreating.value = false; return }
+    viewerInstance = createViewer({
+      container: viewerContainer.value,
+      file: file.url,
+      fileName: file.name,
+      height: '100%',
+      width: '100%',
+      theme: 'auto',
+      locale: 'zh-CN',
+      // 文档工具栏：缩放 / 全屏 / 搜索（禁用下载/打印/旋转，规避自定义协议下的兼容问题）
+      toolbar: { zoom: true, fullscreen: true, search: true, download: false, print: false, rotate: false },
+      plugins: [officePlugin()],
+      onLoad: () => {
+        viewerCreating.value = false
+        restoreDocumentScroll()
+      },
+      onError: (err: unknown) => {
+        viewerCreating.value = false
+        viewerError.value = err instanceof Error ? err.message : '文档加载失败'
+      }
+    })
+  } catch (e) {
+    viewerCreating.value = false
+    viewerError.value = e instanceof Error ? e.message : '文档加载失败'
+  }
+}
+
+// v3.4.4：恢复文档滚动进度（office 内容异步渲染，逐帧重试直至达到目标位置）
+function restoreDocumentScroll() {
+  if (!viewerContainer.value || !currentFile.value) return
+  const prog = loadProgress()[currentFile.value.path]
+  const target = typeof prog?.scrollProgress === 'number' ? prog.scrollProgress : 0
+  if (!(target > 0)) return
+  docScrollRestoreAttempt = 0
+  const apply = () => {
+    const el = getDocumentScrollEl()
+    if (!el) { if (docScrollRestoreAttempt++ < 50) requestAnimationFrame(apply); return }
+    const max = el.scrollHeight - el.clientHeight
+    if (max <= 0) { if (docScrollRestoreAttempt++ < 50) requestAnimationFrame(apply); return }
+    el.scrollTop = (max * target) / 100
+    const reached = Math.abs(el.scrollTop - (max * target) / 100) < 8
+    if (!reached && docScrollRestoreAttempt++ < 50) requestAnimationFrame(apply)
+  }
+  requestAnimationFrame(apply)
+}
+
+// v3.4.4：销毁文档预览（先兜底保存进度，再释放核心实例）
+function destroyDocumentViewer() {
+  saveDocumentProgress()
+  if (viewerInstance) {
+    try { viewerInstance.destroy() } catch { /* ignore */ }
+    viewerInstance = null
+  }
+  viewerCreating.value = false
+  viewerError.value = ''
+  docProgress.value = 0
+}
+
 // ============ v3.4.0: PDF 状态（Chromium PDFium <iframe> 渲染） ============
 // PDF 加载由 Chromium 内核处理，无需前端解析，状态仅需记录是否出错/加载中。
 const pdfLoading = ref(false)
 const pdfError = ref('')
-
-// ============ v3.4.3：vue-office 文档预览状态（docx / xlsx） ============
-const docSrc = ref<ArrayBuffer | string>('')
-const docLoading = ref(false)
-const docError = ref('')
-
-// v3.4.3：加载文档为 ArrayBuffer（用于 vue-office 预览）
-async function loadDocAsArrayBuffer(url: string): Promise<ArrayBuffer> {
-  const resp = await fetch(url)
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-  return await resp.arrayBuffer()
-}
-
-// v3.4.3：加载文档预览
-async function loadDoc(url: string) {
-  docLoading.value = true
-  docError.value = ''
-  try {
-    docSrc.value = await loadDocAsArrayBuffer(url)
-  } catch (e) {
-    docError.value = e instanceof Error ? e.message : '加载失败'
-  } finally {
-    docLoading.value = false
-  }
-}
-
-// v3.4.3：卸载文档预览
-function unloadDoc() {
-  docSrc.value = ''
-  docError.value = ''
-  docLoading.value = false
-}
-
-// v3.4.3：文档渲染完成（docx / xlsx）
-function onDocRendered() {
-  docLoading.value = false
-}
-
-// v3.4.3：文档渲染失败（docx / xlsx）
-function onDocError(e: unknown) {
-  docLoading.value = false
-  docError.value = e instanceof Error ? e.message : '文档解析失败'
-}
-
-// v3.4.3：文档加载重试
-function docRetry() {
-  if (currentFile.value?.url) loadDoc(currentFile.value.url)
-}
 
 // v3.4.0: 加载 PDF（iframe 懒挂载，卸载时清空 src 释放 PDFium 资源）
 // v3.4.1: 打开时恢复到上次阅读页码
@@ -717,6 +766,8 @@ interface MaterialProgressEntry {
   pdfPage?: number
   videoTime?: number
   videoDuration?: number
+  // v3.4.4：Office 文档阅读进度（滚动百分比 0-100）
+  scrollProgress?: number
   updatedAt?: number
 }
 type MaterialProgress = Record<string, MaterialProgressEntry>
@@ -790,6 +841,7 @@ onMounted(async () => {
 
 // v3.4.1：keep-alive 激活（从其他页面返回学习资料页）时恢复键盘监听
 // v3.4.3：返回时恢复 PDF 页码和文档进度
+// v3.4.4：返回时恢复 Office 文档滚动进度
 onActivated(() => {
   window.addEventListener('keydown', onVideoKeydown)
   // 恢复当前文件进度
@@ -800,6 +852,8 @@ onActivated(() => {
         pdfPage.value = prog.pdfPage
         pdfPageInput.value = prog.pdfPage
       }
+    } else if (isDocumentFile(currentFile.value.ext || '')) {
+      restoreDocumentScroll()
     } else if (isVideo(currentFile.value.ext || '')) {
       const el = nativeVideo.value
       if (el) {
@@ -815,12 +869,15 @@ onActivated(() => {
 // v3.4.1：keep-alive 失活（切换到其他页面）时：
 //   - 移除键盘监听，避免误控隐藏页面的视频
 //   - 保存视频进度并暂停，保持「原状态」，返回后可继续观看
+// v3.4.4：失活时同步兜底保存文档阅读进度
 onDeactivated(() => {
   window.removeEventListener('keydown', onVideoKeydown)
   if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
     nativeVideo.value.pause()
     videoPlaying.value = false
+  } else if (currentFile.value && isDocumentFile(currentFile.value.ext || '')) {
+    saveDocumentProgress()
   }
 })
 
@@ -835,12 +892,17 @@ onUnmounted(() => {
   disposeAudioResources()
   // v3.3.9: 销毁 PDF 文档释放内存
   destroyPdf()
+  // v3.4.4: 销毁 Office 文档预览释放内存
+  destroyDocumentViewer()
 })
 
 // v3.4.2：应用退出前兜底保存当前视频进度（页面卸载/关窗/退出时触发）
+// v3.4.4：同步兜底保存文档阅读进度
 function handleBeforeUnload() {
   if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+  } else if (currentFile.value && isDocumentFile(currentFile.value.ext || '')) {
+    saveDocumentProgress()
   }
 }
 
@@ -868,13 +930,13 @@ watch(() => currentFile.value, async (newVal, oldVal) => {
   if (newVal?.ext === '.pdf' && newVal.url) {
     await loadPdf(newVal.url)
   }
-  // v3.4.3：离开 docx/xlsx 模式时卸载文档
+  // v3.4.4：离开 Office 文档模式时销毁预览
   if (oldVal && DOC_EXTS.includes(oldVal.ext || '') && !(newVal && DOC_EXTS.includes(newVal.ext || ''))) {
-    unloadDoc()
+    destroyDocumentViewer()
   }
-  // v3.4.3：进入 docx/xlsx 模式：加载文档
+  // v3.4.4：进入 Office 文档模式：创建预览
   if (newVal && DOC_EXTS.includes(newVal.ext || '') && newVal.url) {
-    await loadDoc(newVal.url)
+    await openDocumentViewer(newVal)
   }
   const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
   const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
@@ -1701,13 +1763,30 @@ body.liquid-glass .glass-card:hover {
   word-break: break-all;
 }
 
-/* v3.4.3：vue-office 文档预览（docx / xlsx） */
+/* v3.4.4：Office 文档预览容器（docx / xlsx，@open-file-viewer/core officePlugin） */
 .doc-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   gap: 8px;
+  position: relative;
+}
+
+/* v3.4.4：文档阅读进度条（顶部细条，随滚动实时更新） */
+.doc-progress-wrap {
+  height: 3px;
+  border-radius: 3px;
+  background: var(--mo-surface, rgba(255,255,255,0.06));
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.doc-progress-bar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--mo-primary, #409eff);
+  transition: width 0.12s linear;
 }
 
 .doc-viewer-wrap {
@@ -1718,6 +1797,11 @@ body.liquid-glass .glass-card:hover {
   background: var(--mo-surface, #fff);
   border-radius: 8px;
   border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
+}
+
+/* v3.4.4：open-file-viewer 核心内层（缩放按钮等）跟随全局主题色 */
+.doc-viewer-wrap :deep(.ofv-root) {
+  --ofv-accent: var(--mo-primary, #409eff);
 }
 
 .doc-loading-mask {

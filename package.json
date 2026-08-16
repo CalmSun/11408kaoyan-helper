@@ -1,6 +1,6 @@
 {
   "name": "kaoyan-helper",
-  "version": "3.4.3",
+  "version": "3.4.4",
   "description": "考研助手桌面应用 - 你的专属备考伙伴",
   "main": "dist/main/main.js",
   "author": "Kaoyan Helper",
@@ -16,9 +16,7 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
-    "@vue-office/docx": "^1.6.3",
-    "@vue-office/excel": "^1.7.14",
-    "@vue-office/pdf": "^2.0.10",
+    "@open-file-viewer/core": "^0.1.40",
     "dayjs": "^1.11.10",
     "echarts": "^5.4.3",
     "electron-updater": "^6.8.9",
@@ -45,7 +43,7 @@
     "appId": "com.kaoyan.helper",
     "productName": "11408考研助手",
     "directories": {
-      "output": "release-v343"
+      "output": "release-v344"
     },
     "extraResources": [
       {
@@ -88,9 +86,6 @@
     "esbuild@0.21.5": true,
     "vue-demi@0.14.10": true,
     "vue-demi@0.13.11": true,
-    "vue-echarts@6.7.3": true,
-    "@vue-office/docx@1.6.3": true,
-    "@vue-office/excel@1.7.14": true,
-    "@vue-office/pdf@2.0.10": true
+    "vue-echarts@6.7.3": true
   }
 }
