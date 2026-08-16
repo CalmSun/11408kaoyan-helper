@@ -1335,10 +1335,10 @@ body.liquid-glass .glass-card:hover {
   transition: all 0.2s;
 }
 
-.ctrl-btn:hover {
-  background: var(--mo-primary);
-  color: #fff;
-  border-color: var(--mo-primary);
+.ctrl-btn:hover:not(.active) {
+  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
+  color: var(--mo-text-1, #222);
+  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
 }
 
 .ctrl-btn.active {

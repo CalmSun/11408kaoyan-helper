@@ -124,6 +124,7 @@
                 v-if="pdfFrameUrl"
                 ref="pdfFrame"
                 class="pdf-frame"
+                :key="pdfFrameKey"
                 :src="pdfFrameUrl"
                 @load="pdfLoading = false"
                 @error="onPdfFrameError"
@@ -304,12 +305,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
   View, Warning, ArrowRight, ArrowLeft, List, Loading, Open, InfoFilled
 } from '@element-plus/icons-vue'
+// v3.4.3：vue-office 文档预览（docx / xlsx）
+import VueOfficeDocx from '@vue-office/docx'
+import VueOfficeExcel from '@vue-office/excel'
 
 // v3.4.0: PDF 预览改用 Chromium 内置 PDFium（<iframe>）。
 // 此前 pdfjs-dist 6.x 在 Electron 28 (Chromium 120) 下因 ES2025 语法/worker 兼容问题
@@ -317,6 +321,7 @@ import {
 // 不额外占内存，且自带翻页/缩放/搜索/打印等功能，是最稳定方案。
 const pdfFrame = ref<HTMLIFrameElement | null>(null)
 const pdfFrameUrl = ref('')
+const pdfFrameKey = ref(0) // v3.4.3：强制刷新 iframe（hash 变化时重新挂载）
 
 // v3.4.0: 由当前 PDF 文件 URL 拼接 PDFium 查看器参数（FitH 适应宽度，toolbar 显示原生工具条）
 // v3.4.1: 支持 page 参数——打开时恢复到上次阅读页码
@@ -329,8 +334,10 @@ const pdfPage = ref(1)
 const pdfPageInput = ref(1)
 
 // v3.4.0: 卸载 iframe 释放 PDFium 渲染资源（切换文件/离开 PDF 模式时调用）
+// v3.4.3：递增 key 强制重新挂载 iframe，解决 hash 变化不触发 reload 的问题
 function unloadPdf() {
   pdfFrameUrl.value = ''
+  pdfFrameKey.value++ // v3.4.3：强制重新挂载
 }
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
@@ -346,14 +353,49 @@ const expandedFolders = ref<Set<string>>(new Set())
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
+// v3.4.3：文档预览支持（docx / xlsx）
+const DOC_EXTS = ['.docx', '.xlsx']
 
 // ============ v3.4.0: PDF 状态（Chromium PDFium <iframe> 渲染） ============
 // PDF 加载由 Chromium 内核处理，无需前端解析，状态仅需记录是否出错/加载中。
 const pdfLoading = ref(false)
 const pdfError = ref('')
 
+// ============ v3.4.3：vue-office 文档预览状态（docx / xlsx） ============
+const docSrc = ref<ArrayBuffer | string>('')
+const docLoading = ref(false)
+const docError = ref('')
+
+// v3.4.3：加载文档为 ArrayBuffer（用于 vue-office 预览）
+async function loadDocAsArrayBuffer(url: string): Promise<ArrayBuffer> {
+  const resp = await fetch(url)
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+  return await resp.arrayBuffer()
+}
+
+// v3.4.3：加载文档预览
+async function loadDoc(url: string) {
+  docLoading.value = true
+  docError.value = ''
+  try {
+    docSrc.value = await loadDocAsArrayBuffer(url)
+  } catch (e) {
+    docError.value = e instanceof Error ? e.message : '加载失败'
+  } finally {
+    docLoading.value = false
+  }
+}
+
+// v3.4.3：卸载文档预览
+function unloadDoc() {
+  docSrc.value = ''
+  docError.value = ''
+  docLoading.value = false
+}
+
 // v3.4.0: 加载 PDF（iframe 懒挂载，卸载时清空 src 释放 PDFium 资源）
 // v3.4.1: 打开时恢复到上次阅读页码
+// v3.4.3：使用 nextTick + key 强制重新挂载，确保 iframe 重新加载
 function loadPdf(url: string) {
   unloadPdf()
   pdfLoading.value = true
@@ -363,9 +405,10 @@ function loadPdf(url: string) {
   const startPage = prog?.pdfPage && prog.pdfPage > 0 ? prog.pdfPage : 1
   pdfPage.value = startPage
   pdfPageInput.value = startPage
-  // 将 src 赋值放在下一次宏任务，确保先卸载旧文档再加载新文档
-  requestAnimationFrame(() => {
+  // 使用 nextTick 确保先卸载旧文档再加载新文档
+  nextTick(() => {
     pdfFrameUrl.value = buildPdfFrameUrl(url, startPage)
+    pdfFrameKey.value++
     pdfLoading.value = false
   })
 }
@@ -378,6 +421,7 @@ function goPdfPage(delta: number) {
 }
 
 // v3.4.1: 跳转到指定页码（重载 iframe 的 page 参数）并保存进度
+// v3.4.3：通过 pdfFrameKey 强制重新挂载 iframe，解决 hash 变化不触发 reload 的问题
 function jumpPdfPage(target: number) {
   if (!Number.isFinite(target)) return
   if (target < 1) target = 1
@@ -388,8 +432,11 @@ function jumpPdfPage(target: number) {
   if (!url) return
   pdfLoading.value = true
   pdfError.value = ''
-  requestAnimationFrame(() => {
+  // 先清空 src 再赋值新 URL，配合 :key 强制重新挂载
+  pdfFrameUrl.value = ''
+  nextTick(() => {
     pdfFrameUrl.value = buildPdfFrameUrl(url, target)
+    pdfFrameKey.value++
     pdfLoading.value = false
   })
 }
@@ -1451,9 +1498,9 @@ body.liquid-glass .glass-card:hover {
 }
 
 .pdf-page-btn:hover:not(:disabled) {
-  background: var(--mo-primary, #409eff);
-  border-color: transparent;
-  color: #fff;
+  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
+  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
+  color: var(--mo-text-1, #222);
 }
 
 .pdf-page-btn:disabled {
@@ -1671,10 +1718,10 @@ body.liquid-glass .glass-card:hover {
   height: 30px;
 }
 
-.vc-btn:hover {
-  background: var(--mo-primary, #409eff);
-  border-color: transparent;
-  color: #fff;
+.vc-btn:hover:not(.active) {
+  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
+  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
+  color: var(--mo-text-1, #222);
 }
 
 .vc-btn.vc-toggle.active {
