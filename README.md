@@ -101,6 +101,8 @@
 | 本地数据存储   | IndexedDB 渲染进程存储 + 文件 JSON 快照双备份                     |
 
 ## 📦 环境与运行部署
+提供几个垃圾盘： 夸克网盘(https://pan.quark.cn/s/059395b45b88)，123盘(https://1813557547.share.123pan.cn/123pan/ok2SVv-zE4PA)，蓝奏云（密码：1234）(https://wwbdp.lanzoum.com/ilRUO42p0uzc?pwd=1234)
+
 
 ### 前置环境要求
 
