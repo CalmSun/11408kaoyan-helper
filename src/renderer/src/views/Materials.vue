@@ -640,6 +640,63 @@ function submitDocPage() {
 // 自定义 toolbar.render 方案已移除——内置工具栏由库管理状态（缩放百分比 / 按钮禁用 / 搜索计数），
 // 页码导航与阅读进度改由页面级「文档状态栏」承担（见模板 .doc-status-bar），避免双状态源不同步。
 
+// v3.5.2 修复（黑屏）：PDF getTextContent 防御性包装。
+// 背景：@open-file-viewer/core 的 pdfPlugin.renderPage 在 canvas 渲染成功后才调用
+//   page.getTextContent() 构建文本层（仅用于文字选择/复制）。若该调用抛异常，库的 catch-all
+//   会用「无法渲染该页面…」错误页替换已成功渲染的 canvas —— 这正是「画面一闪而过变黑屏」的根因。
+//   （已核验库源码 node_modules/@open-file-viewer/core/dist/index.js：6138 await page.getTextContent()
+//    在 6176-6182 的 catch 中 replaceChildren(ofv-pdf-error)。）
+// 文本层是可选增强能力，绝不能因它的失败抹掉已渲染的 PDF 内容。
+// 方案：包装传入的 pdfjs 实例的 getDocument，文档就绪后经首个页面实例定位 PDFPageProxy.prototype，
+//   再包装 getTextContent：正常路径原样透传；异常/畸形结果降级为 { items: [], styles: {} }
+//   （库内文本层循环自然跳过，canvas 保留）。仅影响本应用传入的 pdfjs 实例，不修改 node_modules。
+function patchPdfGetTextContent(pdfjs: any): void {
+  if (!pdfjs || typeof pdfjs.getDocument !== 'function') return
+  if (pdfjs.__ofvGetTextContentPatched) return
+  pdfjs.__ofvGetTextContentPatched = true
+
+  const originalGetDocument = pdfjs.getDocument
+  pdfjs.getDocument = function (this: any, ...args: any[]) {
+    const task = originalGetDocument.apply(this, args)
+    const promise = task?.promise
+    if (promise && typeof promise.then === 'function') {
+      promise
+        .then((doc: any) => {
+          if (!doc || typeof doc.getPage !== 'function') return
+          doc
+            .getPage(1)
+            .then((page: any) => {
+              const proto = page?.constructor?.prototype
+              if (!proto || typeof proto.getTextContent !== 'function') return
+              if (proto.__ofvGetTextContentWrapped) return
+              const originalGetTextContent = proto.getTextContent
+              proto.__ofvGetTextContentWrapped = true
+              proto.getTextContent = function (this: any, params?: unknown) {
+                return Promise.resolve()
+                  .then(() => originalGetTextContent.call(this, params))
+                  .then((result: any) =>
+                    result && Array.isArray(result.items) && result.styles
+                      ? result
+                      : { items: [], styles: Object.create(null), lang: null }
+                  )
+                  .catch((err: unknown) => {
+                    console.warn('[Materials] PDF getTextContent 失败，文本层已降级为空：', err)
+                    return { items: [], styles: Object.create(null), lang: null }
+                  })
+              }
+            })
+            .catch(() => {
+              /* 忽略：取页信息失败不影响后续渲染（库内另有兜底） */
+            })
+        })
+        .catch(() => {
+          /* 忽略：文档加载失败时库内已有错误兜底 */
+        })
+    }
+    return task
+  }
+}
+
 // v3.5.2：统一文档预览入口（PDF / Office / 图片 → 全部走 createViewer）
 // 与 playground 示例一致的配置：toolbar: true（内置工具栏）+ locale: 'zh-CN' + theme: 'auto'
 // PDF 使用 pdfjs-dist legacy 构建（内置 core-js polyfill）：
@@ -674,6 +731,8 @@ async function openDocumentViewer(file: MaterialNode) {
         import('pdfjs-dist/legacy/build/pdf.mjs'),
         import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')
       ])
+      // v3.5.2 修复：必须先包装 getTextContent 再交给 pdfPlugin（防文本层失败抹掉已渲染 canvas → 黑屏）
+      patchPdfGetTextContent(pdfjs)
       // useFetchData: 主线程先取字节再交给 pdf.js，规避自定义协议（kaoyan-material://）下的
       // worker 网络流兼容问题（playground 示例同款配置）
       // v3.5.2：cMapUrl / standardFontDataUrl 本地化——库默认指向 jsDelivr CDN，
