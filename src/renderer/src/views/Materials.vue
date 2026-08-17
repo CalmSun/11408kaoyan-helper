@@ -679,19 +679,20 @@ async function openDocumentViewer(file: MaterialNode) {
       // 中文 CID 字体 PDF 解码依赖 CMap，离线/国内网络下 CDN 不可达会导致
       // 「无法渲染该页面。该页可能包含浏览器 PDF 引擎暂不支持的图形、字体或压缩特性」。
       // 资源由 scripts/copy-pdfjs-assets.mjs 复制到 src/renderer/public/pdfjs（prod 进 dist/renderer）。
-      // v3.5.2 修复：必须用相对路径而非自定义协议（kaoyan-assets://）——
-      // pdf.js 的 fetchData 仅对 http(s) URL 走 fetch，其余协议一律走 XMLHttpRequest 分支，
-      // 而 XHR 访问 Electron 自定义协议不可靠（CMap 加载失败的真正根因）。
-      // 相对路径基于 document.baseURI 解析：
-      //   dev  → http://localhost:5173/pdfjs/cmaps/（vite 服务 public，走 fetch 分支）
-      //   prod → file://.../dist/renderer/pdfjs/cmaps/（file:// XHR，Chromium 允许，status=0 分支）
+      // v3.5.2 修复（最终方案）：用 kaoyan-assets:// 自定义协议绝对 URL + 主进程 corsEnabled。
+      // 根因链：pdf.js 的 isValidFetchUrl 只认 http(s)，非 http(s)（file:// / 自定义协议）一律走
+      //   XMLHttpRequest 分支；相对路径在 prod 解析为 file://...，XHR 访问 file:// 被
+      //   webSecurity:true 的 CORS 拦截 → CMap 加载失败 → 中文 PDF 报「无法渲染该页面」。
+      // 正确做法：指向自定义协议 kaoyan-assets://（dev/prod 行为一致），并给该协议在
+      //   registerSchemesAsPrivileged 加 corsEnabled:true，让主线程 XHR 能跨域读取 CMap。
+      //   （此前相对路径方案在 dev 走 http fetch 可用，但 prod file:// XHR 被 CORS 拦——未根治）
       plugins = [mod.pdfPlugin({
         pdfjs,
         workerSrc: workerMod.default,
         useFetchData: true,
-        cMapUrl: 'pdfjs/cmaps/',
+        cMapUrl: 'kaoyan-assets://pdfjs/cmaps/',
         cMapPacked: true,
-        standardFontDataUrl: 'pdfjs/standard_fonts/'
+        standardFontDataUrl: 'kaoyan-assets://pdfjs/standard_fonts/'
       })]
       const prog = loadProgress()[file.path]
       if (typeof prog?.docPage === 'number' && prog.docPage > 1) initialPage = prog.docPage
@@ -731,8 +732,14 @@ async function openDocumentViewer(file: MaterialNode) {
         bindDocScrollCapture()
         setupDocMutationObserver()
         setupDocResizeObserver()
-        restoreDocumentProgress()
-        requestAnimationFrame(refreshDocPageNow)
+        // v3.5.2：PDF 阅读进度已通过 initialPage 选项在插件渲染完成后自动 goToPage 恢复，
+        //   onLoad 里再调 restoreDocumentProgress → restoreDocPage 会二次 goToPage，
+        //   造成滚动跳动/页码闪烁。PDF 只需刷新页码显示；Office/图片才走通用恢复。
+        if (currentFile.value?.ext === '.pdf') {
+          requestAnimationFrame(refreshDocPageNow)
+        } else {
+          restoreDocumentProgress()
+        }
       },
       onError: (err: unknown) => {
         if (gen !== docViewerGen) return
@@ -1887,14 +1894,20 @@ body.liquid-glass .glass-card:hover {
   color: var(--mo-text-3);
 }
 
-/* 预览区 */
+/* 预览区
+   v3.5.2：补全高度收缩链——grid/flex 子项默认 min-height:auto 会被内容（大文档）撑高，
+   导致预览卡片随 PDF 页数变长、整个页面出现超长滚动。给 .file-preview / .preview-container
+   设 min-height:0 后，文档在 .doc-viewer-wrap（overflow:hidden）内的 .ofv-viewport 中滚动，
+   卡片高度恒等于网格行高。 */
 .file-preview {
-  overflow: visible;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .preview-container {
   flex: 1;
-  overflow: visible;
+  overflow: hidden;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
@@ -1937,6 +1950,14 @@ body.liquid-glass .glass-card:hover {
   background: var(--mo-surface, #fff);
   border-radius: 8px;
   border: 1px solid var(--mo-border, rgba(0,0,0,0.08));
+}
+
+/* v3.5.2：隐藏库内置 PDF 页码导航器与摘要条——页面级 .doc-status-bar 已提供页码导航+阅读进度，
+   避免双导航器混淆。隐藏仅影响显示，.ofv-pdf-page-navigator input 的 value 仍可由 JS 读取，
+   页码源（readPdfNavigatorPage）不受影响。 */
+.doc-viewer-wrap :deep(.ofv-pdf-page-navigator),
+.doc-viewer-wrap :deep(.ofv-pdf-summary) {
+  display: none;
 }
 
 /* v3.5.0：PDF 模式 —— Chromium PDFium <iframe> 填满容器 */

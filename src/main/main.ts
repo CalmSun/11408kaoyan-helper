@@ -192,7 +192,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'kaoyan-music', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: 'kaoyan-data', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   { scheme: 'kaoyan-material', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
-  { scheme: 'kaoyan-assets', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+  { scheme: 'kaoyan-assets', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
 ])
 
 let mainWindow: BrowserWindow | null = null

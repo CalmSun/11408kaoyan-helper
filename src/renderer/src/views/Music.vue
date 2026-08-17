@@ -1204,6 +1204,21 @@ body.liquid-glass .glass-card:hover {
   overflow-y: auto;
 }
 
+/* v3.5.2：热门评论内容过长、卡片内部滚动时，标题「热门评论」与「查看全部评论」按钮
+   sticky 置顶不再随滚动滚出视口。负上边距抵消 .glass-card 的 20px 内边距使标题贴顶，
+   玻璃背景 + 底部边框遮住下方滚动的评论内容 */
+.hot-comment-card .section-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -20px 0 10px;
+  padding: 16px 0 10px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-filter);
+  -webkit-backdrop-filter: var(--glass-filter);
+  border-bottom: 1px solid var(--glass-border);
+}
+
 /* v3.2.4：右侧 Tab 内容卡片（搜索/云盘/排行榜/我的歌单）——主内容区，basis 0 + flex:1 填充剩余空间
    内部列表各自 overflow:auto 滚动，始终可见，不再被下方播放列表挤占
    v3.2.7：显式 overflow:hidden 防止内部列表内容越过卡片边界覆盖其他区域
