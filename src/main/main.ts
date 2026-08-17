@@ -420,6 +420,8 @@ if (!gotTheLock) {
     // v3.5.2：内置静态资源协议（pdf.js CMap / 标准字体，离线可用）。
     // prod：dist/renderer/pdfjs（Vite 从 public 拷入）；dev：src/renderer/public/pdfjs。
     // 仅暴露 pdfjs 子目录，路径穿越防护。返回 file:// 流交由 net.fetch 处理。
+    // 注：renderer 主通道已改用相对路径（pdf.js fetchData 对非 http(s) 走 XHR，自定义协议
+    // XHR 不可靠），本协议保留作备用通道；统一附加 Access-Control-Allow-Origin 兜底 CORS。
     protocol.handle('kaoyan-assets', async (request) => {
       try {
         const url = new URL(request.url)
@@ -434,7 +436,10 @@ if (!gotTheLock) {
         for (const file of candidates) {
           const resolved = path.resolve(file)
           if (fs.existsSync(resolved)) {
-            return net.fetch(pathToFileURL(resolved).toString())
+            const res = await net.fetch(pathToFileURL(resolved).toString())
+            const headers = new Headers(res.headers)
+            headers.set('Access-Control-Allow-Origin', '*')
+            return new Response(res.body, { status: res.status, headers })
           }
         }
         return new Response('not found', { status: 404 })

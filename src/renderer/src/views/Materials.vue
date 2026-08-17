@@ -337,6 +337,10 @@ function isDocumentPreview(ext?: string): boolean {
 // ============ v3.4.7：@open-file-viewer/core 文档预览状态（docx / xlsx） ============
 const viewerContainer = ref<HTMLElement | null>(null)
 let viewerInstance: any = null
+// v3.5.2：文档视图代际计数——openDocumentViewer 是异步流程，快速连续切换文件时
+// 旧文件的 createViewer 可能在新文件之后完成并覆盖实例 / 触发旧 onLoad 回调。
+// destroyDocumentViewer 会使代际 +1，在途异步流程完成时若代际不匹配则丢弃自身。
+let docViewerGen = 0
 const viewerCreating = ref(false)
 const viewerError = ref('')
 
@@ -642,6 +646,8 @@ function submitDocPage() {
 //   加载即抛 ReferenceError —— 这是 PDF 预览黑屏的根因，必须走 legacy 主线程 + legacy worker。
 async function openDocumentViewer(file: MaterialNode) {
   destroyDocumentViewer()
+  // v3.5.2：destroy 已使代际 +1，捕获当前代际；异步流程中若代际变化则放弃自身
+  const gen = docViewerGen
   invalidateDocFramesCache()
   viewerError.value = ''
   docProgress.value = 0
@@ -672,14 +678,20 @@ async function openDocumentViewer(file: MaterialNode) {
       // v3.5.2：cMapUrl / standardFontDataUrl 本地化——库默认指向 jsDelivr CDN，
       // 中文 CID 字体 PDF 解码依赖 CMap，离线/国内网络下 CDN 不可达会导致
       // 「无法渲染该页面。该页可能包含浏览器 PDF 引擎暂不支持的图形、字体或压缩特性」。
-      // 资源由 scripts/copy-pdfjs-assets.mjs 复制到 src/renderer/public/pdfjs，
-      // 经 kaoyan-assets:// 协议提供（dev/prod 均离线可用）。
+      // 资源由 scripts/copy-pdfjs-assets.mjs 复制到 src/renderer/public/pdfjs（prod 进 dist/renderer）。
+      // v3.5.2 修复：必须用相对路径而非自定义协议（kaoyan-assets://）——
+      // pdf.js 的 fetchData 仅对 http(s) URL 走 fetch，其余协议一律走 XMLHttpRequest 分支，
+      // 而 XHR 访问 Electron 自定义协议不可靠（CMap 加载失败的真正根因）。
+      // 相对路径基于 document.baseURI 解析：
+      //   dev  → http://localhost:5173/pdfjs/cmaps/（vite 服务 public，走 fetch 分支）
+      //   prod → file://.../dist/renderer/pdfjs/cmaps/（file:// XHR，Chromium 允许，status=0 分支）
       plugins = [mod.pdfPlugin({
         pdfjs,
         workerSrc: workerMod.default,
         useFetchData: true,
-        cMapUrl: 'kaoyan-assets://pdfjs/cmaps/',
-        standardFontDataUrl: 'kaoyan-assets://pdfjs/standard_fonts/'
+        cMapUrl: 'pdfjs/cmaps/',
+        cMapPacked: true,
+        standardFontDataUrl: 'pdfjs/standard_fonts/'
       })]
       const prog = loadProgress()[file.path]
       if (typeof prog?.docPage === 'number' && prog.docPage > 1) initialPage = prog.docPage
@@ -709,6 +721,12 @@ async function openDocumentViewer(file: MaterialNode) {
       initialPage,
       plugins,
       onLoad: () => {
+        // v3.5.2：代际守卫——期间若已切换到其他文件，丢弃本次回调
+        if (gen !== docViewerGen) {
+          if (viewerInstance) { try { viewerInstance.destroy() } catch { /* ignore */ } }
+          viewerInstance = null
+          return
+        }
         viewerCreating.value = false
         bindDocScrollCapture()
         setupDocMutationObserver()
@@ -717,11 +735,14 @@ async function openDocumentViewer(file: MaterialNode) {
         requestAnimationFrame(refreshDocPageNow)
       },
       onError: (err: unknown) => {
+        if (gen !== docViewerGen) return
         viewerCreating.value = false
         viewerError.value = err instanceof Error ? err.message : '文档加载失败'
       }
     })
   } catch (e) {
+    // v3.5.2：代际守卫——被新文件取代的旧流程静默退出，不覆盖新文件错误状态
+    if (gen !== docViewerGen) return
     viewerCreating.value = false
     viewerError.value = e instanceof Error ? e.message : '文档加载失败'
   }
@@ -786,6 +807,8 @@ function restoreDocScroll(target: number) {
 
 // v3.4.7：销毁文档预览
 function destroyDocumentViewer() {
+  // v3.5.2：代际 +1，使所有在途 openDocumentViewer 异步流程失效
+  docViewerGen++
   unbindDocScrollCapture()
   // v3.5.2：清理页面块缓存 / MutationObserver 防抖 rAF
   invalidateDocFramesCache()
@@ -907,7 +930,13 @@ function onVideoEnded() {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
   }
   if (autoPlayNext.value) {
-    setTimeout(() => playNextVideo(), 800)
+    // v3.5.2 修复：延迟播放前校验 currentFile 未变——800ms 内用户可能已
+    // 手动切换文件，此时连播意图已失效，禁止旧视频的连播跳转新位置
+    const endedPath = currentFile.value?.path
+    setTimeout(() => {
+      if (currentFile.value?.path !== endedPath) return
+      playNextVideo()
+    }, 800)
   }
 }
 
@@ -1045,30 +1074,50 @@ interface MaterialProgressEntry {
 }
 type MaterialProgress = Record<string, MaterialProgressEntry>
 
+// v3.5.2：进度对象内存缓存——saveProgress 每秒级调用（视频 5s / 文档滚动 1.5s）时，
+// 旧代码每次都 JSON.parse 整个 localStorage 再全量 stringify 写回；进度记录多时
+// 反复序列化大对象造成可感知卡顿。缓存命中后读操作零开销，写操作仅一次 stringify。
+let progressCache: MaterialProgress | null = null
 function loadProgress(): MaterialProgress {
+  if (progressCache) return progressCache
   try {
     const raw = localStorage.getItem(PROGRESS_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed === 'object') return parsed
+      if (parsed && typeof parsed === 'object') {
+        progressCache = parsed
+        return parsed
+      }
     }
   } catch { /* ignore */ }
-  return {}
+  progressCache = {}
+  return progressCache
 }
 
 function saveProgress(path: string, patch: Partial<MaterialProgressEntry>) {
   if (!path) return
   const all = loadProgress()
-  all[path] = { ...(all[path] || {}), ...patch, updatedAt: Date.now() }
+  const prev = all[path] || {}
+  // v3.5.2：值未实质变化（仅 updatedAt 变了）则跳过写盘——
+  // 文档滚动时页码/百分比不变的重入调用不再触发全量 JSON 序列化
+  const hasChange = (Object.keys(patch) as (keyof MaterialProgressEntry)[]).some(
+    k => prev[k] !== patch[k]
+  )
+  if (!hasChange) return
+  all[path] = { ...prev, ...patch, updatedAt: Date.now() }
   try { localStorage.setItem(PROGRESS_KEY, JSON.stringify(all)) } catch { /* ignore */ }
 }
 
 // v3.4.1：视频进度保存（按文件 path）
-function saveVideoProgress(time: number, dur: number) {
-  if (!currentFile.value || !(dur > 0)) return
+// v3.5.2 修复：切换视频瞬间 watch(currentFile) 里 currentFile 已指向新文件，
+// 若直接保存会把旧视频的播放位置写到新视频名下 → "所有视频同一进度"。
+// 增加可选 path 参数：切换场景必须显式传旧文件 path。
+function saveVideoProgress(time: number, dur: number, path?: string) {
+  const key = path || currentFile.value?.path
+  if (!key || !(dur > 0)) return
   // 已看到结尾附近（最后 5 秒）视为看完，下次从头开始
   const finalTime = time >= dur - 5 ? 0 : time
-  saveProgress(currentFile.value.path, { videoTime: finalTime, videoDuration: dur })
+  saveProgress(key, { videoTime: finalTime, videoDuration: dur })
 }
 
 // v3.4.1：视频播放中节流保存（每 5 秒，避免频繁写 localStorage）
@@ -1207,8 +1256,10 @@ watch(() => currentFile.value, async (newVal, oldVal) => {
   const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
   const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
   // v3.4.1：离开视频前保存最终进度（含 视频→视频 切换）
+  // v3.5.2 修复：必须用旧文件 path 保存——此时 currentFile 已是新文件，
+  // 用 currentFile.value.path 会把旧视频位置写入新视频（进度串号 bug）
   if (oldIsVideo && nativeVideo.value) {
-    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
+    saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration, oldVal!.path)
   }
   // 离开视频模式：释放 AudioContext
   if (oldIsVideo && !newIsVideo) {
