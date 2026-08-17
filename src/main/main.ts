@@ -184,11 +184,15 @@ function loadMaterialsFolder(): string | null {
 // - kaoyan-music:// 音乐文件夹内音频（白名单校验，v2.8.0 流式播放不占内存）
 // - kaoyan-data://  数据目录内备份文件（自动备份预览/读取）
 // - kaoyan-material:// 资料文件夹内文件（PDF/MP4 等，v2.9.0）
+// - kaoyan-assets://   应用内置静态资源（pdf.js 的 cmaps / standard_fonts，v3.5.2）
+//   解决离线/国内网络下 open-file-viewer 默认从 jsDelivr CDN 加载 CMap 失败，
+//   导致中文 CID 字体 PDF 页面渲染报错的问题。
 protocol.registerSchemesAsPrivileged([
   { scheme: 'kaoyan-bg', privileges: { standard: true, secure: true, supportFetchAPI: true } },
   { scheme: 'kaoyan-music', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
   { scheme: 'kaoyan-data', privileges: { standard: true, secure: true, supportFetchAPI: true } },
-  { scheme: 'kaoyan-material', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+  { scheme: 'kaoyan-material', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'kaoyan-assets', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ])
 
 let mainWindow: BrowserWindow | null = null
@@ -408,6 +412,32 @@ if (!gotTheLock) {
           return new Response('not found', { status: 404 })
         }
         return net.fetch(pathToFileURL(file).toString())
+      } catch {
+        return new Response('bad request', { status: 400 })
+      }
+    })
+
+    // v3.5.2：内置静态资源协议（pdf.js CMap / 标准字体，离线可用）。
+    // prod：dist/renderer/pdfjs（Vite 从 public 拷入）；dev：src/renderer/public/pdfjs。
+    // 仅暴露 pdfjs 子目录，路径穿越防护。返回 file:// 流交由 net.fetch 处理。
+    protocol.handle('kaoyan-assets', async (request) => {
+      try {
+        const url = new URL(request.url)
+        const rel = decodeURIComponent(url.host + url.pathname).replace(/^\/+/, '')
+        if (!/^pdfjs\//.test(rel)) {
+          return new Response('forbidden', { status: 403 })
+        }
+        const candidates = [
+          path.join(__dirname, '../renderer', rel),
+          path.join(app.getAppPath(), 'src/renderer/public', rel)
+        ]
+        for (const file of candidates) {
+          const resolved = path.resolve(file)
+          if (fs.existsSync(resolved)) {
+            return net.fetch(pathToFileURL(resolved).toString())
+          }
+        }
+        return new Response('not found', { status: 404 })
       } catch {
         return new Response('bad request', { status: 400 })
       }

@@ -365,6 +365,10 @@ let docMutationObserver: MutationObserver | null = null
 // v3.5.2：MutationObserver 防抖——库渲染多页文档时 subtree 变化极频繁，
 // 每次都跑 querySelectorAll + getBoundingClientRect 导致严重卡顿
 let docMutationRaf = 0
+// v3.5.2：页面块数组缓存——querySelectorAll 整个容器很贵（数百页 PDF 尤其明显），
+// 只在 MutationObserver 检测到结构变化（renderLayout 重建页面块）时失效重建；
+// scroll 帧处理直接命中缓存，避免每次滚动都全量查询 DOM。
+let docFramesCache: HTMLElement[] | null = null
 
 function isDocumentFile(ext?: string): boolean {
   return ext ? DOC_EXTS.includes(ext) : false
@@ -428,9 +432,16 @@ function getDocumentScrollEl(): HTMLElement | null {
 }
 
 // v3.4.7：获取分页文档的页面块（docx / pptx 等有分页；xlsx 无分页返回空）
+// v3.5.2：命中 docFramesCache 缓存直接返回（scroll 帧热路径零 DOM 查询）；
+// 缓存仅在 MutationObserver 检测到结构变化时由 invalidateDocFramesCache 失效。
 function getDocPageFrames(): HTMLElement[] {
-  if (!viewerContainer.value) return []
-  return Array.from(viewerContainer.value.querySelectorAll<HTMLElement>(DOC_PAGE_FRAME_SELECTOR))
+  if (docFramesCache) return docFramesCache
+  const root = viewerContainer.value
+  docFramesCache = root ? Array.from(root.querySelectorAll<HTMLElement>(DOC_PAGE_FRAME_SELECTOR)) : []
+  return docFramesCache
+}
+function invalidateDocFramesCache() {
+  docFramesCache = null
 }
 
 // v3.4.7：根据“真实滚动元素”用几何法计算当前可见页。
@@ -468,14 +479,17 @@ function refreshDocPageNow() {
   }
 }
 
-// v3.5.1：scroll 事件只是“有滚动发生”的信号。始终从规范化滚动容器（getDocumentScrollEl）
+// v3.5.1：scroll 事件只是"有滚动发生"的信号。始终从规范化滚动容器（getDocumentScrollEl）
 // 重算页码与进度，而不是依赖 e.target——嵌套滚动 / 库内部实现差异会让 e.target 不可靠，
-// 这正是此前“滚动不更新页码”的根因之一。rAF 节流避免每次滚动都做全量 getBoundingClientRect。
+// 这正是此前"滚动不更新页码"的根因之一。rAF 节流避免每次滚动都做全量 getBoundingClientRect。
+// v3.5.2：滚动容器引用在 bindDocScrollCapture 时已缓存（docScrollEl），
+// renderLayout 后由 MutationObserver 触发重绑刷新；滚动帧直接用缓存引用，
+// 不再每帧执行 getDocumentScrollEl()（querySelector + getComputedStyle）。
 function handleDocScrollCapture() {
   if (docScrollRaf) return
   docScrollRaf = requestAnimationFrame(() => {
     docScrollRaf = 0
-    const scroller = getDocumentScrollEl()
+    const scroller = docScrollEl
     if (!scroller) return
     const max = scroller.scrollHeight - scroller.clientHeight
     const progress = max > 0 ? Math.min(100, Math.max(0, Math.round((scroller.scrollTop / max) * 100))) : 0
@@ -521,9 +535,9 @@ function unbindDocScrollCapture() {
 }
 
 // v3.4.7：MutationObserver 监听文档 DOM 变化（分页块异步渲染就绪后刷新页码）
-// v3.5.2：rAF 防抖——库渲染多页文档时 subtree mutation 极频繁（每页 canvas/img
-//   加载都触发），旧代码每次都跑 querySelectorAll + getBoundingClientRect +
-//   bindDocScrollCapture，导致滚动卡顿。现在同一帧内只处理一次。
+// v3.5.2：rAF 防抖 + 数量守卫——库渲染多页文档时 subtree mutation 极频繁
+//   （每页 canvas/text-layer 挂载都触发）。页面块数量不变说明只是页内渲染
+//   进度变化，无需重算页码/重绑滚动，直接跳过，消除绝大多数无谓开销。
 function setupDocMutationObserver() {
   if (!viewerContainer.value) return
   if (docMutationObserver) {
@@ -534,9 +548,16 @@ function setupDocMutationObserver() {
     if (docMutationRaf) return
     docMutationRaf = requestAnimationFrame(() => {
       docMutationRaf = 0
+      // 数量守卫：先查当前页面块数量（命中缓存时是 O(1) 数组长度）
       const frames = getDocPageFrames()
-      if (frames.length > 0) {
-        if (frames.length !== docTotalPages.value) docTotalPages.value = frames.length
+      const total = frames.length
+      if (total === 0) return
+      if (total !== docTotalPages.value) {
+        // 结构变化（renderLayout 重建页面块 / 首次加载完成）：
+        // 失效缓存 → 重建数组 → 更新总数 → 重绑滚动容器 → 刷新页码
+        docTotalPages.value = total
+        invalidateDocFramesCache()
+        getDocPageFrames()
         // 滚动容器可能此时才渲染就绪，重新绑定直接 scroll 监听
         bindDocScrollCapture()
         refreshDocPageNow()
@@ -621,6 +642,7 @@ function submitDocPage() {
 //   加载即抛 ReferenceError —— 这是 PDF 预览黑屏的根因，必须走 legacy 主线程 + legacy worker。
 async function openDocumentViewer(file: MaterialNode) {
   destroyDocumentViewer()
+  invalidateDocFramesCache()
   viewerError.value = ''
   docProgress.value = 0
   docPage.value = 1
@@ -647,7 +669,18 @@ async function openDocumentViewer(file: MaterialNode) {
       ])
       // useFetchData: 主线程先取字节再交给 pdf.js，规避自定义协议（kaoyan-material://）下的
       // worker 网络流兼容问题（playground 示例同款配置）
-      plugins = [mod.pdfPlugin({ pdfjs, workerSrc: workerMod.default, useFetchData: true })]
+      // v3.5.2：cMapUrl / standardFontDataUrl 本地化——库默认指向 jsDelivr CDN，
+      // 中文 CID 字体 PDF 解码依赖 CMap，离线/国内网络下 CDN 不可达会导致
+      // 「无法渲染该页面。该页可能包含浏览器 PDF 引擎暂不支持的图形、字体或压缩特性」。
+      // 资源由 scripts/copy-pdfjs-assets.mjs 复制到 src/renderer/public/pdfjs，
+      // 经 kaoyan-assets:// 协议提供（dev/prod 均离线可用）。
+      plugins = [mod.pdfPlugin({
+        pdfjs,
+        workerSrc: workerMod.default,
+        useFetchData: true,
+        cMapUrl: 'kaoyan-assets://pdfjs/cmaps/',
+        standardFontDataUrl: 'kaoyan-assets://pdfjs/standard_fonts/'
+      })]
       const prog = loadProgress()[file.path]
       if (typeof prog?.docPage === 'number' && prog.docPage > 1) initialPage = prog.docPage
     } else if (DOC_EXTS.includes(ext)) {
@@ -754,7 +787,8 @@ function restoreDocScroll(target: number) {
 // v3.4.7：销毁文档预览
 function destroyDocumentViewer() {
   unbindDocScrollCapture()
-  // v3.5.2：清理 MutationObserver 防抖 rAF
+  // v3.5.2：清理页面块缓存 / MutationObserver 防抖 rAF
+  invalidateDocFramesCache()
   if (docMutationRaf) {
     cancelAnimationFrame(docMutationRaf)
     docMutationRaf = 0

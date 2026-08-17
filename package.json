@@ -5,7 +5,9 @@
   "main": "dist/main/main.js",
   "author": "Kaoyan Helper",
   "scripts": {
+    "predev": "node scripts/copy-pdfjs-assets.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs",
     "build": "vite build && tsc -p tsconfig.node.json",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && tsc -p tsconfig.node.json && cross-env NODE_ENV=development electron .\"",

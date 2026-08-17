@@ -1,5 +1,6 @@
 node_modules/ 
 dist/ 
+dist.*/ 
 release/ 
 *.tsbuildinfo 
 .DS_Store 
@@ -8,3 +9,6 @@ release/
 background.ARW
 # 网易云 API 参考文件（不入库）
 ref-api/
+
+# pdf.js CMap/标准字体（由 predev/prebuild 钩子从 node_modules/pdfjs-dist 自动复制，不入库）
+src/renderer/public/pdfjs/
