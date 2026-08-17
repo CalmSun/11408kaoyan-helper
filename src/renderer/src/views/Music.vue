@@ -1416,6 +1416,8 @@ body.liquid-glass .glass-card:hover {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  /* v3.5.2：防止搜索结果出现时输入框被 flex 布局压缩 */
+  flex-shrink: 0;
 }
 
 .search-loading {
@@ -1425,9 +1427,10 @@ body.liquid-glass .glass-card:hover {
 }
 
 .search-results {
-  flex: 1 1 auto;
+  /* v3.5.2：flex basis 改为 0，避免内容高度反向挤压上方搜索框；
+     卡片本身 overflow:hidden + flex:1 限制总高，无需 max-height */
+  flex: 1 1 0;
   min-height: 0;
-  max-height: 32vh;
   overflow-y: auto;
   padding-right: 4px;
   margin-bottom: 12px;

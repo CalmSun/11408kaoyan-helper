@@ -362,6 +362,9 @@ let docScrollEl: HTMLElement | null = null
 let docScrollRaf = 0
 let docResizeObserver: ResizeObserver | null = null
 let docMutationObserver: MutationObserver | null = null
+// v3.5.2：MutationObserver 防抖——库渲染多页文档时 subtree 变化极频繁，
+// 每次都跑 querySelectorAll + getBoundingClientRect 导致严重卡顿
+let docMutationRaf = 0
 
 function isDocumentFile(ext?: string): boolean {
   return ext ? DOC_EXTS.includes(ext) : false
@@ -494,13 +497,19 @@ function handleDocScrollCapture() {
 
 // v3.5.1：绑定 / 解绑。
 // ① 直接监听真实滚动容器的 scroll 事件（元素自身的 scroll 一定被本地监听捕获，最可靠）；
-// ② 同时保留 window 捕获阶段监听，覆盖“子元素滚动”或“滚动容器延迟出现”的边界情况。
+// ② v3.5.2：仅当未找到直接滚动容器时才兜底用 window 捕获阶段监听。
+//   旧代码同时绑定两者 → 文件树滚动、设置面板滚动等无关 scroll 也触发 handleDocScrollCapture，
+//   每次都跑 getDocumentScrollEl()（querySelector + getComputedStyle），造成全页卡顿。
 function bindDocScrollCapture() {
   unbindDocScrollCapture()
   docScrollEl = getDocumentScrollEl()
   docScrollCaptureHandler = handleDocScrollCapture
-  if (docScrollEl) docScrollEl.addEventListener('scroll', docScrollCaptureHandler)
-  window.addEventListener('scroll', docScrollCaptureHandler, true)
+  if (docScrollEl) {
+    docScrollEl.addEventListener('scroll', docScrollCaptureHandler)
+  } else {
+    // 兜底：滚动容器尚未就绪时用 window 捕获兜住
+    window.addEventListener('scroll', docScrollCaptureHandler, true)
+  }
 }
 function unbindDocScrollCapture() {
   if (docScrollCaptureHandler) {
@@ -512,6 +521,9 @@ function unbindDocScrollCapture() {
 }
 
 // v3.4.7：MutationObserver 监听文档 DOM 变化（分页块异步渲染就绪后刷新页码）
+// v3.5.2：rAF 防抖——库渲染多页文档时 subtree mutation 极频繁（每页 canvas/img
+//   加载都触发），旧代码每次都跑 querySelectorAll + getBoundingClientRect +
+//   bindDocScrollCapture，导致滚动卡顿。现在同一帧内只处理一次。
 function setupDocMutationObserver() {
   if (!viewerContainer.value) return
   if (docMutationObserver) {
@@ -519,14 +531,20 @@ function setupDocMutationObserver() {
     docMutationObserver = null
   }
   docMutationObserver = new MutationObserver(() => {
-    const frames = getDocPageFrames()
-    if (frames.length > 0) {
-      if (frames.length !== docTotalPages.value) docTotalPages.value = frames.length
-      // 滚动容器可能此时才渲染就绪，重新绑定直接 scroll 监听
-      bindDocScrollCapture()
-      refreshDocPageNow()
-    }
+    if (docMutationRaf) return
+    docMutationRaf = requestAnimationFrame(() => {
+      docMutationRaf = 0
+      const frames = getDocPageFrames()
+      if (frames.length > 0) {
+        if (frames.length !== docTotalPages.value) docTotalPages.value = frames.length
+        // 滚动容器可能此时才渲染就绪，重新绑定直接 scroll 监听
+        bindDocScrollCapture()
+        refreshDocPageNow()
+      }
+    })
   })
+  // v3.5.2：只监听 childList（结构变化），不监听 attributes/characterData，
+  //   库内部频繁修改 canvas/data-attr 会产生大量无意义 mutation
   docMutationObserver.observe(viewerContainer.value, { childList: true, subtree: true })
 }
 
@@ -736,6 +754,11 @@ function restoreDocScroll(target: number) {
 // v3.4.7：销毁文档预览
 function destroyDocumentViewer() {
   unbindDocScrollCapture()
+  // v3.5.2：清理 MutationObserver 防抖 rAF
+  if (docMutationRaf) {
+    cancelAnimationFrame(docMutationRaf)
+    docMutationRaf = 0
+  }
   if (docResizeObserver) {
     docResizeObserver.disconnect()
     docResizeObserver = null
@@ -923,17 +946,31 @@ const flatFiles = computed<DisplayNode[]>(() => {
 
 const displayNodes = computed(() => flatFiles.value)
 
-const totalFileCount = computed(() => {
-  let count = 0
-  function walk(nodes: MaterialNode[]) {
+// v3.5.2：预计算每个文件夹的文件数（避免模板中每次渲染都递归遍历子节点）
+// 同时计算总文件数，替代旧 totalFileCount 的独立遍历
+const folderFileCounts = computed(() => {
+  const map = new Map<string, number>()
+  let total = 0
+  function walk(nodes: MaterialNode[]): number {
+    let count = 0
     for (const n of nodes) {
-      if (n.type === 'folder' && n.children) walk(n.children)
-      else count++
+      if (n.type === 'folder' && n.children) {
+        const childCount = walk(n.children)
+        map.set(n.path, childCount)
+        count += childCount
+      } else {
+        count++
+        total++
+      }
     }
+    return count
   }
   walk(fileTree.value)
-  return count
+  map.set('__total__', total)
+  return map
 })
+
+const totalFileCount = computed(() => folderFileCounts.value.get('__total__') || 0)
 
 function folderHasMatchingFiles(folder: MaterialNode): boolean {
   if (!folder.children) return false
@@ -952,16 +989,9 @@ function folderHasMatchingFiles(folder: MaterialNode): boolean {
   return false
 }
 
+// v3.5.2：从预计算缓存读取，O(1) 查表替代递归遍历
 function countFilesInFolder(folder: MaterialNode): number {
-  let count = 0
-  function walk(nodes: MaterialNode[]) {
-    for (const n of nodes) {
-      if (n.type === 'folder' && n.children) walk(n.children)
-      else count++
-    }
-  }
-  if (folder.children) walk(folder.children)
-  return count
+  return folderFileCounts.value.get(folder.path) || 0
 }
 
 // ============ v3.5.2：学习进度保存（文档页码 / 视频播放位置 / 当前文件路径）
@@ -1496,13 +1526,6 @@ function downloadFile() {
   a.href = currentFile.value.url || ''
   a.download = currentFile.value.name
   a.click()
-}
-
-// 监听全屏变化（用户按 ESC 退出时同步状态）
-if (typeof document !== 'undefined') {
-  document.addEventListener('fullscreenchange', () => {
-    // 原生 <video> 全屏由浏览器/控件自行处理，此处无需额外操作
-  })
 }
 </script>
 
