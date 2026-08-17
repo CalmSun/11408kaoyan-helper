@@ -417,11 +417,13 @@ if (!gotTheLock) {
       }
     })
 
-    // v3.5.2：内置静态资源协议（pdf.js CMap / 标准字体，离线可用）。
-    // prod：dist/renderer/pdfjs（Vite 从 public 拷入）；dev：src/renderer/public/pdfjs。
-    // 仅暴露 pdfjs 子目录，路径穿越防护。返回 file:// 流交由 net.fetch 处理。
-    // 注：renderer 主通道已改用相对路径（pdf.js fetchData 对非 http(s) 走 XHR，自定义协议
-    // XHR 不可靠），本协议保留作备用通道；统一附加 Access-Control-Allow-Origin 兜底 CORS。
+    // v3.5.2：内置静态资源协议（pdf.js CMap / 标准字体，离线可用）——PDF CMap 加载主通道。
+    // prod：dist/renderer/pdfjs（Vite 从 public 拷入，打包进 app.asar）；dev：src/renderer/public/pdfjs。
+    // 仅暴露 pdfjs 子目录，路径穿越防护。
+    // 关键：用 fs.promises.readFile 直读字节（fs 对 app.asar 透明解包、无条件支持），
+    // 而非 net.fetch(file://)——后者对 asar 内文件的 file:// 读取在部分 Electron 版本下不稳定，
+    // 会导致打包后 CMap 加载失败、中文 PDF 报「无法渲染该页面」。协议已注册 corsEnabled:true，
+    // 配合下方 Access-Control-Allow-Origin:* 让渲染进程主线程 XHR 能跨域读取 CMap。
     protocol.handle('kaoyan-assets', async (request) => {
       try {
         const url = new URL(request.url)
@@ -435,11 +437,15 @@ if (!gotTheLock) {
         ]
         for (const file of candidates) {
           const resolved = path.resolve(file)
-          if (fs.existsSync(resolved)) {
-            const res = await net.fetch(pathToFileURL(resolved).toString())
-            const headers = new Headers(res.headers)
+          try {
+            const buf = await fs.promises.readFile(resolved)
+            const headers = new Headers()
             headers.set('Access-Control-Allow-Origin', '*')
-            return new Response(res.body, { status: res.status, headers })
+            headers.set('Content-Type', 'application/octet-stream')
+            headers.set('Content-Length', String(buf.byteLength))
+            return new Response(buf, { status: 200, headers })
+          } catch {
+            continue
           }
         }
         return new Response('not found', { status: 404 })

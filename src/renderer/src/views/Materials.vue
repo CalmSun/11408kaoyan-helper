@@ -81,6 +81,29 @@
         <h3 class="section-title">
           <el-icon><View /></el-icon>
           <span class="preview-title-name">{{ currentFile?.name || '选择文件预览' }}</span>
+          <!-- v3.5.2：文档进度栏（页码导航 + 阅读进度）移至顶栏中间（标题与「默认应用打开」按钮之间），
+               美化后与整体玻璃风格统一；仅文档预览时显示 -->
+          <div class="doc-status-bar" v-if="currentFile && isDocumentPreview(currentFile.ext)">
+            <div class="doc-page-nav" v-if="docTotalPages > 1">
+              <button class="dpn-btn" :disabled="docPage <= 1" @click="goDocPage(-1)" title="上一页">‹</button>
+              <input
+                class="dpn-input"
+                type="number"
+                min="1"
+                :max="docTotalPages"
+                v-model.number="docPageInput"
+                @keyup.enter="submitDocPage"
+                @change="submitDocPage"
+                title="输入页码后回车跳转"
+              />
+              <span class="dpn-total">/ {{ docTotalPages }}</span>
+              <button class="dpn-btn" :disabled="docPage >= docTotalPages" @click="goDocPage(1)" title="下一页">›</button>
+            </div>
+            <div class="doc-progress-track" :title="`阅读进度 ${docProgress}%`">
+              <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
+            </div>
+            <span class="doc-progress-text">{{ docProgress }}%</span>
+          </div>
           <el-button
             v-if="currentFile"
             size="small"
@@ -95,34 +118,12 @@
         </h3>
         <div class="preview-container" v-if="currentFile">
           <!-- v3.5.2：统一文档预览（PDF / Office / 图片 → 全部走 createViewer 多插件架构）
-               复刻 open-file-viewer playground 示例布局：
-               [状态栏：页码导航 + 阅读进度] + [viewerContainer（内置工具栏 toolbar:true + zh-CN）] + [加载/错误遮罩]
+               复刻 open-file-viewer playground 示例布局：[viewerContainer（内置工具栏）+ 加载/错误遮罩]。
+               页码导航 + 阅读进度已移至顶栏（.doc-status-bar，见上方 section-title）。
                PDF 使用 pdfPlugin（pdfjs-dist legacy 构建，兼容 Electron 28 / Chromium 120），
-               与 Office/图片共用同一套页码跟踪（库内 .ofv-pdf-page-navigator 为 PDF 页码源）和状态栏逻辑。
+               与 Office/图片共用同一套页码跟踪（库内 .ofv-pdf-page-navigator 为 PDF 页码源）。
                视频文件走独立预览（下方 v-else-if="isVideo(...)"），不受影响。 -->
           <div v-if="isDocumentPreview(currentFile.ext)" class="doc-wrap">
-            <!-- v3.5.2：文档状态栏（页码导航 + 阅读进度），所有文档类型共用 -->
-            <div class="doc-status-bar">
-              <div class="doc-page-nav" v-if="docTotalPages > 1">
-                <button class="dpn-btn" :disabled="docPage <= 1" @click="goDocPage(-1)" title="上一页">‹</button>
-                <input
-                  class="dpn-input"
-                  type="number"
-                  min="1"
-                  :max="docTotalPages"
-                  v-model.number="docPageInput"
-                  @keyup.enter="submitDocPage"
-                  @change="submitDocPage"
-                  title="输入页码后回车跳转"
-                />
-                <span class="dpn-total">/ {{ docTotalPages }}</span>
-                <button class="dpn-btn" :disabled="docPage >= docTotalPages" @click="goDocPage(1)" title="下一页">›</button>
-              </div>
-              <div class="doc-progress-track" :title="`阅读进度 ${docProgress}%`">
-                <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
-              </div>
-              <span class="doc-progress-text">{{ docProgress }}%</span>
-            </div>
             <!-- 统一预览容器：所有文档类型由 createViewer 渲染 -->
             <div ref="viewerContainer" class="doc-viewer-wrap"></div>
             <!-- 加载占位 -->
@@ -1745,8 +1746,9 @@ body.liquid-glass .glass-card:hover {
 }
 
 .preview-title-name {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1924,20 +1926,101 @@ body.liquid-glass .glass-card:hover {
   position: relative;
 }
 
-/* v3.4.4→v3.4.9：文档阅读进度条（顶部细条，随滚动实时更新） */
-.doc-progress-wrap {
-  height: 3px;
-  border-radius: 3px;
-  background: var(--mo-surface, rgba(255,255,255,0.06));
+/* v3.5.2：文档进度栏（页码导航 + 阅读进度）——移至顶栏中间，胶囊样式与玻璃风格统一 */
+.doc-status-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 auto;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: var(--mo-bg-2, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--mo-border, rgba(0, 0, 0, 0.08));
+}
+
+.doc-page-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dpn-btn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mo-text-2);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.dpn-btn:hover:not(:disabled) {
+  background: var(--mo-bg-1, rgba(255, 255, 255, 0.1));
+  color: var(--mo-text-1);
+}
+.dpn-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.dpn-input {
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  text-align: center;
+  border: 1px solid var(--mo-border, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mo-text-1);
+  font-size: 12px;
+  line-height: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.dpn-input:focus {
+  outline: none;
+  border-color: var(--mo-primary, #409eff);
+}
+.dpn-input::-webkit-outer-spin-button,
+.dpn-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.dpn-total {
+  font-size: 12px;
+  color: var(--mo-text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.doc-progress-track {
+  width: 110px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--mo-surface, rgba(255, 255, 255, 0.1));
   overflow: hidden;
   flex-shrink: 0;
 }
 
 .doc-progress-bar {
   height: 100%;
-  border-radius: 3px;
+  border-radius: 999px;
   background: var(--mo-primary, #409eff);
   transition: width 0.12s linear;
+}
+
+.doc-progress-text {
+  min-width: 34px;
+  font-size: 12px;
+  color: var(--mo-text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* v3.5.0：统一文档预览容器（createViewer 渲染区 / PDFium iframe 容器）
