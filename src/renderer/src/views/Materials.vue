@@ -94,76 +94,53 @@
           </el-button>
         </h3>
         <div class="preview-container" v-if="currentFile">
-          <!-- PDF 预览（v3.4.0：Chromium PDFium <iframe> 渲染） -->
-          <div v-if="currentFile.ext === '.pdf'" class="pdf-wrap">
-            <!-- PDF 工具栏（v3.4.1：新增页码导航与进度保存） -->
-            <div class="pdf-toolbar">
-              <div class="pdf-page-nav">
-                <button class="pdf-page-btn" :disabled="pdfPage <= 1" @click="goPdfPage(-1)" title="上一页">
-                  <el-icon><ArrowLeft /></el-icon>
-                </button>
-                <span class="pdf-page-indicator">
-                  第
-                  <input
-                    v-model.number="pdfPageInput"
-                    class="pdf-page-input"
-                    type="number"
-                    min="1"
-                    @change="jumpPdfPage(pdfPageInput)"
-                    title="输入页码后回车跳转"
-                  />
-                  页
-                </span>
-                <button class="pdf-page-btn" @click="goPdfPage(1)" title="下一页">
-                  <el-icon><ArrowRight /></el-icon>
-                </button>
-              </div>
-              <el-icon class="pdf-tip-icon"><InfoFilled /></el-icon>
-              <span class="pdf-tip">已通过内置查看器打开，可翻页 / 缩放 / 搜索 / 打印（快捷键 Ctrl+F 搜索），返回后自动恢复阅读进度</span>
+          <!-- v3.5.0：统一文档预览（PDF / Office / 图片 → createViewer 多插件架构）
+               复刻 open-file-viewer playground 示例布局：
+               [进度条] + [viewerContainer（工具栏由 toolbar.render 统一渲染）] + [加载/错误遮罩]
+               视频文件走独立预览（下方 v-else-if="isVideo(...)"），不受影响。 -->
+          <div v-else-if="isDocumentPreview(currentFile.ext)" class="doc-wrap">
+            <!-- 阅读进度条（滚动节流更新，所有文档类型共用） -->
+            <div class="doc-progress-wrap" :title="`阅读进度 ${docProgress}%`">
+              <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
             </div>
-            <!-- PDF 渲染区 -->
-            <div class="pdf-viewer-wrap">
+            <!-- 统一预览容器：Office/图片由 createViewer 渲染；PDF 由 iframe 嵌入 -->
+            <div ref="viewerContainer" class="doc-viewer-wrap">
+              <!-- PDF 模式：Chromium PDFium <iframe>（pdfjs-dist 在 Electron 28 下有 ES2025 兼容问题，故保留原生方案） -->
               <iframe
-                v-if="pdfFrameUrl"
+                v-if="currentFile.ext === '.pdf' && pdfFrameUrl"
                 ref="pdfFrame"
                 class="pdf-frame"
                 :src="pdfFrameUrl"
                 @load="pdfLoading = false"
                 @error="onPdfFrameError"
               ></iframe>
-              <!-- 加载占位 -->
-              <div v-if="pdfLoading" class="pdf-loading-mask">
-                <div class="pdf-loading-spinner"></div>
-                <span class="pdf-loading-text">PDF 加载中...</span>
-              </div>
-              <!-- 错误提示 -->
-              <div v-if="pdfError" class="pdf-error-mask">
-                <el-icon :size="40"><Warning /></el-icon>
-                <span>PDF 加载失败</span>
-                <span class="pdf-error-detail">{{ pdfError }}</span>
-                <el-button size="small" type="primary" @click="pdfRetry">重试</el-button>
-              </div>
             </div>
-          </div>
-
-          <!-- v3.4.9：Office 文档预览（docx / xlsx，@open-file-viewer/core officePlugin + 自定义工具栏） -->
-          <div v-else-if="isDocumentFile(currentFile.ext)" class="doc-wrap">
-            <!-- 阅读进度条（滚动节流更新） -->
-            <div class="doc-progress-wrap" :title="`阅读进度 ${docProgress}%`">
-              <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
-            </div>
-            <div ref="viewerContainer" class="doc-viewer-wrap"></div>
-            <div v-if="viewerCreating" class="doc-loading-mask">
+            <!-- 加载占位（createViewer 模式） -->
+            <div v-if="viewerCreating && currentFile.ext !== '.pdf'" class="doc-loading-mask">
               <div class="doc-loading-spinner"></div>
               <span class="doc-loading-text">文档加载中...</span>
             </div>
-            <div v-if="viewerError" class="doc-error-mask">
+            <!-- PDF 加载占位 -->
+            <div v-if="currentFile.ext === '.pdf' && pdfLoading" class="doc-loading-mask">
+              <div class="doc-loading-spinner"></div>
+              <span class="doc-loading-text">PDF 加载中...</span>
+            </div>
+            <!-- 错误提示（统一） -->
+            <div v-if="viewerError || pdfError" class="doc-error-mask">
               <el-icon :size="40"><Warning /></el-icon>
-              <span>文档加载失败</span>
-              <span class="doc-error-detail">{{ viewerError }}</span>
-              <el-button size="small" type="primary" @click="openDocumentViewer(currentFile)">重试</el-button>
+              <span>{{ viewerError || pdfError || '文档加载失败' }}</span>
+              <span class="doc-error-detail">{{ viewerError || pdfError || '' }}</span>
+              <el-button size="small" type="primary" @click="retryDocumentPreview">重试</el-button>
             </div>
           </div>
+
+          <!-- 图片回退（imagePlugin 加载失败时显示原始 <img>，正常情况不会走到这里）
+               注：isImage 在 isDocumentPreview 中已覆盖，此块仅作为安全兜底 -->
+          <img
+            v-else-if="isImage(currentFile.ext)"
+            :src="currentFile.url"
+            class="image-viewer-fallback"
+          />
 
           <!-- 视频播放（v3.3.9：原生 video + 倍速/封面/播放列表弹出） -->
           <div v-else-if="isVideo(currentFile.ext)" class="video-wrap" ref="videoWrap">
@@ -292,13 +269,7 @@
             </transition>
           </div>
 
-          <!-- 图片预览 -->
-          <img
-            v-else-if="isImage(currentFile.ext)"
-            :src="currentFile.url"
-            class="image-viewer"
-          />
-          <!-- 其他文件 -->
+          <!-- 其他文件（非文档/非视频的未知格式） -->
           <div v-else class="unsupported">
             <el-icon :size="48"><Warning /></el-icon>
             <p>该文件类型暂不支持在线预览</p>
@@ -373,8 +344,14 @@ const expandedFolders = ref<Set<string>>(new Set())
 
 const VIDEO_EXTS = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv']
 const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp']
-// v3.4.3：文档预览支持（docx / xlsx）
-const DOC_EXTS = ['.docx', '.xlsx']
+// v3.4.3→v3.5.0：文档预览支持范围（统一通过 createViewer 预览）
+// Office 文档（officePlugin）、PDF（PDFium iframe，因 pdfjs-dist 在 Electron 28 兼容问题）、图片（imagePlugin）
+const DOC_EXTS = ['.docx', '.xlsx', '.pptx']
+// v3.5.0：统一文档预览判断 —— 覆盖 PDF / Office / 图片，视频除外均走文档预览路径
+function isDocumentPreview(ext?: string): boolean {
+  if (!ext) return false
+  return ext === '.pdf' || DOC_EXTS.includes(ext) || IMAGE_EXTS.includes(ext.toLowerCase())
+}
 
 // ============ v3.4.7：@open-file-viewer/core 文档预览状态（docx / xlsx） ============
 const viewerContainer = ref<HTMLElement | null>(null)
@@ -712,11 +689,10 @@ function updateCustomToolbarDisplay() {
   }
 }
 
-// v3.4.9：创建文档预览（createViewer + officePlugin + 自定义工具栏）
-async function openDocumentViewer(file: MaterialNode) {
-  destroyDocumentViewer()
-  viewerCreating.value = true
+// v3.5.0：统一文档预览入口（PDF / Office / 图片 → 自动选择渲染方式）
+async function openDocumentViewer(file: MaterialNode) {  destroyDocumentViewer()
   viewerError.value = ''
+  pdfError.value = ''
   docProgress.value = 0
   docPage.value = 1
   docPageInput.value = 1
@@ -724,13 +700,37 @@ async function openDocumentViewer(file: MaterialNode) {
   lastDocProgressSave = 0
   docScrollRestoreAttempt = 0
 
+  const ext = file.ext || ''
+
+  // ===== PDF 模式：Chromium PDFium <iframe> =====
+  if (ext === '.pdf') {
+    viewerCreating.value = true
+    pdfLoading.value = true
+    pdfError.value = ''
+    const prog = loadProgress()[file.path]
+    const startPage = prog?.pdfPage && prog.pdfPage > 0 ? prog.pdfPage : 1
+    pdfPage.value = startPage
+    pdfPageInput.value = startPage
+    pdfFrameUrl.value = buildPdfFrameUrl(file.url || '', startPage)
+    return
+  }
+
+  // ===== Office / 图片模式：createViewer + 插件 =====
+  viewerCreating.value = true
+
   try {
-    const { createViewer, officePlugin } = await import('@open-file-viewer/core')
+    const mod = await import('@open-file-viewer/core')
+    const { createViewer } = mod
+    let plugins: any[] = []
+    if (DOC_EXTS.includes(ext)) {
+      plugins = [mod.officePlugin()]
+    } else if (IMAGE_EXTS.includes(ext.toLowerCase())) {
+      plugins = [mod.imagePlugin()]
+    }
+
     await new Promise(resolve => setTimeout(resolve, 80))
     if (!viewerContainer.value) { viewerCreating.value = false; return }
 
-    // 恢复上次阅读页码：库官方 initialPage 在加载后定位；onLoad 后再叠加 goToPage 兜底，
-    // 规避分页块异步渲染导致 initialPage 提前生效失败的情况。
     const prog = loadProgress()[file.path]
     const savedPage = typeof prog?.docPage === 'number' && prog.docPage > 0 ? prog.docPage : 1
 
@@ -743,9 +743,6 @@ async function openDocumentViewer(file: MaterialNode) {
       theme: 'auto',
       locale: 'zh-CN',
       initialPage: savedPage,
-      // v3.4.9：统一自定义工具栏 —— 替代"外部 .doc-toolbar + 内部 .ofv-toolbar"双栏结构
-      // 利用 ctx 官方 API（goToPage/previous/next/zoom/setZoom/download/fullscreen/print/search）
-      // 同时保留自有页码跟踪（DOM 几何法）用于进度保存/恢复，因 ctx 不暴露 page/totalPages
       toolbar: {
         zoom: true,
         fullscreen: true,
@@ -765,12 +762,10 @@ async function openDocumentViewer(file: MaterialNode) {
           previous: '上一页',
           next: '下一页'
         },
-        order: ['previous', 'next', 'zoom-out', 'zoom-in', 'zoom-reset', 'rotate-left', 'rotate-right', 'download', 'fullscreen', 'print', 'search'],
-        render(ctx) {
-          return renderDocToolbar(ctx)
-        }
+        order: ['previous','next','zoom-out','zoom-in','zoom-reset','rotate-left','rotate-right','download','fullscreen','print','search'],
+        render(ctx) { return renderDocToolbar(ctx) }
       },
-      plugins: [officePlugin()],
+      plugins,
       onLoad: () => {
         viewerCreating.value = false
         bindDocScrollCapture()
@@ -788,6 +783,13 @@ async function openDocumentViewer(file: MaterialNode) {
     viewerCreating.value = false
     viewerError.value = e instanceof Error ? e.message : '文档加载失败'
   }
+}
+
+// v3.5.0：统一重试入口（根据当前文件类型自动选择重试方式）
+function retryDocumentPreview() {
+  if (!currentFile.value) return
+  if (currentFile.value.ext === '.pdf') pdfRetry()
+  else openDocumentViewer(currentFile.value)
 }
 
 // v3.4.7：恢复文档阅读进度（优先按页码定位，无分页文档按滚动百分比）
@@ -1103,9 +1105,11 @@ function folderHasMatchingFiles(folder: MaterialNode): boolean {
       if (folderHasMatchingFiles(child)) return true
     } else {
       if (filterType.value === 'pdf' && child.ext === '.pdf') return true
-      if (filterType.value === 'doc' && DOC_EXTS.includes(child.ext || '')) return true
+      // v3.5.0：'doc' 过滤器覆盖 Office + 图片（统一文档预览）
+      if (filterType.value === 'doc' && (DOC_EXTS.includes(child.ext || '') || IMAGE_EXTS.includes(child.ext || ''))) return true
       if (filterType.value === 'video' && isVideo(child.ext || '')) return true
-      if (filterType.value === 'other' && child.ext !== '.pdf' && !DOC_EXTS.includes(child.ext || '') && !isVideo(child.ext || '')) return true
+      // v3.5.0：'other' = 非文档/非视频（PDF 现在也属于文档范畴）
+      if (filterType.value === 'other' && !isDocumentPreview(child.ext || '') && !isVideo(child.ext || '')) return true
     }
   }
   return false
@@ -1207,25 +1211,28 @@ onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
-// v3.4.1：keep-alive 激活（从其他页面返回学习资料页）时恢复键盘监听
-// v3.4.3：返回时恢复 PDF 页码和文档进度
-// v3.4.7：返回时恢复 Office 文档页码/滚动进度
+// v3.5.0：keep-alive 激活（从其他页面返回学习资料页）时恢复状态
+// 统一文档路径：PDF / Office / 图片 共用同一恢复逻辑
 onActivated(() => {
   window.addEventListener('keydown', onVideoKeydown)
   // 恢复当前文件进度
   if (currentFile.value) {
-    if (currentFile.value.ext === '.pdf') {
-      const prog = loadProgress()[currentFile.value.path]
-      if (prog?.pdfPage) {
-        pdfPage.value = prog.pdfPage
-        pdfPageInput.value = prog.pdfPage
+    if (isDocumentPreview(currentFile.value.ext || '')) {
+      // PDF 模式：恢复页码（iframe 通过 hash 跳转，无需重建）
+      if (currentFile.value.ext === '.pdf') {
+        const prog = loadProgress()[currentFile.value.path]
+        if (prog?.pdfPage) {
+          pdfPage.value = prog.pdfPage
+          pdfPageInput.value = prog.pdfPage
+        }
+      } else {
+        // Office / 图片模式：重新绑定滚动监听 + 恢复页码
+        bindDocScrollCapture()
+        setupDocMutationObserver()
+        setupDocResizeObserver()
+        restoreDocumentProgress()
+        requestAnimationFrame(refreshDocPageNow)
       }
-    } else if (isDocumentFile(currentFile.value.ext || '')) {
-      bindDocScrollCapture()
-      setupDocMutationObserver()
-      setupDocResizeObserver()
-      restoreDocumentProgress()
-      requestAnimationFrame(refreshDocPageNow)
     } else if (isVideo(currentFile.value.ext || '')) {
       const el = nativeVideo.value
       if (el) {
@@ -1238,17 +1245,17 @@ onActivated(() => {
   }
 })
 
-// v3.4.1：keep-alive 失活（切换到其他页面）时：
+// v3.5.0：keep-alive 失活（切换到其他页面）时：
 //   - 移除键盘监听，避免误控隐藏页面的视频
 //   - 保存视频进度并暂停，保持「原状态」，返回后可继续观看
-// v3.4.4：失活时同步兜底保存文档阅读进度
+//   - 统一保存文档阅读进度（PDF / Office / 图片）
 onDeactivated(() => {
   window.removeEventListener('keydown', onVideoKeydown)
   if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
     nativeVideo.value.pause()
     videoPlaying.value = false
-  } else if (currentFile.value && isDocumentFile(currentFile.value.ext || '')) {
+  } else if (currentFile.value && isDocumentPreview(currentFile.value.ext || '')) {
     saveDocumentProgress()
   }
 })
@@ -1273,7 +1280,7 @@ onUnmounted(() => {
 function handleBeforeUnload() {
   if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
-  } else if (currentFile.value && isDocumentFile(currentFile.value.ext || '')) {
+  } else if (currentFile.value && isDocumentPreview(currentFile.value.ext || '')) {
     saveDocumentProgress()
   }
 }
@@ -1289,31 +1296,25 @@ function disposeAudioResources() {
   }
 }
 
-// v3.0.0：切换文件时重置状态
+// v3.5.0：切换文件时重置状态（统一文档路由）
 // v3.3.1：仅在「离开视频模式」时释放音频链路
 // v3.3.8：适配原生 <video> 元素生命周期
-// v3.4.0：PDF 走 PDFium iframe（懒挂载 + 卸载释放）
+// PDF / Office / 图片 统一走 openDocumentViewer → 自动选择渲染方式
 watch(() => currentFile.value, async (newVal, oldVal) => {
-  // v3.4.7：切换前兜底保存旧文档进度 —— 此时 currentFile 已指向新文件，
-  // 但 docPage / docProgress ref 仍属于旧文档，用 oldVal.path 落盘
-  if (oldVal && DOC_EXTS.includes(oldVal.ext || '')) {
-    saveDocumentProgress(docProgress.value, oldVal.path)
+  // 切换前兜底保存旧文档进度（覆盖 PDF / Office / 图片）
+  const oldIsDoc = oldVal && isDocumentPreview(oldVal.ext || '')
+  const newIsDoc = newVal && isDocumentPreview(newVal.ext || '')
+  if (oldIsDoc) {
+    saveDocumentProgress(docProgress.value, oldVal!.path)
   }
-  // v3.4.0: 离开 PDF 模式时卸载 iframe 释放渲染资源
-  if (oldVal?.ext === '.pdf' && newVal?.ext !== '.pdf') {
-    await destroyPdf()
-  }
-  // 进入 PDF 模式：加载文档
-  if (newVal?.ext === '.pdf' && newVal.url) {
-    await loadPdf(newVal.url)
-  }
-  // v3.4.4：离开 Office 文档模式时销毁预览
-  if (oldVal && DOC_EXTS.includes(oldVal.ext || '') && !(newVal && DOC_EXTS.includes(newVal.ext || ''))) {
+  // 离开文档模式时销毁预览（统一清理 createViewer 实例 + PDF iframe）
+  if (oldIsDoc && !newIsDoc) {
     destroyDocumentViewer()
+    unloadPdf()
   }
-  // v3.4.4：进入 Office 文档模式：创建预览
-  if (newVal && DOC_EXTS.includes(newVal.ext || '') && newVal.url) {
-    await openDocumentViewer(newVal)
+  // 进入文档模式：统一入口（内部根据 ext 自动选择 PDFium iframe / officePlugin / imagePlugin）
+  if (newIsDoc && newVal!.url) {
+    await openDocumentViewer(newVal!)
   }
   const oldIsVideo = !!(oldVal && isVideo(oldVal.ext || ''))
   const newIsVideo = !!(newVal && isVideo(newVal.ext || ''))
@@ -1652,6 +1653,8 @@ function isImage(ext?: string): boolean {
 function getIconClass(ext: string): string {
   if (ext === '.pdf') return 'icon-pdf'
   if (DOC_EXTS.includes(ext)) return 'icon-doc'
+  // v3.5.0：图片文件独立图标
+  if (IMAGE_EXTS.includes(ext.toLowerCase())) return 'icon-image'
   if (isVideo(ext)) return 'icon-video'
   return 'icon-other'
 }
@@ -1964,183 +1967,9 @@ body.liquid-glass .glass-card:hover {
   flex-direction: column;
 }
 
-/* v3.3.2：PDF 工具栏 */
-.pdf-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  gap: 8px;
-}
+/* v3.5.0：PDF 样式已合并到统一文档容器（.doc-viewer-wrap 内的 .pdf-frame） */
 
-.pdf-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.04));
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.pdf-tip-icon {
-  font-size: 14px;
-  color: var(--mo-primary, #409eff);
-  flex-shrink: 0;
-}
-
-.pdf-tip {
-  font-size: 12px;
-  color: var(--mo-text-3, #888);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* v3.4.1: PDF 页码导航控件 */
-.pdf-page-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.pdf-page-btn {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
-  border-radius: 6px;
-  background: var(--mo-surface, rgba(255,255,255,0.06));
-  color: var(--mo-text-2, #ccc);
-  cursor: pointer;
-  transition: all 0.15s;
-  padding: 0;
-}
-
-.pdf-page-btn:hover:not(:disabled) {
-  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
-  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
-  color: var(--mo-text-1, #222);
-}
-
-.pdf-page-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.pdf-page-indicator {
-  font-size: 12px;
-  color: var(--mo-text-2, #ccc);
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  white-space: nowrap;
-}
-
-.pdf-page-input {
-  width: 44px;
-  height: 24px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--mo-text-1, #eee);
-  background: var(--mo-surface, rgba(255,255,255,0.06));
-  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
-  border-radius: 6px;
-  outline: none;
-  transition: border-color 0.15s;
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-
-.pdf-page-input::-webkit-outer-spin-button,
-.pdf-page-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.pdf-page-input:focus {
-  border-color: var(--mo-primary, #409eff);
-}
-
-/* v3.3.2：PDF 查看器容器 */
-.pdf-viewer-wrap {
-  flex: 1;
-  overflow: auto;
-  position: relative;
-  display: flex;
-  justify-content: center;
-  background: var(--mo-bg, #1a1c25);
-  border-radius: 8px;
-  padding: 8px;
-}
-
-.pdf-error-mask {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  align-items: center;
-  justify-content: center;
-  background: rgba(245, 108, 108, 0.08);
-  color: #f56c6c;
-  font-size: 14px;
-  z-index: 2;
-  border-radius: 8px;
-}
-
-.pdf-loading-mask {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  align-items: center;
-  justify-content: center;
-  background: var(--mo-surface, #1a1c25);
-  z-index: 2;
-  border-radius: 8px;
-}
-
-.pdf-loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(64, 158, 255, 0.15);
-  border-top-color: var(--mo-primary, #409eff);
-  border-radius: 50%;
-  animation: pdf-spin 0.8s linear infinite;
-}
-
-@keyframes pdf-spin {
-  to { transform: rotate(360deg); }
-}
-
-.pdf-loading-text {
-  font-size: 13px;
-  color: var(--mo-text-3, #888);
-}
-
-.pdf-frame {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  border: none;
-  border-radius: 4px;
-  background: #fff;
-}
-
-.pdf-error-detail {
-  font-size: 12px;
-  color: var(--mo-text-3, #888);
-  max-width: 300px;
-  text-align: center;
-  word-break: break-all;
-}
-
-/* v3.4.9：Office 文档预览容器 */
+/* v3.5.0：统一文档预览容器（PDF / Office / 图片 共用） */
 .doc-wrap {
   flex: 1;
   display: flex;
@@ -2166,6 +1995,8 @@ body.liquid-glass .glass-card:hover {
   transition: width 0.12s linear;
 }
 
+/* v3.5.0：统一文档预览容器（createViewer 渲染区 / PDFium iframe 容器）
+   复刻 playground 示例：浅色背景、圆角、细边框 */
 .doc-viewer-wrap {
   flex: 1;
   min-height: 0;
@@ -2173,7 +2004,15 @@ body.liquid-glass .glass-card:hover {
   position: relative;
   background: var(--mo-surface, #fff);
   border-radius: 8px;
-  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
+  border: 1px solid var(--mo-border, rgba(0,0,0,0.08));
+}
+
+/* v3.5.0：PDF 模式 —— Chromium PDFium <iframe> 填满容器 */
+.doc-viewer-wrap .pdf-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 7px; /* 略小于容器的 8px，避免双边框 */
 }
 
 /* v3.4.9：统一自定义文档工具栏（toolbar.render 输出）
@@ -2355,7 +2194,11 @@ body.liquid-glass .glass-card:hover {
   border: 3px solid rgba(64, 158, 255, 0.15);
   border-top-color: var(--mo-primary, #409eff);
   border-radius: 50%;
-  animation: pdf-spin 0.8s linear infinite;
+  animation: doc-spin 0.8s linear infinite;
+}
+
+@keyframes doc-spin {
+  to { transform: rotate(360deg); }
 }
 
 .doc-loading-text {
@@ -2739,6 +2582,15 @@ body.liquid-glass .glass-card:hover {
   max-height: 100%;
   object-fit: contain;
   border-radius: 8px;
+}
+
+/* v3.5.0：图片回退样式（imagePlugin 加载失败时的 <img> 兜底） */
+.image-viewer-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  background: var(--mo-surface, #f5f5f5);
 }
 
 .unsupported {
