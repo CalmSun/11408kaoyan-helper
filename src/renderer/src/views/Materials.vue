@@ -94,48 +94,52 @@
           </el-button>
         </h3>
         <div class="preview-container" v-if="currentFile">
-          <!-- v3.5.0：统一文档预览（PDF / Office / 图片 → createViewer 多插件架构）
+          <!-- v3.5.2：统一文档预览（PDF / Office / 图片 → 全部走 createViewer 多插件架构）
                复刻 open-file-viewer playground 示例布局：
-               [进度条] + [viewerContainer（工具栏由 toolbar.render 统一渲染）] + [加载/错误遮罩]
+               [状态栏：页码导航 + 阅读进度] + [viewerContainer（内置工具栏 toolbar:true + zh-CN）] + [加载/错误遮罩]
+               PDF 使用 pdfPlugin（pdfjs-dist legacy 构建，兼容 Electron 28 / Chromium 120），
+               与 Office/图片共用同一套页码跟踪（库内 .ofv-pdf-page-navigator 为 PDF 页码源）和状态栏逻辑。
                视频文件走独立预览（下方 v-else-if="isVideo(...)"），不受影响。 -->
           <div v-if="isDocumentPreview(currentFile.ext)" class="doc-wrap">
-            <!-- 阅读进度条（滚动节流更新，所有文档类型共用） -->
-            <div class="doc-progress-wrap" :title="`阅读进度 ${docProgress}%`">
-              <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
+            <!-- v3.5.2：文档状态栏（页码导航 + 阅读进度），所有文档类型共用 -->
+            <div class="doc-status-bar">
+              <div class="doc-page-nav" v-if="docTotalPages > 1">
+                <button class="dpn-btn" :disabled="docPage <= 1" @click="goDocPage(-1)" title="上一页">‹</button>
+                <input
+                  class="dpn-input"
+                  type="number"
+                  min="1"
+                  :max="docTotalPages"
+                  v-model.number="docPageInput"
+                  @keyup.enter="submitDocPage"
+                  @change="submitDocPage"
+                  title="输入页码后回车跳转"
+                />
+                <span class="dpn-total">/ {{ docTotalPages }}</span>
+                <button class="dpn-btn" :disabled="docPage >= docTotalPages" @click="goDocPage(1)" title="下一页">›</button>
+              </div>
+              <div class="doc-progress-track" :title="`阅读进度 ${docProgress}%`">
+                <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
+              </div>
+              <span class="doc-progress-text">{{ docProgress }}%</span>
             </div>
-            <!-- 统一预览容器：Office/图片由 createViewer 渲染；PDF 由 iframe 嵌入 -->
-            <div ref="viewerContainer" class="doc-viewer-wrap">
-              <!-- PDF 模式：Chromium PDFium <iframe>（pdfjs-dist 在 Electron 28 下有 ES2025 兼容问题，故保留原生方案） -->
-              <iframe
-                v-if="currentFile.ext === '.pdf' && pdfFrameUrl"
-                  ref="pdfFrame"
-                  class="pdf-frame"
-                  :src="pdfFrameUrl"
-                  @load="onPdfFrameLoad"
-                  @error="onPdfFrameError"
-              ></iframe>
-            </div>
-            <!-- 加载占位（createViewer 模式） -->
-            <div v-if="viewerCreating && currentFile.ext !== '.pdf'" class="doc-loading-mask">
+            <!-- 统一预览容器：所有文档类型由 createViewer 渲染 -->
+            <div ref="viewerContainer" class="doc-viewer-wrap"></div>
+            <!-- 加载占位 -->
+            <div v-if="viewerCreating" class="doc-loading-mask">
               <div class="doc-loading-spinner"></div>
-              <span class="doc-loading-text">文档加载中...</span>
+              <span class="doc-loading-text">{{ currentFile.ext === '.pdf' ? 'PDF 加载中...' : '文档加载中...' }}</span>
             </div>
-            <!-- PDF 加载占位 -->
-            <div v-if="currentFile.ext === '.pdf' && pdfLoading" class="doc-loading-mask">
-              <div class="doc-loading-spinner"></div>
-              <span class="doc-loading-text">PDF 加载中...</span>
-            </div>
-            <!-- 错误提示（统一） -->
-            <div v-if="viewerError || pdfError" class="doc-error-mask">
+            <!-- 错误提示 -->
+            <div v-if="viewerError" class="doc-error-mask">
               <el-icon :size="40"><Warning /></el-icon>
-              <span>{{ viewerError || pdfError || '文档加载失败' }}</span>
-              <span class="doc-error-detail">{{ viewerError || pdfError || '' }}</span>
+              <span>{{ viewerError }}</span>
+              <span class="doc-error-detail">{{ viewerError }}</span>
               <el-button size="small" type="primary" @click="retryDocumentPreview">重试</el-button>
             </div>
           </div>
 
-          <!-- 图片回退（imagePlugin 加载失败时显示原始 <img>，正常情况不会走到这里）
-               注：isImage 在 isDocumentPreview 中已覆盖，此块仅作为安全兜底 -->
+          <!-- 图片回退（imagePlugin 加载失败时显示原始 <img>，正常情况不会走到这里） -->
           <img
             v-else-if="isImage(currentFile.ext)"
             :src="currentFile.url"
@@ -303,36 +307,10 @@ import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
   View, Warning, ArrowRight, ArrowLeft, List, Loading, Open, InfoFilled
 } from '@element-plus/icons-vue'
-// v3.4.4：Office 文档预览改用 @open-file-viewer/core（officePlugin 按需动态加载）
-// open-file-viewer 的 officePlugin 统一支持 docx/xlsx/pptx/rtf/odt 等，包体仅在打开文档时加载，
-// 避免常驻体积。PDF 仍用 PDFium iframe —— 因 open-file-viewer 依赖 pdfjs-dist 6.x，
-// 在 Electron 28 (Chromium 120) 存在 ES2025 语法兼容问题（见项目历史教训）。
+// v3.5.2：统一文档预览（PDF / Office / 图片 → 全部走 createViewer 多插件架构）
+// PDF 使用 pdfPlugin（pdfjs-dist），与 Office/图片共用同一套页码跟踪和工具栏逻辑。
+// 所有插件按需动态加载，避免常驻体积。
 import '@open-file-viewer/core/style.css'
-
-// v3.4.0: PDF 预览改用 Chromium 内置 PDFium（<iframe>）。
-// 此前 pdfjs-dist 6.x 在 Electron 28 (Chromium 120) 下因 ES2025 语法/worker 兼容问题
-// 反复出现「加载后无内容」；Chromium PDFium 为系统内置渲染器，零依赖、无 worker、
-// 不额外占内存，且自带翻页/缩放/搜索/打印等功能，是最稳定方案。
-const pdfFrame = ref<HTMLIFrameElement | null>(null)
-const pdfFrameUrl = ref('')
-// v3.5.1：PDF 内部页码轮询句柄（best-effort，跨域时静默降级）
-let pdfHashPoll: number | null = null
-
-// v3.4.0: 由当前 PDF 文件 URL 拼接 PDFium 查看器参数（FitH 适应宽度，toolbar 显示原生工具条）
-// v3.4.1: 支持 page 参数——打开时恢复到上次阅读页码
-function buildPdfFrameUrl(url: string, page = 1): string {
-  return `${url}#view=FitH&toolbar=1&page=${page}`
-}
-
-// v3.4.1: 当前 PDF 页码（父页面自管，导航时重载 iframe 的 page 参数）
-const pdfPage = ref(1)
-const pdfPageInput = ref(1)
-
-// v3.4.0: 卸载 iframe 释放 PDFium 渲染资源（切换文件/离开 PDF 模式时调用）
-function unloadPdf() {
-  clearPdfPageTracking()
-  pdfFrameUrl.value = ''
-}
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
 interface DisplayNode extends MaterialNode {
@@ -372,9 +350,11 @@ let docScrollRestoreAttempt = 0
 const DOC_PROGRESS_SAVE_INTERVAL = 1500
 // v3.4.7：页码 / 滚动恢复重试上限（分页块为异步渲染时轮询直到就绪）
 const DOC_RESTORE_MAX_ATTEMPTS = 60
-// v3.4.7：open-file-viewer 分页文档页面块选择器（取自库内部 goToRenderedPage，
-// 覆盖 docx / 文本框页面 / 旧版 msdoc / pptx 幻灯片，确保页码统计准确）
-const DOC_PAGE_FRAME_SELECTOR = '.ofv-docx-page-frame, .ofv-docx-textbox-page, .ofv-msdoc-page, .ofv-slide, .ofv-ppt-binary-slide'
+// v3.5.2：open-file-viewer 分页文档页面块选择器（取自库内部 goToRenderedPage，
+// 覆盖 PDF / docx / 文本框页面 / 旧版 msdoc / pptx 幻灯片，确保页码统计准确）
+// 修复：PDF 页面块是 .ofv-pdf-page-wrapper（骨架页即存在，带 data-page-index），
+// 旧值 .ofv-pdf-page 是 canvas 类名——只有已渲染页才有 canvas，导致总页数偏少 / 页码计算错误
+const DOC_PAGE_FRAME_SELECTOR = '.ofv-pdf-page-wrapper, .ofv-docx-page-frame, .ofv-docx-textbox-page, .ofv-msdoc-page, .ofv-slide, .ofv-ppt-binary-slide'
 
 let docScrollCaptureHandler: (() => void) | null = null
 // v3.5.1：真实滚动容器引用（直接监听它的 scroll 事件，比 window 捕获更可靠）
@@ -385,6 +365,25 @@ let docMutationObserver: MutationObserver | null = null
 
 function isDocumentFile(ext?: string): boolean {
   return ext ? DOC_EXTS.includes(ext) : false
+}
+
+// v3.5.2：读取库内置 PDF 页码导航器的当前页码（唯一真实来源）。
+// pdfPlugin 内部在滚动 / goToPage 时同步更新该输入框（.ofv-pdf-page-navigator input），
+// 与库 UI 永不脱节；读不到时返回 0，由调用方退化到几何法计算。
+function readPdfNavigatorPage(): number {
+  const input = viewerContainer.value?.querySelector<HTMLInputElement>('.ofv-pdf-page-navigator input')
+  const v = input ? parseInt(input.value, 10) : NaN
+  return Number.isFinite(v) && v > 0 ? v : 0
+}
+
+// v3.5.2：统一获取当前页码 —— PDF 优先读库导航器（与库算法完全一致），
+// 其余文档（docx / pptx 等）用几何法；两者都失败返回 1
+function computeCurrentDocPage(scroller: HTMLElement | null): number {
+  if (currentFile.value?.ext === '.pdf') {
+    const fromNav = readPdfNavigatorPage()
+    if (fromNav > 0) return fromNav
+  }
+  return scroller ? computeDocPageFromScroller(scroller) : 1
 }
 
 // v3.4.7：判断元素是否真正可滚动（用于定位文档真实滚动容器）
@@ -453,19 +452,17 @@ function computeDocPageFromScroller(scroller: HTMLElement): number {
 }
 
 // v3.4.7：无滚动事件时（翻页 / 恢复 / 缩放 / 布局变化）刷新当前页码
+// v3.5.2：PDF 改读库导航器输入框（与库 UI 一致），其余文档保持几何法
 function refreshDocPageNow() {
   const frames = getDocPageFrames()
   if (frames.length === 0) return
   if (docTotalPages.value !== frames.length) docTotalPages.value = frames.length
   const scroller = getDocumentScrollEl()
-  if (!scroller) return
-  const page = computeDocPageFromScroller(scroller)
+  const page = computeCurrentDocPage(scroller)
   if (page !== docPage.value) {
     docPage.value = page
     docPageInput.value = page
   }
-  // v3.4.9：同步更新自定义工具栏中的页码/总页数显示
-  updateCustomToolbarDisplay()
 }
 
 // v3.5.1：scroll 事件只是“有滚动发生”的信号。始终从规范化滚动容器（getDocumentScrollEl）
@@ -480,12 +477,13 @@ function handleDocScrollCapture() {
     const max = scroller.scrollHeight - scroller.clientHeight
     const progress = max > 0 ? Math.min(100, Math.max(0, Math.round((scroller.scrollTop / max) * 100))) : 0
     if (progress !== docProgress.value) docProgress.value = progress
-    const page = computeDocPageFromScroller(scroller)
+    // v3.5.2：rAF 回调在库自身滚动处理器之后执行，此时库已同步完导航器输入框，
+    // PDF 读到的页码与库 UI 完全一致；其余文档走几何法
+    const page = computeCurrentDocPage(scroller)
     if (page !== docPage.value) {
       docPage.value = page
       docPageInput.value = page
     }
-    updateCustomToolbarDisplay()
     const now = Date.now()
     if (now - lastDocProgressSave >= DOC_PROGRESS_SAVE_INTERVAL) {
       lastDocProgressSave = now
@@ -548,7 +546,8 @@ function setupDocResizeObserver() {
   docResizeObserver.observe(viewerContainer.value)
 }
 
-// v3.4.7：保存文档阅读进度（页码 + 滚动百分比）
+// v3.5.2：保存文档阅读进度（页码 + 滚动百分比）
+// v3.5.2 更新：统一使用 docPage 字段保存所有文档类型的页码（包括 PDF）
 function saveDocumentProgress(progress = docProgress.value, filePath?: string) {
   const path = filePath || currentFile.value?.path
   if (!path) return
@@ -586,134 +585,25 @@ function goDocPage(delta: number) {
   jumpDocPage(docPage.value + delta)
 }
 
-// v3.4.9：统一自定义文档工具栏渲染（toolbar.render）
-// 利用 open-file-viewer 官方 ctx API（goToPage/previous/next/zoom/setZoom/download/fullscreen/print/search）
-// 同时桥接自有页码跟踪状态（docPage/docTotalPages）用于显示和进度保存
-// 布局参考 playground 示例：[< 页码/总页 >] | [- 缩放% + 重置 旋转] | [下载 全屏 打印] | [搜索框]
-function renderDocToolbar(ctx: any): HTMLElement {
-  const bar = document.createElement('div')
-  bar.className = 'ofv-toolbar ofv-custom-toolbar'
-
-  // ===== 左区：页码导航 =====
-  const pageGroup = document.createElement('div')
-  pageGroup.className = 'ofv-tb-group ofv-tb-page-nav'
-  const prevBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>', '上一页', () => { ctx.previous(); syncPageFromCtx(ctx) })
-  const pageInput = document.createElement('input')
-  pageInput.className = 'ofv-tb-page-input'
-  pageInput.type = 'number'
-  pageInput.min = '1'
-  pageInput.value = String(docPage.value)
-  pageInput.title = '输入页码后回车跳转'
-  pageInput.addEventListener('change', () => {
-    const p = parseInt(pageInput.value, 10)
-    if (Number.isFinite(p) && p > 0) {
-      const ok = ctx.goToPage(p)
-      if (ok) { docPage.value = p; docPageInput.value = p; saveDocumentProgress() }
-      else pageInput.value = String(docPage.value)
-    } else {
-      pageInput.value = String(docPage.value)
-    }
-  })
-  const pageSep = document.createElement('span')
-  pageSep.className = 'ofv-tb-page-sep'
-  pageSep.textContent = '/ '
-  const totalPagesSpan = document.createElement('span')
-  totalPagesSpan.className = 'ofv-tb-total-pages'
-  totalPagesSpan.textContent = String(docTotalPages.value || '—')
-  const nextBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>', '下一页', () => { ctx.next(); syncPageFromCtx(ctx) })
-  pageGroup.append(prevBtn, pageInput, pageSep, totalPagesSpan, nextBtn)
-
-  // ===== 中区：缩放 + 旋转 =====
-  const zoomGroup = document.createElement('div')
-  zoomGroup.className = 'ofv-tb-group ofv-tb-zoom'
-  const zoomOutBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>', '缩小', () => ctx.command?.('zoom-out'))
-  const zoomLabel = document.createElement('span')
-  zoomLabel.className = 'ofv-tb-zoom-label'
-  zoomLabel.textContent = ctx.zoomLabel || (ctx.zoom ? Math.round(ctx.zoom * 100) + '%' : '100%')
-  zoomLabel.title = '当前缩放比例'
-  const zoomInBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>', '放大', () => ctx.command?.('zoom-in'))
-  const zoomResetBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>', '重置缩放', () => ctx.command?.('zoom-reset'))
-  const rotateLeftBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7.11 8.53L5.7 7.11C4.8 8 4.18 9.11 3.91 10.3L2V5h5.3l-1.5 1.5A9 9 0 0119 11h-2a7 7 0 00-9.89-2.47zM16.59 15.49l1.41 1.41a7.94 7.94 0 002.09-2.7H17.9c-.26.77-.72 1.48-1.31 2.09zM13 19v-2a7 7 0 00-5.06-2.1L9.5 14.4 8.08 12.98l-3.3 3.3 3.3 3.3 1.42-1.41-1.56-1.57A9 9 0 0013 19z"/></svg>', '左旋转', () => ctx.command?.('rotate-left'))
-  const rotateRightBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12c0 2.27.94 4.32 2.45 5.78l1.42-1.42A6 6 0 016 12c0-3.08 2.24-5.64 5.18-6.32V9l4.55-4.55zM19.04 6.21l-1.42 1.42A6 6 0 0118 12c0 3.08-2.24 5.64-5.18 6.32V15l-4.55 4.55L14 23v-3.07c3.94-.49 7-3.85 7-7.93 0-2.27-.94-4.32-2.45-5.78z"/></svg>', '右旋转', () => ctx.command?.('rotate-right'))
-  zoomGroup.append(zoomOutBtn, zoomLabel, zoomInBtn, zoomResetBtn, rotateLeftBtn, rotateRightBtn)
-
-  // ===== 右区：下载 / 全屏 / 打印 =====
-  const actionGroup = document.createElement('div')
-  actionGroup.className = 'ofv-tb-group ofv-tb-actions'
-  const dlBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>', '下载', () => ctx.download())
-  const fsBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>', ctx.isFullscreen ? '退出全屏' : '全屏', () => ctx.fullscreen())
-  const printBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>', '打印', () => ctx.print())
-  actionGroup.append(dlBtn, fsBtn, printBtn)
-
-  // ===== 最右：搜索框 =====
-  const searchWrap = document.createElement('div')
-  searchWrap.className = 'ofv-tb-search-wrap'
-  const searchIcon = document.createElement('span')
-  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'
-  searchIcon.className = 'ofv-tb-search-icon'
-  const searchInput = document.createElement('input')
-  searchInput.className = 'ofv-tb-search-input'
-  searchInput.type = 'text'
-  searchInput.placeholder = '搜索（Ctrl+F）'
-  searchInput.title = '输入关键词搜索文档内容'
-  let searchTimer: ReturnType<typeof setTimeout> | null = null
-  searchInput.addEventListener('input', () => {
-    if (searchTimer) clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => {
-      const q = searchInput.value.trim()
-      if (q) ctx.search(q)
-      else ctx.clearSearch?.()
-    }, 300)
-  })
-  searchInput.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Escape') { searchInput.value = ''; ctx.clearSearch?.(); (searchInput as HTMLInputElement).blur() }
-  })
-  searchWrap.append(searchIcon, searchInput)
-
-  // 组装
-  bar.append(pageGroup, zoomGroup, actionGroup, searchWrap)
-
-  // 暴露引用供外部更新
-  ;(bar as any).__pageInput = pageInput
-  ;(bar as any).__totalPages = totalPagesSpan
-  ;(bar as any).__zoomLabel = zoomLabel
-  ;(bar as any).__searchInput = searchInput
-  ;(bar as any).__ctx = ctx
-
-  return bar
+// v3.5.2：状态栏页码输入框提交（回车 / change）—— 夹紧到有效页码后跳转
+function submitDocPage() {
+  const p = Number(docPageInput.value)
+  if (Number.isFinite(p) && p >= 1) jumpDocPage(p)
+  else docPageInput.value = docPage.value
 }
 
-/** 工具栏按钮辅助 */
-function tbButton(svg: string, title: string, onClick: () => void): HTMLButtonElement {
-  const btn = document.createElement('button')
-  btn.type = 'button'
-  btn.className = 'ofv-tb-btn'
-  btn.title = title
-  btn.innerHTML = svg
-  btn.addEventListener('click', onClick)
-  return btn
-}
+// v3.5.2：文档工具栏改用库内置工具栏（toolbar: true + locale: 'zh-CN'，与 playground 示例一致），
+// 自定义 toolbar.render 方案已移除——内置工具栏由库管理状态（缩放百分比 / 按钮禁用 / 搜索计数），
+// 页码导航与阅读进度改由页面级「文档状态栏」承担（见模板 .doc-status-bar），避免双状态源不同步。
 
-/** 调用 previous/next 后通过 DOM 几何法同步页码 */
-function syncPageFromCtx(_ctx: any) {
-  requestAnimationFrame(() => refreshDocPageNow())
-}
-
-/** 外部驱动更新自定义工具栏显示（页码/总页/缩放） */
-function updateCustomToolbarDisplay() {
-  const bar = document.querySelector('.ofv-custom-toolbar') as any
-  if (!bar) return
-  if (bar.__pageInput) bar.__pageInput.value = String(docPage.value)
-  if (bar.__totalPages) bar.__totalPages.textContent = String(docTotalPages.value || '—')
-  if (bar.__zoomLabel && bar.ctx) {
-    bar.__zoomLabel.textContent = bar.ctx.zoomLabel || (bar.ctx.zoom ? Math.round(bar.ctx.zoom * 100) + '%' : '100%')
-  }
-}
-
-// v3.5.0：统一文档预览入口（PDF / Office / 图片 → 自动选择渲染方式）
-async function openDocumentViewer(file: MaterialNode) {  destroyDocumentViewer()
+// v3.5.2：统一文档预览入口（PDF / Office / 图片 → 全部走 createViewer）
+// 与 playground 示例一致的配置：toolbar: true（内置工具栏）+ locale: 'zh-CN' + theme: 'auto'
+// PDF 使用 pdfjs-dist legacy 构建（内置 core-js polyfill）：
+//   modern 构建引用 Iterator.prototype（Chromium 122+ 才有全局 Iterator），Electron 28 (Chromium 120)
+//   加载即抛 ReferenceError —— 这是 PDF 预览黑屏的根因，必须走 legacy 主线程 + legacy worker。
+async function openDocumentViewer(file: MaterialNode) {
+  destroyDocumentViewer()
   viewerError.value = ''
-  pdfError.value = ''
   docProgress.value = 0
   docPage.value = 1
   docPageInput.value = 1
@@ -722,28 +612,27 @@ async function openDocumentViewer(file: MaterialNode) {  destroyDocumentViewer()
   docScrollRestoreAttempt = 0
 
   const ext = file.ext || ''
-
-  // ===== PDF 模式：Chromium PDFium <iframe> =====
-  if (ext === '.pdf') {
-    viewerCreating.value = true
-    pdfLoading.value = true
-    pdfError.value = ''
-    const prog = loadProgress()[file.path]
-    const startPage = prog?.pdfPage && prog.pdfPage > 0 ? prog.pdfPage : 1
-    pdfPage.value = startPage
-    pdfPageInput.value = startPage
-    pdfFrameUrl.value = buildPdfFrameUrl(file.url || '', startPage)
-    return
-  }
-
-  // ===== Office / 图片模式：createViewer + 插件 =====
   viewerCreating.value = true
 
   try {
     const mod = await import('@open-file-viewer/core')
     const { createViewer } = mod
     let plugins: any[] = []
-    if (DOC_EXTS.includes(ext)) {
+    // v3.5.2：PDF 阅读进度恢复改用官方 initialPage 选项（库在插件渲染完成后自动 goToPage）
+    let initialPage: number | undefined
+
+    // v3.5.2：根据文件类型选择插件（与 playground createPlugins 对应的子集）
+    if (ext === '.pdf') {
+      const [pdfjs, workerMod] = await Promise.all([
+        import('pdfjs-dist/legacy/build/pdf.mjs'),
+        import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')
+      ])
+      // useFetchData: 主线程先取字节再交给 pdf.js，规避自定义协议（kaoyan-material://）下的
+      // worker 网络流兼容问题（playground 示例同款配置）
+      plugins = [mod.pdfPlugin({ pdfjs, workerSrc: workerMod.default, useFetchData: true })]
+      const prog = loadProgress()[file.path]
+      if (typeof prog?.docPage === 'number' && prog.docPage > 1) initialPage = prog.docPage
+    } else if (DOC_EXTS.includes(ext)) {
       plugins = [mod.officePlugin()]
     } else if (IMAGE_EXTS.includes(ext.toLowerCase())) {
       plugins = [mod.imagePlugin()]
@@ -752,40 +641,21 @@ async function openDocumentViewer(file: MaterialNode) {  destroyDocumentViewer()
     await new Promise(resolve => setTimeout(resolve, 80))
     if (!viewerContainer.value) { viewerCreating.value = false; return }
 
-    const prog = loadProgress()[file.path]
-    const savedPage = typeof prog?.docPage === 'number' && prog.docPage > 0 ? prog.docPage : 1
-
+    // v3.5.2：内置工具栏 + locale 中文本地化（参考官方 API 文档和 playground 示例）
+    // 内置工具栏自带缩放（重置按钮显示百分比）/ 旋转 / 下载 / 全屏 / 打印 / 搜索（带计数），
+    // 按钮可用性由库按插件能力自动管理，无自定义状态同步问题。
+    // 页码导航由页面级文档状态栏承担，PDF 库内导航器已通过 CSS 隐藏避免双导航。
     viewerInstance = createViewer({
       container: viewerContainer.value,
       file: file.url,
       fileName: file.name,
       height: '100%',
       width: '100%',
+      fit: 'contain',
       theme: 'auto',
       locale: 'zh-CN',
-      initialPage: savedPage,
-      toolbar: {
-        zoom: true,
-        fullscreen: true,
-        search: true,
-        download: true,
-        print: true,
-        rotate: true,
-        labels: {
-          search: '搜索',
-          download: '下载',
-          fullscreen: '全屏',
-          'exit-fullscreen': '退出全屏',
-          print: '打印',
-          'zoom-reset': '重置缩放',
-          'rotate-left': '左旋转',
-          'rotate-right': '右旋转',
-          previous: '上一页',
-          next: '下一页'
-        },
-        order: ['previous','next','zoom-out','zoom-in','zoom-reset','rotate-left','rotate-right','download','fullscreen','print','search'],
-        render(ctx) { return renderDocToolbar(ctx) }
-      },
+      toolbar: true,
+      initialPage,
       plugins,
       onLoad: () => {
         viewerCreating.value = false
@@ -806,11 +676,10 @@ async function openDocumentViewer(file: MaterialNode) {  destroyDocumentViewer()
   }
 }
 
-// v3.5.0：统一重试入口（根据当前文件类型自动选择重试方式）
+// v3.5.2：统一重试入口（所有文档类型统一走 openDocumentViewer）
 function retryDocumentPreview() {
   if (!currentFile.value) return
-  if (currentFile.value.ext === '.pdf') pdfRetry()
-  else openDocumentViewer(currentFile.value)
+  openDocumentViewer(currentFile.value)
 }
 
 // v3.4.7：恢复文档阅读进度（优先按页码定位，无分页文档按滚动百分比）
@@ -887,107 +756,8 @@ function destroyDocumentViewer() {
   docTotalPages.value = 0
 }
 
-// ============ v3.4.0: PDF 状态（Chromium PDFium <iframe> 渲染） ============
-// PDF 加载由 Chromium 内核处理，无需前端解析，状态仅需记录是否出错/加载中。
-const pdfLoading = ref(false)
-const pdfError = ref('')
-
-// v3.4.0: 加载 PDF（iframe 懒挂载，卸载时清空 src 释放 PDFium 资源）
-// v3.4.1: 打开时恢复到上次阅读页码
-function loadPdf(url: string) {
-  unloadPdf()
-  pdfLoading.value = true
-  pdfError.value = ''
-  // 恢复上次阅读页码
-  const prog = currentFile.value ? loadProgress()[currentFile.value.path] : null
-  const startPage = prog?.pdfPage && prog.pdfPage > 0 ? prog.pdfPage : 1
-  pdfPage.value = startPage
-  pdfPageInput.value = startPage
-  // 打开时直接指定起始页码，由 iframe 加载完成后关闭 loading
-  pdfFrameUrl.value = buildPdfFrameUrl(url, startPage)
-}
-
-// v3.4.1: PDF 页码导航（±1 页）并保存进度
-function goPdfPage(delta: number) {
-  const target = pdfPage.value + delta
-  if (target < 1) return
-  jumpPdfPage(target)
-}
-
-// v3.4.3：PDF 页码导航 — 仅更新 iframe hash，无需重载整个 PDF
-function jumpPdfPage(target: number) {
-  if (!Number.isFinite(target)) return
-  if (target < 1) target = 1
-  pdfPage.value = target
-  pdfPageInput.value = target
-  if (currentFile.value) saveProgress(currentFile.value.path, { pdfPage: target })
-  const url = currentFile.value?.url
-  if (!url) return
-  // 仅更新 hash 即可跳转页码，Chromium PDFium 不会重新加载 PDF
-  pdfFrameUrl.value = buildPdfFrameUrl(url, target)
-}
-
-function pdfRetry() {
-  if (currentFile.value?.url) loadPdf(currentFile.value.url)
-}
-
-// v3.4.0: iframe 加载出错时提示（PDFium 无法打开的文件会走此回调）
-function onPdfFrameError() {
-  pdfLoading.value = false
-  pdfError.value = '文件可能已损坏或不是有效的 PDF 文档'
-}
-
-// v3.5.1：PDF 内部页码跟踪（best-effort）。
-// PDFium 查看器在用户用其内置翻页/滚动改变页码时会更新 iframe 的 #page 参数，
-// 但父页面无法直接监听（常因 chrome-extension 跨域而受限）。这里：
-//   ① 尝试给 iframe.contentWindow 绑定 hashchange（同源时生效）；
-//   ② 兜底每 800ms 轮询一次 iframe 的 hash（跨域抛错则静默跳过）。
-// 两者都仅在可访问时同步 pdfPage 并保存进度，否则退化为“仅自有工具栏翻页记录”。
-function onPdfFrameLoad() {
-  pdfLoading.value = false
-  setupPdfPageTracking()
-}
-function setupPdfPageTracking() {
-  const frame = pdfFrame.value
-  if (!frame) return
-  const cw = frame.contentWindow
-  if (!cw) return
-  try {
-    cw.addEventListener('hashchange', syncPdfPageFromHash)
-    syncPdfPageFromHash()
-  } catch { /* 跨域不可访问，静默降级 */ }
-  if (pdfHashPoll) clearInterval(pdfHashPoll)
-  pdfHashPoll = window.setInterval(() => {
-    try { syncPdfPageFromHash() } catch { /* 跨域不可访问，静默降级 */ }
-  }, 800)
-}
-function syncPdfPageFromHash() {
-  const frame = pdfFrame.value
-  if (!frame) return
-  const cw = frame.contentWindow
-  if (!cw) return
-  let hash = ''
-  try { hash = cw.location.hash } catch { return }
-  const m = /[?&#]page=(\d+)/.exec(hash)
-  if (m) {
-    const p = parseInt(m[1], 10)
-    if (p > 0 && p !== pdfPage.value) {
-      pdfPage.value = p
-      pdfPageInput.value = p
-      if (currentFile.value) saveProgress(currentFile.value.path, { pdfPage: p })
-    }
-  }
-}
-function clearPdfPageTracking() {
-  if (pdfHashPoll) { clearInterval(pdfHashPoll); pdfHashPoll = null }
-}
-
-function destroyPdf() {
-  clearPdfPageTracking()
-  unloadPdf()
-  pdfLoading.value = false
-  pdfError.value = ''
-}
+// v3.5.2：PDF 现在统一走 createViewer + pdfPlugin，不再需要单独的 PDF iframe 逻辑
+// 所有文档类型（PDF/Office/图片）共用同一套页码跟踪、工具栏和进度保存逻辑
 
 // ============ v3.3.8：视频状态管理（原生 <video> + Web Audio API 增益） ============
 const videoWrap = ref<HTMLElement | null>(null)
@@ -1194,16 +964,16 @@ function countFilesInFolder(folder: MaterialNode): number {
   return count
 }
 
-// ============ v3.4.2：学习进度保存（PDF 页码 / 视频播放位置 / 当前文件路径）
+// ============ v3.5.2：学习进度保存（文档页码 / 视频播放位置 / 当前文件路径）
 // 以文件 path 为 key 存 localStorage，重新打开应用后自动恢复上次文件与进度
+// v3.5.2 更新：PDF 现在也统一使用 docPage 字段，不再单独使用 pdfPage
 const PROGRESS_KEY = 'materials-progress'
 const CURRENT_FILE_KEY = 'materials-current-file'
 
 interface MaterialProgressEntry {
-  pdfPage?: number
   videoTime?: number
   videoDuration?: number
-  // v3.4.7：Office 文档（docx）阅读页码
+  // v3.5.2：所有文档类型（PDF / Office）统一使用 docPage 字段保存页码
   docPage?: number
   // v3.4.4：Office 文档阅读进度（滚动百分比 0-100，xlsx 及无分页文档用）
   scrollProgress?: number
@@ -1278,28 +1048,19 @@ onMounted(async () => {
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
-// v3.5.0：keep-alive 激活（从其他页面返回学习资料页）时恢复状态
-// 统一文档路径：PDF / Office / 图片 共用同一恢复逻辑
+// v3.5.2：keep-alive 激活（从其他页面返回学习资料页）时恢复状态
+// 统一文档路径：PDF / Office / 图片 共用同一恢复逻辑（全部走 createViewer）
 onActivated(() => {
   window.addEventListener('keydown', onVideoKeydown)
   // 恢复当前文件进度
   if (currentFile.value) {
     if (isDocumentPreview(currentFile.value.ext || '')) {
-      // PDF 模式：恢复页码（iframe 通过 hash 跳转，无需重建）
-      if (currentFile.value.ext === '.pdf') {
-        const prog = loadProgress()[currentFile.value.path]
-        if (prog?.pdfPage) {
-          pdfPage.value = prog.pdfPage
-          pdfPageInput.value = prog.pdfPage
-        }
-      } else {
-        // Office / 图片模式：重新绑定滚动监听 + 恢复页码
-        bindDocScrollCapture()
-        setupDocMutationObserver()
-        setupDocResizeObserver()
-        restoreDocumentProgress()
-        requestAnimationFrame(refreshDocPageNow)
-      }
+      // 统一文档模式：重新绑定滚动监听 + 恢复页码
+      bindDocScrollCapture()
+      setupDocMutationObserver()
+      setupDocResizeObserver()
+      restoreDocumentProgress()
+      requestAnimationFrame(refreshDocPageNow)
     } else if (isVideo(currentFile.value.ext || '')) {
       const el = nativeVideo.value
       if (el) {
@@ -1312,10 +1073,10 @@ onActivated(() => {
   }
 })
 
-// v3.5.0：keep-alive 失活（切换到其他页面）时：
+// v3.5.2：keep-alive 失活（切换到其他页面）时：
 //   - 移除键盘监听，避免误控隐藏页面的视频
 //   - 保存视频进度并暂停，保持「原状态」，返回后可继续观看
-//   - 统一保存文档阅读进度（PDF / Office / 图片）
+//   - 统一保存文档阅读进度（PDF / Office / 图片 全部统一处理）
 onDeactivated(() => {
   window.removeEventListener('keydown', onVideoKeydown)
   if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
@@ -1323,12 +1084,11 @@ onDeactivated(() => {
     nativeVideo.value.pause()
     videoPlaying.value = false
   } else if (currentFile.value && isDocumentPreview(currentFile.value.ext || '')) {
-    if (currentFile.value.ext === '.pdf') saveProgress(currentFile.value.path, { pdfPage: pdfPage.value })
-    else saveDocumentProgress()
+    saveDocumentProgress()
   }
 })
 
-// v3.3.1：组件卸载时彻底释放视频与音频资源
+// v3.5.2：组件卸载时彻底释放视频与音频资源
 onUnmounted(() => {
   window.removeEventListener('keydown', onVideoKeydown)
   window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -1337,20 +1097,16 @@ onUnmounted(() => {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
   }
   disposeAudioResources()
-  // v3.3.9: 销毁 PDF 文档释放内存
-  destroyPdf()
-  // v3.4.4: 销毁 Office 文档预览释放内存
+  // v3.5.2: 统一销毁文档预览（PDF / Office / 图片 全部通过 destroyDocumentViewer）
   destroyDocumentViewer()
 })
 
-// v3.4.2：应用退出前兜底保存当前视频进度（页面卸载/关窗/退出时触发）
-// v3.4.4：同步兜底保存文档阅读进度
+// v3.5.2：应用退出前兜底保存当前视频/文档进度（页面卸载/关窗/退出时触发）
 function handleBeforeUnload() {
   if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
   } else if (currentFile.value && isDocumentPreview(currentFile.value.ext || '')) {
-    if (currentFile.value.ext === '.pdf') saveProgress(currentFile.value.path, { pdfPage: pdfPage.value })
-    else saveDocumentProgress()
+    saveDocumentProgress()
   }
 }
 
@@ -1365,24 +1121,22 @@ function disposeAudioResources() {
   }
 }
 
-// v3.5.0：切换文件时重置状态（统一文档路由）
+// v3.5.2：切换文件时重置状态（统一文档路由）
 // v3.3.1：仅在「离开视频模式」时释放音频链路
 // v3.3.8：适配原生 <video> 元素生命周期
-// PDF / Office / 图片 统一走 openDocumentViewer → 自动选择渲染方式
+// v3.5.2：PDF / Office / 图片 统一走 openDocumentViewer → createViewer 多插件架构
 watch(() => currentFile.value, async (newVal, oldVal) => {
-  // 切换前兜底保存旧文档进度（覆盖 PDF / Office / 图片）
+  // v3.5.2：切换前兜底保存旧文档进度（统一处理 PDF / Office / 图片）
   const oldIsDoc = oldVal && isDocumentPreview(oldVal.ext || '')
   const newIsDoc = newVal && isDocumentPreview(newVal.ext || '')
   if (oldIsDoc) {
-    if (oldVal!.ext === '.pdf') saveProgress(oldVal!.path, { pdfPage: pdfPage.value })
-    else saveDocumentProgress(docProgress.value, oldVal!.path)
+    saveDocumentProgress(docProgress.value, oldVal!.path)
   }
-  // 离开文档模式时销毁预览（统一清理 createViewer 实例 + PDF iframe）
+  // 离开文档模式时销毁预览（统一清理 createViewer 实例）
   if (oldIsDoc && !newIsDoc) {
     destroyDocumentViewer()
-    unloadPdf()
   }
-  // 进入文档模式：统一入口（内部根据 ext 自动选择 PDFium iframe / officePlugin / imagePlugin）
+  // 进入文档模式：统一入口（内部根据 ext 自动选择 pdfPlugin / officePlugin / imagePlugin）
   if (newIsDoc && newVal!.url) {
     await openDocumentViewer(newVal!)
   }
