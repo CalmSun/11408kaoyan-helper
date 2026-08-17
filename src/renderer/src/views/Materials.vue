@@ -98,7 +98,7 @@
                复刻 open-file-viewer playground 示例布局：
                [进度条] + [viewerContainer（工具栏由 toolbar.render 统一渲染）] + [加载/错误遮罩]
                视频文件走独立预览（下方 v-else-if="isVideo(...)"），不受影响。 -->
-          <div v-else-if="isDocumentPreview(currentFile.ext)" class="doc-wrap">
+          <div v-if="isDocumentPreview(currentFile.ext)" class="doc-wrap">
             <!-- 阅读进度条（滚动节流更新，所有文档类型共用） -->
             <div class="doc-progress-wrap" :title="`阅读进度 ${docProgress}%`">
               <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
