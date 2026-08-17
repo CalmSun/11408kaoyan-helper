@@ -647,16 +647,21 @@ function submitDocPage() {
 //   （已核验库源码 node_modules/@open-file-viewer/core/dist/index.js：6138 await page.getTextContent()
 //    在 6176-6182 的 catch 中 replaceChildren(ofv-pdf-error)。）
 // 文本层是可选增强能力，绝不能因它的失败抹掉已渲染的 PDF 内容。
-// 方案：包装传入的 pdfjs 实例的 getDocument，文档就绪后经首个页面实例定位 PDFPageProxy.prototype，
-//   再包装 getTextContent：正常路径原样透传；异常/畸形结果降级为 { items: [], styles: {} }
-//   （库内文本层循环自然跳过，canvas 保留）。仅影响本应用传入的 pdfjs 实例，不修改 node_modules。
-function patchPdfGetTextContent(pdfjs: any): void {
-  if (!pdfjs || typeof pdfjs.getDocument !== 'function') return
-  if (pdfjs.__ofvGetTextContentPatched) return
-  pdfjs.__ofvGetTextContentPatched = true
+// v3.5.2 修订：pdfjs 经 Vite 动态 import 得到的是 ES module namespace（不可扩展、属性只读），
+//   不能给它加标记属性、也不能直接替换其 getDocument（抛 Cannot add property / read only 错误）。
+//   正确做法：基于 namespace 浅拷贝生成可写代理对象（{ ...pdfjs }，GlobalWorkerOptions 仍指向
+//   原单例引用，库对 workerSrc 的赋值语义不变），在代理上替换 getDocument；文档就绪后经
+//   doc.getPage(1) 定位 PDFPageProxy.prototype，再包装 getTextContent（WeakSet 防重复包装）。
+//   正常路径原样透传；异常/畸形结果降级为 { items: [], styles: {} }（库内文本层循环自然跳过，
+//   canvas 保留）。不改 node_modules、不改 pdfjs 模块本身。
+const patchedGetTextContentProtos = new WeakSet<object>()
 
+function patchPdfGetTextContent(pdfjs: any): any {
+  if (!pdfjs || typeof pdfjs.getDocument !== 'function') return pdfjs
+  // 浅拷贝 namespace 为可写代理对象（所有导出为值/引用拷贝；GlobalWorkerOptions 为同一单例引用）
+  const proxy: any = { ...pdfjs }
   const originalGetDocument = pdfjs.getDocument
-  pdfjs.getDocument = function (this: any, ...args: any[]) {
+  proxy.getDocument = function (this: any, ...args: any[]) {
     const task = originalGetDocument.apply(this, args)
     const promise = task?.promise
     if (promise && typeof promise.then === 'function') {
@@ -668,9 +673,9 @@ function patchPdfGetTextContent(pdfjs: any): void {
             .then((page: any) => {
               const proto = page?.constructor?.prototype
               if (!proto || typeof proto.getTextContent !== 'function') return
-              if (proto.__ofvGetTextContentWrapped) return
+              if (patchedGetTextContentProtos.has(proto)) return
+              patchedGetTextContentProtos.add(proto)
               const originalGetTextContent = proto.getTextContent
-              proto.__ofvGetTextContentWrapped = true
               proto.getTextContent = function (this: any, params?: unknown) {
                 return Promise.resolve()
                   .then(() => originalGetTextContent.call(this, params))
@@ -695,6 +700,7 @@ function patchPdfGetTextContent(pdfjs: any): void {
     }
     return task
   }
+  return proxy
 }
 
 // v3.5.2：统一文档预览入口（PDF / Office / 图片 → 全部走 createViewer）
@@ -731,8 +737,9 @@ async function openDocumentViewer(file: MaterialNode) {
         import('pdfjs-dist/legacy/build/pdf.mjs'),
         import('pdfjs-dist/legacy/build/pdf.worker.mjs?url')
       ])
-      // v3.5.2 修复：必须先包装 getTextContent 再交给 pdfPlugin（防文本层失败抹掉已渲染 canvas → 黑屏）
-      patchPdfGetTextContent(pdfjs)
+      // v3.5.2 修复：必须先包装 getTextContent 再交给 pdfPlugin（防文本层失败抹掉已渲染 canvas → 黑屏）。
+      // 注意：返回的是基于 namespace 浅拷贝的可写代理对象（原 namespace 不可扩展/属性只读，不能直接改）。
+      const patchedPdfjs = patchPdfGetTextContent(pdfjs)
       // useFetchData: 主线程先取字节再交给 pdf.js，规避自定义协议（kaoyan-material://）下的
       // worker 网络流兼容问题（playground 示例同款配置）
       // v3.5.2：cMapUrl / standardFontDataUrl 本地化——库默认指向 jsDelivr CDN，
@@ -751,7 +758,7 @@ async function openDocumentViewer(file: MaterialNode) {
         if (base) pdfAssetsBase = base.endsWith('/') ? base : `${base}/`
       } catch { /* 回退自定义协议备用通道 */ }
       plugins = [mod.pdfPlugin({
-        pdfjs,
+        pdfjs: patchedPdfjs,
         workerSrc: workerMod.default,
         useFetchData: true,
         cMapUrl: `${pdfAssetsBase}cmaps/`,
