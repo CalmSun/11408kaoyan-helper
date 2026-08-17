@@ -125,39 +125,43 @@
               查看全部评论
             </el-button>
           </h3>
-          <div v-if="music.commentsLoading" class="search-loading">
-            <el-icon class="is-loading"><Loading /></el-icon> 加载中...
-          </div>
-          <div v-else-if="music.currentHotComment" class="hot-comment-item">
-            <img v-if="music.currentHotComment.avatar" :src="music.currentHotComment.avatar" class="comment-avatar" />
-            <div v-else class="comment-avatar placeholder"><el-icon><User /></el-icon></div>
-            <div class="comment-body">
-              <div class="comment-header">
-                <span class="comment-nickname">{{ music.currentHotComment.nickname }}</span>
-                <!-- v3.2.0：热门评论点赞按钮 -->
-                <button
-                  class="comment-like-btn"
-                  :class="{ liked: music.isCommentLiked(music.currentHotComment.commentId) }"
-                  :disabled="music.likingCommentId === music.currentHotComment.commentId"
-                  @click="handleCommentLike(music.currentHotComment)"
-                  title="点赞"
-                >
-                  <el-icon v-if="music.isCommentLiked(music.currentHotComment.commentId)"><StarFilled /></el-icon>
-                  <el-icon v-else><Star /></el-icon>
-                  <span v-if="music.currentHotComment.likedCount > 0" class="comment-like-count">{{ music.currentHotComment.likedCount }}</span>
-                </button>
-              </div>
-              <div class="comment-content">{{ music.currentHotComment.content }}</div>
-              <div class="comment-reply" v-if="music.currentHotComment.repliedContent">
-                <span class="reply-arrow">↳</span>
-                <span class="reply-user">{{ music.currentHotComment.repliedNickname }}：</span>
-                <span>{{ music.currentHotComment.repliedContent }}</span>
-              </div>
-              <div class="comment-time">{{ formatCommentTime(music.currentHotComment.time) }}</div>
+          <!-- v3.5.2：评论内容独立滚动容器，标题固定在卡片顶部（不参与滚动），
+               视觉与歌词卡片标题完全一致，无需 sticky 背景条/边框 -->
+          <div class="hot-comment-scroll">
+            <div v-if="music.commentsLoading" class="search-loading">
+              <el-icon class="is-loading"><Loading /></el-icon> 加载中...
             </div>
-          </div>
-          <div v-else class="search-empty">
-            暂无热门评论
+            <div v-else-if="music.currentHotComment" class="hot-comment-item">
+              <img v-if="music.currentHotComment.avatar" :src="music.currentHotComment.avatar" class="comment-avatar" />
+              <div v-else class="comment-avatar placeholder"><el-icon><User /></el-icon></div>
+              <div class="comment-body">
+                <div class="comment-header">
+                  <span class="comment-nickname">{{ music.currentHotComment.nickname }}</span>
+                  <!-- v3.2.0：热门评论点赞按钮 -->
+                  <button
+                    class="comment-like-btn"
+                    :class="{ liked: music.isCommentLiked(music.currentHotComment.commentId) }"
+                    :disabled="music.likingCommentId === music.currentHotComment.commentId"
+                    @click="handleCommentLike(music.currentHotComment)"
+                    title="点赞"
+                  >
+                    <el-icon v-if="music.isCommentLiked(music.currentHotComment.commentId)"><StarFilled /></el-icon>
+                    <el-icon v-else><Star /></el-icon>
+                    <span v-if="music.currentHotComment.likedCount > 0" class="comment-like-count">{{ music.currentHotComment.likedCount }}</span>
+                  </button>
+                </div>
+                <div class="comment-content">{{ music.currentHotComment.content }}</div>
+                <div class="comment-reply" v-if="music.currentHotComment.repliedContent">
+                  <span class="reply-arrow">↳</span>
+                  <span class="reply-user">{{ music.currentHotComment.repliedNickname }}：</span>
+                  <span>{{ music.currentHotComment.repliedContent }}</span>
+                </div>
+                <div class="comment-time">{{ formatCommentTime(music.currentHotComment.time) }}</div>
+              </div>
+            </div>
+            <div v-else class="search-empty">
+              暂无热门评论
+            </div>
           </div>
         </div>
       </div>
@@ -1201,22 +1205,14 @@ body.liquid-glass .glass-card:hover {
   flex-shrink: 0;
   max-height: 220px;
   margin-bottom: 0 !important;
-  overflow-y: auto;
 }
 
-/* v3.5.2：热门评论内容过长、卡片内部滚动时，标题「热门评论」与「查看全部评论」按钮
-   sticky 置顶不再随滚动滚出视口。负上边距抵消 .glass-card 的 20px 内边距使标题贴顶，
-   玻璃背景 + 底部边框遮住下方滚动的评论内容 */
-.hot-comment-card .section-title {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  margin: -20px 0 10px;
-  padding: 16px 0 10px;
-  background: var(--glass-bg);
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
-  border-bottom: 1px solid var(--glass-border);
+/* v3.5.2：评论内容独立滚动容器，标题「热门评论」固定在卡片顶部（不参与滚动），
+   标题外观与歌词卡片标题完全一致（无 sticky 背景条/边框），滚动只发生在评论区 */
+.hot-comment-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* v3.2.4：右侧 Tab 内容卡片（搜索/云盘/排行榜/我的歌单）——主内容区，basis 0 + flex:1 填充剩余空间
