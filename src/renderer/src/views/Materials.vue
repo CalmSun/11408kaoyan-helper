@@ -146,36 +146,9 @@
             </div>
           </div>
 
-          <!-- v3.4.7：Office 文档预览（docx / xlsx，@open-file-viewer/core officePlugin） -->
+          <!-- v3.4.9：Office 文档预览（docx / xlsx，@open-file-viewer/core officePlugin + 自定义工具栏） -->
           <div v-else-if="isDocumentFile(currentFile.ext)" class="doc-wrap">
-            <!-- v3.4.7：文档工具栏（玻璃风格，与 PDF 工具栏一致）：
-                 分页导航（docx 有分页；xlsx 无分页自动隐藏）+ 阅读进度提示 -->
-            <div class="doc-toolbar">
-              <div v-if="docTotalPages > 0" class="doc-page-nav">
-                <button class="doc-page-btn" :disabled="docPage <= 1" @click="goDocPage(-1)" title="上一页">
-                  <el-icon><ArrowLeft /></el-icon>
-                </button>
-                <span class="doc-page-indicator">
-                  第
-                  <input
-                    v-model.number="docPageInput"
-                    class="doc-page-input"
-                    type="number"
-                    min="1"
-                    :max="docTotalPages"
-                    @change="jumpDocPage(docPageInput)"
-                    title="输入页码后回车跳转"
-                  />
-                  / {{ docTotalPages }} 页
-                </span>
-                <button class="doc-page-btn" :disabled="docPage >= docTotalPages" @click="goDocPage(1)" title="下一页">
-                  <el-icon><ArrowRight /></el-icon>
-                </button>
-              </div>
-              <el-icon class="pdf-tip-icon"><InfoFilled /></el-icon>
-              <span class="pdf-tip">滚动阅读自动记忆页码，返回后自动恢复进度；缩放 / 全屏 / 搜索见下方工具栏</span>
-            </div>
-            <!-- 阅读进度条（滚动节流更新，避免频繁写 localStorage） -->
+            <!-- 阅读进度条（滚动节流更新） -->
             <div class="doc-progress-wrap" :title="`阅读进度 ${docProgress}%`">
               <div class="doc-progress-bar" :style="{ width: docProgress + '%' }"></div>
             </div>
@@ -503,6 +476,8 @@ function refreshDocPageNow() {
     docPage.value = page
     docPageInput.value = page
   }
+  // v3.4.9：同步更新自定义工具栏中的页码/总页数显示
+  updateCustomToolbarDisplay()
 }
 
 // v3.4.7：capture 阶段监听任意内层滚动，自动识别“真正滚动的元素”并更新页码 / 进度。
@@ -521,6 +496,8 @@ function handleDocScrollCapture(e: Event) {
     docPage.value = page
     docPageInput.value = page
   }
+  // v3.4.9：同步自定义工具栏
+  updateCustomToolbarDisplay()
   const now = Date.now()
   if (now - lastDocProgressSave >= DOC_PROGRESS_SAVE_INTERVAL) {
     lastDocProgressSave = now
@@ -609,7 +586,133 @@ function goDocPage(delta: number) {
   jumpDocPage(docPage.value + delta)
 }
 
-// v3.4.7：创建文档预览（createViewer + officePlugin）
+// v3.4.9：统一自定义文档工具栏渲染（toolbar.render）
+// 利用 open-file-viewer 官方 ctx API（goToPage/previous/next/zoom/setZoom/download/fullscreen/print/search）
+// 同时桥接自有页码跟踪状态（docPage/docTotalPages）用于显示和进度保存
+// 布局参考 playground 示例：[< 页码/总页 >] | [- 缩放% + 重置 旋转] | [下载 全屏 打印] | [搜索框]
+function renderDocToolbar(ctx: any): HTMLElement {
+  const bar = document.createElement('div')
+  bar.className = 'ofv-toolbar ofv-custom-toolbar'
+
+  // ===== 左区：页码导航 =====
+  const pageGroup = document.createElement('div')
+  pageGroup.className = 'ofv-tb-group ofv-tb-page-nav'
+  const prevBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>', '上一页', () => { ctx.previous(); syncPageFromCtx(ctx) })
+  const pageInput = document.createElement('input')
+  pageInput.className = 'ofv-tb-page-input'
+  pageInput.type = 'number'
+  pageInput.min = '1'
+  pageInput.value = String(docPage.value)
+  pageInput.title = '输入页码后回车跳转'
+  pageInput.addEventListener('change', () => {
+    const p = parseInt(pageInput.value, 10)
+    if (Number.isFinite(p) && p > 0) {
+      const ok = ctx.goToPage(p)
+      if (ok) { docPage.value = p; docPageInput.value = p; saveDocumentProgress() }
+      else pageInput.value = String(docPage.value)
+    } else {
+      pageInput.value = String(docPage.value)
+    }
+  })
+  const pageSep = document.createElement('span')
+  pageSep.className = 'ofv-tb-page-sep'
+  pageSep.textContent = '/ '
+  const totalPagesSpan = document.createElement('span')
+  totalPagesSpan.className = 'ofv-tb-total-pages'
+  totalPagesSpan.textContent = String(docTotalPages.value || '—')
+  const nextBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>', '下一页', () => { ctx.next(); syncPageFromCtx(ctx) })
+  pageGroup.append(prevBtn, pageInput, pageSep, totalPagesSpan, nextBtn)
+
+  // ===== 中区：缩放 + 旋转 =====
+  const zoomGroup = document.createElement('div')
+  zoomGroup.className = 'ofv-tb-group ofv-tb-zoom'
+  const zoomOutBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 13H5v-2h14v2z"/></svg>', '缩小', () => ctx.command?.('zoom-out'))
+  const zoomLabel = document.createElement('span')
+  zoomLabel.className = 'ofv-tb-zoom-label'
+  zoomLabel.textContent = ctx.zoomLabel || (ctx.zoom ? Math.round(ctx.zoom * 100) + '%' : '100%')
+  zoomLabel.title = '当前缩放比例'
+  const zoomInBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>', '放大', () => ctx.command?.('zoom-in'))
+  const zoomResetBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>', '重置缩放', () => ctx.command?.('zoom-reset'))
+  const rotateLeftBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7.11 8.53L5.7 7.11C4.8 8 4.18 9.11 3.91 10.3L2V5h5.3l-1.5 1.5A9 9 0 0119 11h-2a7 7 0 00-9.89-2.47zM16.59 15.49l1.41 1.41a7.94 7.94 0 002.09-2.7H17.9c-.26.77-.72 1.48-1.31 2.09zM13 19v-2a7 7 0 00-5.06-2.1L9.5 14.4 8.08 12.98l-3.3 3.3 3.3 3.3 1.42-1.41-1.56-1.57A9 9 0 0013 19z"/></svg>', '左旋转', () => ctx.command?.('rotate-left'))
+  const rotateRightBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M15.55 5.55L11 1v3.07C7.06 4.56 4 7.92 4 12c0 2.27.94 4.32 2.45 5.78l1.42-1.42A6 6 0 016 12c0-3.08 2.24-5.64 5.18-6.32V9l4.55-4.55zM19.04 6.21l-1.42 1.42A6 6 0 0118 12c0 3.08-2.24 5.64-5.18 6.32V15l-4.55 4.55L14 23v-3.07c3.94-.49 7-3.85 7-7.93 0-2.27-.94-4.32-2.45-5.78z"/></svg>', '右旋转', () => ctx.command?.('rotate-right'))
+  zoomGroup.append(zoomOutBtn, zoomLabel, zoomInBtn, zoomResetBtn, rotateLeftBtn, rotateRightBtn)
+
+  // ===== 右区：下载 / 全屏 / 打印 =====
+  const actionGroup = document.createElement('div')
+  actionGroup.className = 'ofv-tb-group ofv-tb-actions'
+  const dlBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>', '下载', () => ctx.download())
+  const fsBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>', ctx.isFullscreen ? '退出全屏' : '全屏', () => ctx.fullscreen())
+  const printBtn = tbButton('<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 8H5c-1.66 0-3 1.34-3 3v6h4v4h12v-4h4v-6c0-1.66-1.34-3-3-3zm-3 11H8v-5h8v5zm3-7c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1zm-1-9H6v4h12V3z"/></svg>', '打印', () => ctx.print())
+  actionGroup.append(dlBtn, fsBtn, printBtn)
+
+  // ===== 最右：搜索框 =====
+  const searchWrap = document.createElement('div')
+  searchWrap.className = 'ofv-tb-search-wrap'
+  const searchIcon = document.createElement('span')
+  searchIcon.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>'
+  searchIcon.className = 'ofv-tb-search-icon'
+  const searchInput = document.createElement('input')
+  searchInput.className = 'ofv-tb-search-input'
+  searchInput.type = 'text'
+  searchInput.placeholder = '搜索（Ctrl+F）'
+  searchInput.title = '输入关键词搜索文档内容'
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
+  searchInput.addEventListener('input', () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      const q = searchInput.value.trim()
+      if (q) ctx.search(q)
+      else ctx.clearSearch?.()
+    }, 300)
+  })
+  searchInput.addEventListener('keydown', (e: KeyboardEvent) => {
+    if (e.key === 'Escape') { searchInput.value = ''; ctx.clearSearch?.(); (searchInput as HTMLInputElement).blur() }
+  })
+  searchWrap.append(searchIcon, searchInput)
+
+  // 组装
+  bar.append(pageGroup, zoomGroup, actionGroup, searchWrap)
+
+  // 暴露引用供外部更新
+  ;(bar as any).__pageInput = pageInput
+  ;(bar as any).__totalPages = totalPagesSpan
+  ;(bar as any).__zoomLabel = zoomLabel
+  ;(bar as any).__searchInput = searchInput
+  ;(bar as any).__ctx = ctx
+
+  return bar
+}
+
+/** 工具栏按钮辅助 */
+function tbButton(svg: string, title: string, onClick: () => void): HTMLButtonElement {
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.className = 'ofv-tb-btn'
+  btn.title = title
+  btn.innerHTML = svg
+  btn.addEventListener('click', onClick)
+  return btn
+}
+
+/** 调用 previous/next 后通过 DOM 几何法同步页码 */
+function syncPageFromCtx(_ctx: any) {
+  requestAnimationFrame(() => refreshDocPageNow())
+}
+
+/** 外部驱动更新自定义工具栏显示（页码/总页/缩放） */
+function updateCustomToolbarDisplay() {
+  const root = viewerContainer.value
+  if (!root) return
+  const bar = root.querySelector('.ofv-custom-toolbar') as any
+  if (!bar) return
+  if (bar.__pageInput) bar.__pageInput.value = String(docPage.value)
+  if (bar.__totalPages) bar.__totalPages.textContent = String(docTotalPages.value || '—')
+  if (bar.__zoomLabel && bar.ctx) {
+    bar.__zoomLabel.textContent = bar.ctx.zoomLabel || (bar.ctx.zoom ? Math.round(bar.ctx.zoom * 100) + '%' : '100%')
+  }
+}
+
+// v3.4.9：创建文档预览（createViewer + officePlugin + 自定义工具栏）
 async function openDocumentViewer(file: MaterialNode) {
   destroyDocumentViewer()
   viewerCreating.value = true
@@ -640,13 +743,32 @@ async function openDocumentViewer(file: MaterialNode) {
       theme: 'auto',
       locale: 'zh-CN',
       initialPage: savedPage,
+      // v3.4.9：统一自定义工具栏 —— 替代"外部 .doc-toolbar + 内部 .ofv-toolbar"双栏结构
+      // 利用 ctx 官方 API（goToPage/previous/next/zoom/setZoom/download/fullscreen/print/search）
+      // 同时保留自有页码跟踪（DOM 几何法）用于进度保存/恢复，因 ctx 不暴露 page/totalPages
       toolbar: {
         zoom: true,
         fullscreen: true,
         search: true,
-        download: false,
-        print: false,
-        rotate: false
+        download: true,
+        print: true,
+        rotate: true,
+        labels: {
+          search: '搜索',
+          download: '下载',
+          fullscreen: '全屏',
+          'exit-fullscreen': '退出全屏',
+          print: '打印',
+          'zoom-reset': '重置缩放',
+          'rotate-left': '左旋转',
+          'rotate-right': '右旋转',
+          previous: '上一页',
+          next: '下一页'
+        },
+        order: ['previous', 'next', 'zoom-out', 'zoom-in', 'zoom-reset', 'rotate-left', 'rotate-right', 'download', 'fullscreen', 'print', 'search'],
+        render(ctx) {
+          return renderDocToolbar(ctx)
+        }
       },
       plugins: [officePlugin()],
       onLoad: () => {
@@ -2018,96 +2140,17 @@ body.liquid-glass .glass-card:hover {
   word-break: break-all;
 }
 
-/* v3.4.4：Office 文档预览容器（docx / xlsx，@open-file-viewer/core officePlugin） */
+/* v3.4.9：Office 文档预览容器 */
 .doc-wrap {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  gap: 8px;
+  gap: 0;
   position: relative;
 }
 
-/* v3.4.7：文档工具栏（玻璃风格，与 PDF 工具栏一致） */
-.doc-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.04));
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-/* v3.4.7：docx 分页导航控件 */
-.doc-page-nav {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.doc-page-btn {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
-  border-radius: 6px;
-  background: var(--mo-surface, rgba(255,255,255,0.06));
-  color: var(--mo-text-2, #ccc);
-  cursor: pointer;
-  transition: all 0.15s;
-  padding: 0;
-}
-
-.doc-page-btn:hover:not(:disabled) {
-  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
-  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
-  color: var(--mo-text-1, #222);
-}
-
-.doc-page-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.doc-page-indicator {
-  font-size: 12px;
-  color: var(--mo-text-2, #ccc);
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  white-space: nowrap;
-}
-
-.doc-page-input {
-  width: 44px;
-  height: 24px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--mo-text-1, #eee);
-  background: var(--mo-surface, rgba(255,255,255,0.06));
-  border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
-  border-radius: 6px;
-  outline: none;
-  transition: border-color 0.15s;
-  -moz-appearance: textfield;
-  appearance: textfield;
-}
-
-.doc-page-input::-webkit-outer-spin-button,
-.doc-page-input::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.doc-page-input:focus {
-  border-color: var(--mo-primary, #409eff);
-}
-
-/* v3.4.4：文档阅读进度条（顶部细条，随滚动实时更新） */
+/* v3.4.4→v3.4.9：文档阅读进度条（顶部细条，随滚动实时更新） */
 .doc-progress-wrap {
   height: 3px;
   border-radius: 3px;
@@ -2126,66 +2169,171 @@ body.liquid-glass .glass-card:hover {
 .doc-viewer-wrap {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   position: relative;
   background: var(--mo-surface, #fff);
   border-radius: 8px;
   border: 1px solid var(--mo-border, rgba(255,255,255,0.1));
 }
 
-/* v3.4.4：open-file-viewer 核心内层（缩放按钮等）跟随全局主题色 */
-.doc-viewer-wrap :deep(.ofv-root) {
-  --ofv-accent: var(--mo-primary, #409eff);
-}
-
-/* v3.4.7：内置工具栏（缩放/全屏/搜索）玻璃风格化，贴合全局视觉与文档工具栏一致 */
-.doc-viewer-wrap :deep(.ofv-toolbar) {
+/* v3.4.9：统一自定义文档工具栏（toolbar.render 输出）
+   布局参考 playground 示例：单行扁平、轻量图标、清晰分组 */
+.doc-viewer-wrap :deep(.ofv-custom-toolbar),
+.doc-viewer-wrap :deep(.ofv-toolbar.ofv-custom-toolbar) {
   display: flex;
   align-items: center;
-  gap: 6px;
-  background: var(--mo-surface, rgba(255, 255, 255, 0.05));
-  border: 1px solid var(--mo-border, rgba(255, 255, 255, 0.08));
-  border-radius: 8px 8px 0 0;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--mo-surface, #f8f9fa);
+  border-bottom: 1px solid var(--mo-border, rgba(0,0,0,0.08));
   min-height: 40px;
-  padding: 5px 10px;
-  font-size: 12px;
-  color: var(--mo-text-2, #ccc);
+  font-size: 13px;
+  color: var(--mo-text-1, #333);
+  user-select: none;
+  flex-shrink: 0;
 }
 
-.doc-viewer-wrap :deep(.ofv-toolbar button),
-.doc-viewer-wrap :deep(.ofv-toolbar .ofv-toolbar-action) {
+/* 工具栏分组 */
+.doc-viewer-wrap :deep(.ofv-tb-group) {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-group + .ofv-tb-group)::before {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  background: var(--mo-border, rgba(0,0,0,0.12));
+  margin: 0 6px;
+  vertical-align: middle;
+}
+
+/* 页码导航区 */
+.doc-viewer-wrap :deep(.ofv-tb-page-nav) {
+  gap: 4px;
+  margin-right: 2px;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-page-input) {
+  width: 42px;
+  height: 26px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mo-text-1, #333);
+  background: transparent;
+  border: 1px solid var(--mo-border, rgba(0,0,0,0.15));
+  border-radius: 5px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -moz-appearance: textfield;
+  appearance: textfield;
+  padding: 0 2px;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-page-input::-webkit-outer-spin-button),
+.doc-viewer-wrap :deep(.ofv-tb-page-input::-webkit-inner-spin-button) {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-page-input:focus) {
+  border-color: var(--mo-primary, #409eff);
+  box-shadow: 0 0 0 2px rgba(64,158,255,0.15);
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-page-sep) {
+  color: var(--mo-text-3, #999);
+  font-size: 12px;
+  margin: 0 1px;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-total-pages) {
+  font-size: 12px;
+  color: var(--mo-text-3, #888);
+  min-width: 16px;
+  text-align: center;
+}
+
+/* 缩放标签 */
+.doc-viewer-wrap :deep(.ofv-tb-zoom-label) {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mo-text-1, #333);
+  min-width: 38px;
+  text-align: center;
+  cursor: default;
+}
+
+/* 统一按钮样式（Material 风格，贴合 playground 示例） */
+.doc-viewer-wrap :deep(.ofv-tb-btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
   border-radius: 6px;
-  border: 1px solid var(--mo-border, rgba(255, 255, 255, 0.1));
-  background: var(--mo-surface, rgba(255, 255, 255, 0.06));
-  color: var(--mo-text-2, #ccc);
-  font-size: 12px;
-  padding: 4px 8px;
+  background: transparent;
+  color: var(--mo-text-2, #555);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.12s, color 0.12s;
+  padding: 0;
+  flex-shrink: 0;
 }
 
-.doc-viewer-wrap :deep(.ofv-toolbar button:hover),
-.doc-viewer-wrap :deep(.ofv-toolbar .ofv-toolbar-action:hover) {
-  background: var(--mo-surface-hover, rgba(255, 255, 255, 0.74));
-  border-color: var(--glass-border, rgba(255, 255, 255, 0.8));
+.doc-viewer-wrap :deep(.ofv-tb-btn:hover) {
+  background: rgba(0, 0, 0, 0.06);
   color: var(--mo-text-1, #222);
 }
 
-/* v3.4.7：搜索输入框跟随主题 */
-.doc-viewer-wrap :deep(.ofv-toolbar input),
-.doc-viewer-wrap :deep(.ofv-toolbar-search) {
-  border-radius: 6px;
-  border: 1px solid var(--mo-border, rgba(255, 255, 255, 0.1));
-  background: var(--mo-surface, rgba(255, 255, 255, 0.06));
-  color: var(--mo-text-1, #eee);
-  font-size: 12px;
-  padding: 3px 8px;
-  outline: none;
+.doc-viewer-wrap :deep(.ofv-tb-btn:active) {
+  background: rgba(0, 0, 0, 0.10);
 }
 
-.doc-viewer-wrap :deep(.ofv-toolbar input:focus),
-.doc-viewer-wrap :deep(.ofv-toolbar-search:focus) {
+/* 搜索区域 */
+.doc-viewer-wrap :deep(.ofv-tb-search-wrap) {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  background: var(--mo-surface, #fff);
+  border: 1px solid var(--mo-border, rgba(0,0,0,0.12));
+  border-radius: 6px;
+  padding: 2px 8px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-search-wrap:focus-within) {
   border-color: var(--mo-primary, #409eff);
+  box-shadow: 0 0 0 2px rgba(64,158,255,0.1);
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-search-icon) {
+  display: flex;
+  align-items: center;
+  color: var(--mo-text-3, #aaa);
+  flex-shrink: 0;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-search-icon svg) {
+  display: block;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-search-input) {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--mo-text-1, #333);
+  width: 120px;
+  padding: 2px 0;
+}
+
+.doc-viewer-wrap :deep(.ofv-tb-search-input::placeholder) {
+  color: var(--mo-text-3, #bbb);
 }
 
 .doc-loading-mask {
