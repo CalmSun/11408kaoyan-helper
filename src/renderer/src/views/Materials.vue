@@ -108,11 +108,11 @@
               <!-- PDF 模式：Chromium PDFium <iframe>（pdfjs-dist 在 Electron 28 下有 ES2025 兼容问题，故保留原生方案） -->
               <iframe
                 v-if="currentFile.ext === '.pdf' && pdfFrameUrl"
-                ref="pdfFrame"
-                class="pdf-frame"
-                :src="pdfFrameUrl"
-                @load="pdfLoading = false"
-                @error="onPdfFrameError"
+                  ref="pdfFrame"
+                  class="pdf-frame"
+                  :src="pdfFrameUrl"
+                  @load="onPdfFrameLoad"
+                  @error="onPdfFrameError"
               ></iframe>
             </div>
             <!-- 加载占位（createViewer 模式） -->
@@ -315,6 +315,8 @@ import '@open-file-viewer/core/style.css'
 // 不额外占内存，且自带翻页/缩放/搜索/打印等功能，是最稳定方案。
 const pdfFrame = ref<HTMLIFrameElement | null>(null)
 const pdfFrameUrl = ref('')
+// v3.5.1：PDF 内部页码轮询句柄（best-effort，跨域时静默降级）
+let pdfHashPoll: number | null = null
 
 // v3.4.0: 由当前 PDF 文件 URL 拼接 PDFium 查看器参数（FitH 适应宽度，toolbar 显示原生工具条）
 // v3.4.1: 支持 page 参数——打开时恢复到上次阅读页码
@@ -328,6 +330,7 @@ const pdfPageInput = ref(1)
 
 // v3.4.0: 卸载 iframe 释放 PDFium 渲染资源（切换文件/离开 PDF 模式时调用）
 function unloadPdf() {
+  clearPdfPageTracking()
   pdfFrameUrl.value = ''
 }
 
@@ -373,7 +376,10 @@ const DOC_RESTORE_MAX_ATTEMPTS = 60
 // 覆盖 docx / 文本框页面 / 旧版 msdoc / pptx 幻灯片，确保页码统计准确）
 const DOC_PAGE_FRAME_SELECTOR = '.ofv-docx-page-frame, .ofv-docx-textbox-page, .ofv-msdoc-page, .ofv-slide, .ofv-ppt-binary-slide'
 
-let docScrollCaptureHandler: ((e: Event) => void) | null = null
+let docScrollCaptureHandler: (() => void) | null = null
+// v3.5.1：真实滚动容器引用（直接监听它的 scroll 事件，比 window 捕获更可靠）
+let docScrollEl: HTMLElement | null = null
+let docScrollRaf = 0
 let docResizeObserver: ResizeObserver | null = null
 let docMutationObserver: MutationObserver | null = null
 
@@ -398,6 +404,10 @@ function isScrollableEl(el: HTMLElement | null): el is HTMLElement {
 function getDocumentScrollEl(): HTMLElement | null {
   const root = viewerContainer.value
   if (!root) return null
+  // 库的文档滚动容器是 .ofv-viewport（overflow-y: auto）；它通常就是真实滚动元素，优先直接取
+  const vp = root.querySelector<HTMLElement>('.ofv-viewport')
+  if (vp && isScrollableEl(vp)) return vp
+  // 兜底：从首个页面块向上找最近的“可滚动祖先”作为滚动容器
   const firstFrame = root.querySelector<HTMLElement>(DOC_PAGE_FRAME_SELECTOR)
   if (firstFrame) {
     let el: HTMLElement | null = firstFrame.parentElement
@@ -407,7 +417,8 @@ function getDocumentScrollEl(): HTMLElement | null {
       el = el.parentElement
     }
   }
-  for (const sel of ['.ofv-table-scroll', '.ofv-office', '.ofv-docx', '.ofv-root', '.ofv-viewport']) {
+  // 再兜底：已知候选选择器
+  for (const sel of ['.ofv-table-scroll', '.ofv-office', '.ofv-docx', '.ofv-root']) {
     const el = root.querySelector<HTMLElement>(sel)
     if (el && isScrollableEl(el)) return el
   }
@@ -457,41 +468,48 @@ function refreshDocPageNow() {
   updateCustomToolbarDisplay()
 }
 
-// v3.4.7：capture 阶段监听任意内层滚动，自动识别“真正滚动的元素”并更新页码 / 进度。
-// 关键：docx 实际滚动容器可能是 .ofv-viewport / .ofv-panel / 外层 .doc-viewer-wrap 之一，
-// 旧代码“向上找第一个可滚动祖先”会误判，导致滚动监听与 IntersectionObserver 根错配、
-// 页码 / 进度永远停在恢复值。capture 阶段能捕获任意内层 scroll 事件，e.target 即真实滚动元素。
-function handleDocScrollCapture(e: Event) {
-  const target = e.target as HTMLElement | null
-  if (!target || !viewerContainer.value || !viewerContainer.value.contains(target)) return
-  const scroller = target
-  const max = scroller.scrollHeight - scroller.clientHeight
-  const progress = max > 0 ? Math.min(100, Math.max(0, Math.round((scroller.scrollTop / max) * 100))) : 0
-  if (progress !== docProgress.value) docProgress.value = progress
-  const page = computeDocPageFromScroller(scroller)
-  if (page !== docPage.value) {
-    docPage.value = page
-    docPageInput.value = page
-  }
-  // v3.4.9：同步自定义工具栏
-  updateCustomToolbarDisplay()
-  const now = Date.now()
-  if (now - lastDocProgressSave >= DOC_PROGRESS_SAVE_INTERVAL) {
-    lastDocProgressSave = now
-    saveDocumentProgress(progress)
-  }
+// v3.5.1：scroll 事件只是“有滚动发生”的信号。始终从规范化滚动容器（getDocumentScrollEl）
+// 重算页码与进度，而不是依赖 e.target——嵌套滚动 / 库内部实现差异会让 e.target 不可靠，
+// 这正是此前“滚动不更新页码”的根因之一。rAF 节流避免每次滚动都做全量 getBoundingClientRect。
+function handleDocScrollCapture() {
+  if (docScrollRaf) return
+  docScrollRaf = requestAnimationFrame(() => {
+    docScrollRaf = 0
+    const scroller = getDocumentScrollEl()
+    if (!scroller) return
+    const max = scroller.scrollHeight - scroller.clientHeight
+    const progress = max > 0 ? Math.min(100, Math.max(0, Math.round((scroller.scrollTop / max) * 100))) : 0
+    if (progress !== docProgress.value) docProgress.value = progress
+    const page = computeDocPageFromScroller(scroller)
+    if (page !== docPage.value) {
+      docPage.value = page
+      docPageInput.value = page
+    }
+    updateCustomToolbarDisplay()
+    const now = Date.now()
+    if (now - lastDocProgressSave >= DOC_PROGRESS_SAVE_INTERVAL) {
+      lastDocProgressSave = now
+      saveDocumentProgress(progress)
+    }
+  })
 }
 
-// v3.4.7：绑定 / 解绑（capture 阶段，全局只挂一次，按 containment 过滤）
+// v3.5.1：绑定 / 解绑。
+// ① 直接监听真实滚动容器的 scroll 事件（元素自身的 scroll 一定被本地监听捕获，最可靠）；
+// ② 同时保留 window 捕获阶段监听，覆盖“子元素滚动”或“滚动容器延迟出现”的边界情况。
 function bindDocScrollCapture() {
   unbindDocScrollCapture()
+  docScrollEl = getDocumentScrollEl()
   docScrollCaptureHandler = handleDocScrollCapture
+  if (docScrollEl) docScrollEl.addEventListener('scroll', docScrollCaptureHandler)
   window.addEventListener('scroll', docScrollCaptureHandler, true)
 }
 function unbindDocScrollCapture() {
   if (docScrollCaptureHandler) {
     window.removeEventListener('scroll', docScrollCaptureHandler, true)
+    if (docScrollEl) docScrollEl.removeEventListener('scroll', docScrollCaptureHandler)
     docScrollCaptureHandler = null
+    docScrollEl = null
   }
 }
 
@@ -506,6 +524,8 @@ function setupDocMutationObserver() {
     const frames = getDocPageFrames()
     if (frames.length > 0) {
       if (frames.length !== docTotalPages.value) docTotalPages.value = frames.length
+      // 滚动容器可能此时才渲染就绪，重新绑定直接 scroll 监听
+      bindDocScrollCapture()
       refreshDocPageNow()
     }
   })
@@ -520,7 +540,10 @@ function setupDocResizeObserver() {
     docResizeObserver = null
   }
   docResizeObserver = new ResizeObserver(() => {
-    if (getDocPageFrames().length > 0) refreshDocPageNow()
+    if (getDocPageFrames().length > 0) {
+      bindDocScrollCapture()
+      refreshDocPageNow()
+    }
   })
   docResizeObserver.observe(viewerContainer.value)
 }
@@ -678,9 +701,7 @@ function syncPageFromCtx(_ctx: any) {
 
 /** 外部驱动更新自定义工具栏显示（页码/总页/缩放） */
 function updateCustomToolbarDisplay() {
-  const root = viewerContainer.value
-  if (!root) return
-  const bar = root.querySelector('.ofv-custom-toolbar') as any
+  const bar = document.querySelector('.ofv-custom-toolbar') as any
   if (!bar) return
   if (bar.__pageInput) bar.__pageInput.value = String(docPage.value)
   if (bar.__totalPages) bar.__totalPages.textContent = String(docTotalPages.value || '—')
@@ -916,7 +937,53 @@ function onPdfFrameError() {
   pdfError.value = '文件可能已损坏或不是有效的 PDF 文档'
 }
 
+// v3.5.1：PDF 内部页码跟踪（best-effort）。
+// PDFium 查看器在用户用其内置翻页/滚动改变页码时会更新 iframe 的 #page 参数，
+// 但父页面无法直接监听（常因 chrome-extension 跨域而受限）。这里：
+//   ① 尝试给 iframe.contentWindow 绑定 hashchange（同源时生效）；
+//   ② 兜底每 800ms 轮询一次 iframe 的 hash（跨域抛错则静默跳过）。
+// 两者都仅在可访问时同步 pdfPage 并保存进度，否则退化为“仅自有工具栏翻页记录”。
+function onPdfFrameLoad() {
+  pdfLoading.value = false
+  setupPdfPageTracking()
+}
+function setupPdfPageTracking() {
+  const frame = pdfFrame.value
+  if (!frame) return
+  const cw = frame.contentWindow
+  if (!cw) return
+  try {
+    cw.addEventListener('hashchange', syncPdfPageFromHash)
+    syncPdfPageFromHash()
+  } catch { /* 跨域不可访问，静默降级 */ }
+  if (pdfHashPoll) clearInterval(pdfHashPoll)
+  pdfHashPoll = window.setInterval(() => {
+    try { syncPdfPageFromHash() } catch { /* 跨域不可访问，静默降级 */ }
+  }, 800)
+}
+function syncPdfPageFromHash() {
+  const frame = pdfFrame.value
+  if (!frame) return
+  const cw = frame.contentWindow
+  if (!cw) return
+  let hash = ''
+  try { hash = cw.location.hash } catch { return }
+  const m = /[?&#]page=(\d+)/.exec(hash)
+  if (m) {
+    const p = parseInt(m[1], 10)
+    if (p > 0 && p !== pdfPage.value) {
+      pdfPage.value = p
+      pdfPageInput.value = p
+      if (currentFile.value) saveProgress(currentFile.value.path, { pdfPage: p })
+    }
+  }
+}
+function clearPdfPageTracking() {
+  if (pdfHashPoll) { clearInterval(pdfHashPoll); pdfHashPoll = null }
+}
+
 function destroyPdf() {
+  clearPdfPageTracking()
   unloadPdf()
   pdfLoading.value = false
   pdfError.value = ''
@@ -1256,7 +1323,8 @@ onDeactivated(() => {
     nativeVideo.value.pause()
     videoPlaying.value = false
   } else if (currentFile.value && isDocumentPreview(currentFile.value.ext || '')) {
-    saveDocumentProgress()
+    if (currentFile.value.ext === '.pdf') saveProgress(currentFile.value.path, { pdfPage: pdfPage.value })
+    else saveDocumentProgress()
   }
 })
 
@@ -1281,7 +1349,8 @@ function handleBeforeUnload() {
   if (nativeVideo.value && currentFile.value && isVideo(currentFile.value.ext || '')) {
     saveVideoProgress(nativeVideo.value.currentTime, nativeVideo.value.duration)
   } else if (currentFile.value && isDocumentPreview(currentFile.value.ext || '')) {
-    saveDocumentProgress()
+    if (currentFile.value.ext === '.pdf') saveProgress(currentFile.value.path, { pdfPage: pdfPage.value })
+    else saveDocumentProgress()
   }
 }
 
@@ -1305,7 +1374,8 @@ watch(() => currentFile.value, async (newVal, oldVal) => {
   const oldIsDoc = oldVal && isDocumentPreview(oldVal.ext || '')
   const newIsDoc = newVal && isDocumentPreview(newVal.ext || '')
   if (oldIsDoc) {
-    saveDocumentProgress(docProgress.value, oldVal!.path)
+    if (oldVal!.ext === '.pdf') saveProgress(oldVal!.path, { pdfPage: pdfPage.value })
+    else saveDocumentProgress(docProgress.value, oldVal!.path)
   }
   // 离开文档模式时销毁预览（统一清理 createViewer 实例 + PDF iframe）
   if (oldIsDoc && !newIsDoc) {
