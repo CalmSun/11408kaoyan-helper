@@ -71,6 +71,8 @@ interface ElectronAPI {
   }>
   // v3.2.9：系统默认应用打开资料文件
   openMaterialsExternal: (token: string) => Promise<{ success: boolean; message?: string }>
+  // v3.5.2：pdf.js 静态资源回环 HTTP 服务基址
+  getAssetsBaseUrl: () => Promise<string>
   // v2.9.0：默认浏览器打开外部链接
   openExternalUrl: (url: string) => Promise<{ success: boolean; message?: string }>
   // v2.9.0：网易云音乐 API

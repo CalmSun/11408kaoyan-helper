@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listMaterialsFiles: () => ipcRenderer.invoke('materials:list-files'),
   // v3.2.9：系统默认应用打开资料文件
   openMaterialsExternal: (token: string) => ipcRenderer.invoke('materials:open-external', token),
+  // v3.5.2：pdf.js 静态资源回环 HTTP 服务基址（CMap/标准字体本地化主通道；为空则回退 kaoyan-assets:// 协议）
+  getAssetsBaseUrl: () => ipcRenderer.invoke('assets:get-base-url'),
   // v2.9.0：默认浏览器打开外部链接
   openExternalUrl: (url: string) => ipcRenderer.invoke('open-external-url', url),
   // v2.9.0：网易云音乐 API

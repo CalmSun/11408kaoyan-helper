@@ -81,7 +81,7 @@
         <h3 class="section-title">
           <el-icon><View /></el-icon>
           <span class="preview-title-name">{{ currentFile?.name || '选择文件预览' }}</span>
-          <!-- v3.5.2：文档进度栏（页码导航 + 阅读进度）移至顶栏中间（标题与「默认应用打开」按钮之间），
+          <!-- v3.5.2：文档进度栏（页码导航 + 阅读进度）移至顶栏左侧、紧随标题之后，
                美化后与整体玻璃风格统一；仅文档预览时显示 -->
           <div class="doc-status-bar" v-if="currentFile && isDocumentPreview(currentFile.ext)">
             <div class="doc-page-nav" v-if="docTotalPages > 1">
@@ -680,20 +680,24 @@ async function openDocumentViewer(file: MaterialNode) {
       // 中文 CID 字体 PDF 解码依赖 CMap，离线/国内网络下 CDN 不可达会导致
       // 「无法渲染该页面。该页可能包含浏览器 PDF 引擎暂不支持的图形、字体或压缩特性」。
       // 资源由 scripts/copy-pdfjs-assets.mjs 复制到 src/renderer/public/pdfjs（prod 进 dist/renderer）。
-      // v3.5.2 修复（最终方案）：用 kaoyan-assets:// 自定义协议绝对 URL + 主进程 corsEnabled。
+      // v3.5.2 修复（最终方案）：主进程回环 HTTP 服务（http://127.0.0.1）提供资源。
       // 根因链：pdf.js 的 isValidFetchUrl 只认 http(s)，非 http(s)（file:// / 自定义协议）一律走
-      //   XMLHttpRequest 分支；相对路径在 prod 解析为 file://...，XHR 访问 file:// 被
-      //   webSecurity:true 的 CORS 拦截 → CMap 加载失败 → 中文 PDF 报「无法渲染该页面」。
-      // 正确做法：指向自定义协议 kaoyan-assets://（dev/prod 行为一致），并给该协议在
-      //   registerSchemesAsPrivileged 加 corsEnabled:true，让主线程 XHR 能跨域读取 CMap。
-      //   （此前相对路径方案在 dev 走 http fetch 可用，但 prod file:// XHR 被 CORS 拦——未根治）
+      //   XMLHttpRequest 分支；file:// XHR 被 webSecurity:true 的 CORS 拦截，自定义协议 XHR
+      //   在打包后仍不可靠（kaoyan-assets:// + corsEnabled 方案历经多轮未根治）→ CMap 加载失败 → 报错。
+      // 正确做法：回环 http URL 使 pdf.js 走最成熟稳定的 fetch 分支，dev/prod 行为一致；
+      //   服务不可用时回退 kaoyan-assets:// 自定义协议（保留为备用通道）。
+      let pdfAssetsBase = 'kaoyan-assets://pdfjs/'
+      try {
+        const base = await window.electronAPI?.getAssetsBaseUrl?.()
+        if (base) pdfAssetsBase = base.endsWith('/') ? base : `${base}/`
+      } catch { /* 回退自定义协议备用通道 */ }
       plugins = [mod.pdfPlugin({
         pdfjs,
         workerSrc: workerMod.default,
         useFetchData: true,
-        cMapUrl: 'kaoyan-assets://pdfjs/cmaps/',
+        cMapUrl: `${pdfAssetsBase}cmaps/`,
         cMapPacked: true,
-        standardFontDataUrl: 'kaoyan-assets://pdfjs/standard_fonts/'
+        standardFontDataUrl: `${pdfAssetsBase}standard_fonts/`
       })]
       const prog = loadProgress()[file.path]
       if (typeof prog?.docPage === 'number' && prog.docPage > 1) initialPage = prog.docPage
@@ -1926,13 +1930,15 @@ body.liquid-glass .glass-card:hover {
   position: relative;
 }
 
-/* v3.5.2：文档进度栏（页码导航 + 阅读进度）——移至顶栏中间，胶囊样式与玻璃风格统一 */
+/* v3.5.2：文档进度栏（页码导航 + 阅读进度）——移至顶栏左侧紧随标题，胶囊样式与玻璃风格统一。
+   margin-right:auto 将右侧「默认应用打开」按钮推到顶栏最右；
+   视频预览时进度栏不渲染（v-if），按钮保持原有位置不受影响。 */
 .doc-status-bar {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 auto;
+  margin: 0 auto 0 0;
   padding: 3px 12px;
   border-radius: 999px;
   background: var(--mo-bg-2, rgba(255, 255, 255, 0.06));

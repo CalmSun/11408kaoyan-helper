@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, 
 import { autoUpdater } from 'electron-updater'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as http from 'http'
 import { pathToFileURL } from 'url'
 
 // v3.1.2：全局未捕获异常处理，防止主进程崩溃弹窗
@@ -199,6 +200,80 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let isQuitting = false       // 是否真正退出（区分"关闭隐藏到托盘"与"托盘菜单退出"）
 let trayHintShown = false    // 托盘提示气泡是否已展示过
+
+// v3.5.2：pdf.js 静态资源（cmaps / standard_fonts）回环 HTTP 服务基址。
+// 背景：pdf.js fetchData 只对 http(s) URL 走 fetch 分支，其余协议（file:// / 自定义协议）一律走 XHR；
+// 打包后 XHR 访问自定义协议（kaoyan-assets://）在部分环境仍不可靠（历经多轮修复未根治）。
+// 回环 http://127.0.0.1 让 pdf.js 走最成熟稳定的 fetch 分支，dev/prod 行为一致，彻底消除该类故障。
+// 仅监听 127.0.0.1（不触发防火墙提示），路径白名单限制为 pdfjs/ 下的 cmaps 与 standard_fonts。
+let pdfAssetsBaseUrl = ''
+let pdfAssetsServer: http.Server | null = null
+
+/** v3.5.2：启动回环 HTTP 服务，提供 pdf.js cmaps / standard_fonts（与 kaoyan-assets 协议同源的目录解析逻辑） */
+function startPdfAssetsServer(): void {
+  try {
+    pdfAssetsServer = http.createServer((req, res) => {
+      try {
+        // CORS：渲染进程（file:// 或 http://localhost）跨域读取回环服务，预检直接放行
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204)
+          res.end()
+          return
+        }
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.writeHead(405)
+          res.end('method not allowed')
+          return
+        }
+        const u = new URL(req.url || '/', 'http://127.0.0.1')
+        const rel = decodeURIComponent(u.pathname).replace(/^\/+/, '')
+        // 白名单：仅 pdfjs/cmaps 与 pdfjs/standard_fonts 下的安全文件名（防路径穿越）
+        if (!/^pdfjs\/(cmaps|standard_fonts)\/[\w.%-]+$/.test(rel)) {
+          res.writeHead(403)
+          res.end('forbidden')
+          return
+        }
+        const candidates = [
+          path.join(__dirname, '../renderer', rel),
+          path.join(app.getAppPath(), 'src/renderer/public', rel)
+        ]
+        for (const file of candidates) {
+          const resolved = path.resolve(file)
+          try {
+            const buf = fs.readFileSync(resolved) // fs 对 app.asar 透明解包
+            res.writeHead(200, {
+              'Content-Type': 'application/octet-stream',
+              'Content-Length': String(buf.byteLength),
+              'Cache-Control': 'public, max-age=86400'
+            })
+            res.end(req.method === 'HEAD' ? undefined : buf)
+            return
+          } catch {
+            continue
+          }
+        }
+        res.writeHead(404)
+        res.end('not found')
+      } catch {
+        try { res.writeHead(400); res.end('bad request') } catch { /* ignore */ }
+      }
+    })
+    pdfAssetsServer.on('error', () => {
+      pdfAssetsBaseUrl = '' // 启动失败：渲染进程回退 kaoyan-assets:// 协议
+    })
+    // 端口 0 = 系统分配空闲端口，避免端口冲突；仅绑定回环地址
+    pdfAssetsServer.listen(0, '127.0.0.1', () => {
+      const addr = pdfAssetsServer?.address()
+      if (addr && typeof addr === 'object') {
+        pdfAssetsBaseUrl = `http://127.0.0.1:${addr.port}/pdfjs/`
+      }
+    })
+  } catch {
+    pdfAssetsBaseUrl = ''
+  }
+}
 
 // 托盘图标路径：开发环境取项目 resources 目录，打包后取 extraResources 输出目录
 function trayIconPath(): string {
@@ -454,6 +529,10 @@ if (!gotTheLock) {
       }
     })
 
+    // v3.5.2：回环 HTTP 资源服务（pdf.js CMap/字体主通道，fetch 分支；kaoyan-assets:// 保留为备用）
+    startPdfAssetsServer()
+    ipcMain.handle('assets:get-base-url', () => pdfAssetsBaseUrl)
+
     // v3.0.0：资料协议：显式支持 Range 请求（视频拖动进度/快速加载），
     // 此前用 net.fetch(file://) 在部分 Electron 版本下 Range 支持不稳定，
     // 改用 fs.createReadStream + 206 Partial Content 确保 seek 正常。
@@ -579,6 +658,7 @@ if (!gotTheLock) {
 // 托盘菜单"退出"触发 before-quit 时放行真正的退出
 app.on('before-quit', () => {
   isQuitting = true
+  try { pdfAssetsServer?.close() } catch { /* ignore */ }
 })
 
 app.on('window-all-closed', () => {
