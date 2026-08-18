@@ -920,47 +920,53 @@ function bufferedEndSec(): number {
 }
 
 /** 拖动进度条超出缓冲时：重启拉流管道（Range 从目标偏移拉流），防止 MSE 顺序拉流追不上 → 播放头重置到开头 */
+let dashRestartSeq = 0  // v3.6.2：seek 重启序列号——连续快速拖动时丢弃过期重启，防止并发覆盖
 async function seekDashIfNeeded(targetSec: number): Promise<void> {
   const el = videoEl.value
   if (!el || !currentView.value || !mediaSource) return  // 非 DASH（durl 直连）由浏览器原生 seek 处理
   const bufEnd = bufferedEndSec()
   if (bufEnd <= 0 || targetSec <= bufEnd + 2) return  // 缓冲内：浏览器原生处理
+  const mySeq = ++dashRestartSeq
   console.log(`[DASH] seek 目标 ${targetSec.toFixed(1)}s 超出缓冲 ${bufEnd.toFixed(1)}s，重启拉流管道`)
-  pendingSeekSec = targetSec
   try {
     const page = currentView.value.pages[currentPageIdx.value]
     if (!page) return
     stopDash()
     dashFinished = 0
     const res = await getPlayurlCached(currentView.value.bvid, page.cid, currentQn.value, false)
+    // v3.6.2：期间用户再次拖动已发起更新重启 → 丢弃本次（防旧管道覆盖新管道）
+    if (mySeq !== dashRestartSeq) return
     if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
-      await startDash(res.dash.video, res.dash.audio || [])
+      await startDash(res.dash.video, res.dash.audio || [], targetSec)
     } else {
       try { el.currentTime = targetSec } catch { /* ignore */ }
     }
   } catch (err) {
-    console.warn('[DASH] seek 重启拉流失败，直接 seek：', err)
-    try { el.currentTime = targetSec } catch { /* ignore */ }
+    if (mySeq !== dashRestartSeq) return
+    console.warn('[DASH] seek 重启拉流失败，回退重载：', err)
+    // 管道已被 stopDash 销毁 → 重新加载流（避免黑屏/无源状态）
+    try { void loadStream() } catch { /* ignore */ }
   }
 }
 
-/** Range 管道数据就绪后定位到目标时间（最多轮询 15s，超时直接 seek 兜底） */
-function scheduleSeekAfterReady(target: number, n = 0): void {
+/** Range 管道数据就绪后定位到目标时间（最多轮询 15s，超时直接 seek 兜底）。
+ *  v3.6.2：绑定当前管道的 SourceBuffer 与 MediaSource——并发重启时旧管道的
+ *  就绪轮询因 ms 失效直接退出，不会误 seek。 */
+function scheduleSeekAfterReady(target: number, sb: SourceBuffer | null, ms: MediaSource | null, n = 0): void {
   const el = videoEl.value
-  if (!el || !mediaSource || !dashBuffers.length) return
-  if (n >= 75) {
+  if (!el || !ms || ms !== mediaSource) return  // 管道已被替换，放弃
+  if (!sb || n >= 75) {
     try { el.currentTime = target } catch { /* ignore */ }
     return
   }
   try {
-    const vSb = dashBuffers[0]
-    if (el.readyState >= 1 && vSb.buffered.length > 0 && vSb.buffered.end(vSb.buffered.length - 1) >= target - 5) {
+    if (el.readyState >= 1 && sb.buffered.length > 0 && sb.buffered.end(sb.buffered.length - 1) >= target - 5) {
       el.currentTime = target
       console.log(`[DASH] 已定位到 ${target.toFixed(1)}s`)
       return
     }
   } catch { /* 尚未就绪 */ }
-  setTimeout(() => scheduleSeekAfterReady(target, n + 1), 200)
+  setTimeout(() => scheduleSeekAfterReady(target, sb, ms, n + 1), 200)
 }
 
 /** v3.6.0：选择目标清晰度轨道（优先最高带宽）：指定 qn 不存在时按 bandwidth 倒序选择，避免高 qn 低带宽轨道干扰 */
@@ -1028,7 +1034,7 @@ async function preCleanBuffers(el: HTMLVideoElement): Promise<void> {
   }
 }
 
-async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrack[]): Promise<void> {
+async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrack[], seekSecOverride = -1): Promise<void> {
   if (!api || !videoEl.value) throw new Error('播放器未就绪')
   // v3.5.9：预清理历史缓冲（移除过去 10s 以内碎片区间）降低配额压力
   await preCleanBuffers(videoEl.value)
@@ -1061,9 +1067,10 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
   ms.addEventListener('sourceopen', () => {
     try {
       // v3.6.2：管道重启时携带 seek 目标（拖动进度条超缓冲场景），
-      // pumpTrack 从目标字节偏移 Range 拉流，就绪后自动定位
-      const seekSec = pendingSeekSec
-      pendingSeekSec = 0
+      // pumpTrack 从目标字节偏移 Range 拉流，就绪后自动定位。
+      // 显式参数优先（seekDashIfNeeded 传入），避免并发重启互相污染 pendingSeekSec
+      const seekSec = seekSecOverride >= 0 ? seekSecOverride : pendingSeekSec
+      if (seekSecOverride < 0) pendingSeekSec = 0
       const vSb = ms.addSourceBuffer(vMime)
       dashBuffers.push(vSb)
       dashTrackTotal = 1
@@ -1074,8 +1081,8 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
         dashTrackTotal = 2
         pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl, currentQn.value, seekSec)
       }
-      // Range 数据从目标附近开始 append，缓冲就绪后立即 seek 定位
-      if (seekSec > 0) scheduleSeekAfterReady(seekSec)
+      // Range 数据从目标附近开始 append，缓冲就绪后立即 seek 定位（绑定本管道 sb/ms）
+      if (seekSec > 0) scheduleSeekAfterReady(seekSec, vSb, ms)
     } catch (err) {
       playerError.value = `播放初始化失败：${(err as Error).message || err}`
     }
@@ -1095,21 +1102,24 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
       // 先取文件总大小与 init segment（fMP4 的 moov/init 位于文件头），再从目标
       // 时间对应的字节偏移 Range 拉取，避免顺序拉流从 0 追赶到目标导致长时间
       // waiting/播放头重置到开头。主进程流代理已透传 Range 与 206/Content-Range。
-      const head = await fetch(url, { method: 'HEAD', signal: ctrl.signal })
-      const total = Number(head.headers.get('content-length') || 0)
-      const dur = currentView.value?.pages[currentPageIdx.value]?.durationSec || videoEl.value?.duration || 0
-      if (total > 0 && dur > 0) {
-        // 1) init segment：B 站 fMP4 头部 2MB 足够覆盖 moov/init
-        const initResp = await fetch(url, { headers: { Range: 'bytes=0-2097151' }, signal: ctrl.signal })
-        if ((initResp.ok || initResp.status === 206) && initResp.body) {
-          const initBuf = await initResp.arrayBuffer()
-          if (initBuf.byteLength > 0) await appendWithQuotaGuard(sb, initBuf, ctrl)
+      // 任一环节失败（CDN 拒绝 Range/网络抖动）→ 静默回退从头拉取，不报错。
+      try {
+        const head = await fetch(url, { method: 'HEAD', signal: ctrl.signal })
+        const total = Number(head.headers.get('content-length') || 0)
+        const dur = currentView.value?.pages[currentPageIdx.value]?.durationSec || videoEl.value?.duration || 0
+        if (total > 0 && dur > 0) {
+          // 1) init segment：B 站 fMP4 头部 2MB 足够覆盖 moov/init
+          const initResp = await fetch(url, { headers: { Range: 'bytes=0-2097151' }, signal: ctrl.signal })
+          if ((initResp.ok || initResp.status === 206) && initResp.body) {
+            const initBuf = await initResp.arrayBuffer()
+            if (initBuf.byteLength > 0) await appendWithQuotaGuard(sb, initBuf, ctrl)
+          }
+          // 2) 目标偏移：时间比例 × 总大小，乘 0.95 保守前移（VBR 码率波动时宁可多拉）
+          const offset = Math.max(0, Math.min(total - 1, Math.floor((startSec / dur) * total * 0.95)))
+          const segResp = await fetch(url, { headers: { Range: `bytes=${offset}-` }, signal: ctrl.signal })
+          if (segResp.ok || segResp.status === 206) resp = segResp
         }
-        // 2) 目标偏移：时间比例 × 总大小，乘 0.95 保守前移（VBR 码率波动时宁可多拉）
-        const offset = Math.max(0, Math.min(total - 1, Math.floor((startSec / dur) * total * 0.95)))
-        const segResp = await fetch(url, { headers: { Range: `bytes=${offset}-` }, signal: ctrl.signal })
-        if (segResp.ok || segResp.status === 206) resp = segResp
-      }
+      } catch { /* Range 不可用：走下方兜底从头拉取 */ }
     }
     // 兜底：无 startSec 或 Range 失败时从头拉取
     if (!resp) resp = await fetch(url, { signal: ctrl.signal })
@@ -1123,6 +1133,9 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
       if (ctrl.signal.aborted) return
       const { done, value } = await reader.read()
       if (done) break
+      // v3.6.2：read 返回后再次检查 abort——管道可能已被 seek 重启（stopDash），
+      // 若继续 append 会抛 InvalidStateError（SourceBuffer removed）
+      if (ctrl.signal.aborted) return
       // v3.6.2：append 前主动清理播放点前 10s 之外的历史缓冲，从源头防止配额打满
       evictOldBuffers(videoEl.value)
       await appendWithQuotaGuard(sb, value, ctrl)
@@ -1134,6 +1147,12 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
     }
   } catch (err) {
     if (ctrl.signal.aborted) return
+    // v3.6.2：管道替换/中止类错误（append 到已移除 SourceBuffer、abort 竞态）
+    // 静默处理——拖动进度条重启管道时的正常竞态，绝不向 UI 显示"加载失败"
+    if (err instanceof DOMException &&
+        (err.name === 'InvalidStateError' || err.name === 'InvalidAccessError' || err.name === 'AbortError')) {
+      return
+    }
     const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
     if (isQuota) {
       // v3.6.2：配额不足 → 激进清理 + 等待缓冲消耗 + 重试同清晰度（不降清）
@@ -1199,6 +1218,12 @@ async function appendWithQuotaGuard(sb: SourceBuffer, chunk: BufferSource, ctrl:
       await waitEvent(sb, 'updateend', ctrl)
       return
     } catch (err) {
+      // v3.6.2：管道已替换（拖动进度条 seek 重启 MediaSource）时，append 到已移除的
+      // SourceBuffer 会抛 InvalidStateError——这是正常竞态，静默返回，不向 UI 报错
+      if (ctrl.signal.aborted) return
+      const isInvalid = err instanceof DOMException &&
+        (err.name === 'InvalidStateError' || err.name === 'InvalidAccessError' || err.name === 'AbortError')
+      if (isInvalid) return
       const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
       if (!isQuota || attempt === 2) throw err
       // 保留播放点前 10s 便于回拖，其余历史缓冲逐段移除（含碎片区间）
@@ -1610,7 +1635,9 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  flex: 1;
+  /* v3.6.2：flex: 0 1 auto——消除 flex-basis:0% 对 width 的覆盖，确保
+     max-width + margin auto 的水平居中在 .bili-host 中真正生效 */
+  flex: 0 1 auto;
   min-height: 0;
   /* v3.6.1：面板整体在"学习资料"板块中水平居中（播放卡片不再贴左，
      超宽窗口下内容也不过度拉伸，视觉重心落在板块中心） */

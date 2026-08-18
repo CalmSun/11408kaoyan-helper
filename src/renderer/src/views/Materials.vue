@@ -1814,12 +1814,14 @@ function downloadFile() {
   height: calc(100% - 70px);
 }
 
-/* v3.6.2：B 站面板宿主——水平居中，使面板内容中心与顶栏
-   "本地资料/哔哩哔哩"切换按钮（同容器居中）严格对齐 */
+/* v3.6.2：B 站面板宿主——内容相对视口中心右移约 80px（padding-left:160px），
+   与本地资料模式预览区（左侧 320px 文件树右侧）的视觉中心对齐；
+   面板内容本身在宿主内保持居中 */
 .bili-host {
   display: flex;
   justify-content: center;
   min-height: 0;
+  padding-left: 160px;
 }
 
 .glass-card {
