@@ -88,10 +88,10 @@
         <el-icon class="is-loading" :size="28"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
-      <!-- v3.5.6：热门不自动加载，首次进入提示手动点「换一批」 -->
+      <!-- v3.5.7：首次访问自动加载；此空态仅在加载失败/无结果时出现 -->
       <div v-else-if="!popularList.length" class="bili-empty glass-card">
         <el-icon :size="48"><Promotion /></el-icon>
-        <p>点击上方「换一批」加载热门视频推荐</p>
+        <p>暂无热门内容，点击「换一批」重试</p>
       </div>
       <div v-else class="bili-grid cols-6">
         <div v-for="v in popularList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
@@ -628,6 +628,8 @@ const popularList = ref<BiliVideo[]>([])
 const popularPage = ref(1)
 const popularHasMore = ref(true)
 const popularLoading = ref(false)
+// v3.5.7：首次进入热门页签自动刷新一次，之后复用缓存由「换一批」手动触发
+const popularTouched = ref(false)
 
 async function loadPopular(refresh: boolean): Promise<void> {
   if (!api || popularLoading.value) return
@@ -741,6 +743,11 @@ async function doSearch(page: number): Promise<void> {
 function switchTab(t: BiliTab): void {
   tab.value = t
   if (t === 'fav' && user.value && !favFolders.value.length) loadFavFolders()
+  // v3.5.7：热门首次访问自动刷新内容列表
+  if (t === 'popular' && !popularTouched.value) {
+    popularTouched.value = true
+    loadPopular(true)
+  }
 }
 
 // ── 播放器 ──
@@ -937,10 +944,8 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController): 
       if (ctrl.signal.aborted) return
       const { done, value } = await reader.read()
       if (done) break
-      if (sb.updating) await waitEvent(sb, 'updateend', ctrl)
+      await appendWithQuotaGuard(sb, value, ctrl)
       if (ctrl.signal.aborted) return
-      sb.appendBuffer(value)
-      await waitEvent(sb, 'updateend', ctrl)
     }
     dashFinished++
     if (dashFinished >= dashTrackTotal && mediaSource && mediaSource.readyState === 'open') {
@@ -949,6 +954,36 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController): 
   } catch (err) {
     if (ctrl.signal.aborted) return
     playerError.value = `视频流加载失败：${(err as Error).message || err}，可尝试切换清晰度或重试`
+  }
+}
+
+/**
+ * v3.5.7：带配额保护的 append。
+ * 高码率长视频的已播放缓冲会累积超出 MSE 配额（SourceBuffer is full），
+ * 触发 QuotaExceededError 时移除播放点之前的历史缓冲腾出空间后重试。
+ */
+async function appendWithQuotaGuard(sb: SourceBuffer, chunk: BufferSource, ctrl: AbortController): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (sb.updating) await waitEvent(sb, 'updateend', ctrl)
+    if (ctrl.signal.aborted) return
+    try {
+      sb.appendBuffer(chunk)
+      await waitEvent(sb, 'updateend', ctrl)
+      return
+    } catch (err) {
+      const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
+      if (!isQuota || attempt === 1) throw err
+      try {
+        // 保留播放点前 20s 便于回拖，其余历史缓冲全部移除
+        const el = videoEl.value
+        const keepBefore = el ? Math.max(0, el.currentTime - 20) : 0
+        if (!sb.updating && sb.buffered.length) {
+          const start = sb.buffered.start(0)
+          if (keepBefore > start + 1) sb.remove(start, keepBefore)
+        }
+        if (sb.updating) await waitEvent(sb, 'updateend', ctrl)
+      } catch { /* 清理失败交由下一轮重试兜底 */ }
+    }
   }
 }
 
@@ -1144,8 +1179,30 @@ async function loadDanmaku(cid: number): Promise<void> {
   if (!api || !cid) return
   try {
     const res = await api.biliDanmaku(cid)
-    if (res.success) danmakuAll = res.list || []
+    if (res.success) {
+      danmakuAll = res.list || []
+      // v3.5.7：弹幕晚于播放开始返回时，跳过已播过的部分，避免一次性补发刷屏
+      const el = videoEl.value
+      if (el && el.currentTime > 0) {
+        const t = el.currentTime
+        let i = 0
+        while (i < danmakuAll.length && danmakuAll[i].time <= t) i++
+        danmakuPtr = i
+        danmakuLastTime = t
+      }
+    }
   } catch { /* 弹幕加载失败不影响播放 */ }
+}
+
+/** v3.5.7：全局注入弹幕 keyframes（动态元素不受组件 scoped 样式约束） */
+function ensureDmKeyframes(): void {
+  if (document.getElementById('bili-dm-kf')) return
+  const st = document.createElement('style')
+  st.id = 'bili-dm-kf'
+  st.textContent =
+    '@keyframes bili-dm-scroll{from{transform:translateX(0)}to{transform:translateX(calc(-100% - 100vw))}}' +
+    '@keyframes bili-dm-stay{0%{opacity:0}8%{opacity:1}80%{opacity:1}100%{opacity:0}}'
+  document.head.appendChild(st)
 }
 
 function clearDanmakuLayer(): void {
@@ -1187,25 +1244,43 @@ function spawnDanmaku(dm: BiliDanmaku): void {
   const layer = danmakuLayerEl.value
   if (!layer || !dm.text) return
   if (layer.childElementCount >= DM_MAX_VISIBLE) return
+  ensureDmKeyframes()
   const el = document.createElement('div')
-  el.className = 'bili-dm'
+  // v3.5.7：样式全部行内设置——动态创建元素拿不到 scoped 属性，
+  // 且弹窗 teleport 后 :deep 选择器与 scoped keyframes 匹配不可靠
+  const s = el.style
+  s.position = 'absolute'
+  s.whiteSpace = 'nowrap'
+  s.fontSize = '17px'
+  s.lineHeight = '26px'
+  s.fontWeight = '600'
+  s.color = dm.color
+  s.textShadow = '0 1px 2px rgba(0, 0, 0, 0.7)'
+  s.willChange = 'transform'
+  s.pointerEvents = 'none'
   el.textContent = dm.text
-  el.style.color = dm.color
-  if (dm.mode === 4) {
-    // 底部固定弹幕
-    el.classList.add('bili-dm-stay', 'bili-dm-bottom')
-    el.style.bottom = `${(dm.text.length % 3) * 34 + 6}px`
-  } else if (dm.mode === 5) {
-    // 顶部固定弹幕
-    el.classList.add('bili-dm-stay', 'bili-dm-top')
-    el.style.top = `${(dm.text.length % 3) * 34 + 6}px`
+  let lifeMs = 4000
+  if (dm.mode === 4 || dm.mode === 5) {
+    // 顶部 / 底部固定弹幕：原位停留数秒后淡出
+    s.left = '50%'
+    s.transform = 'translateX(-50%)'
+    if (dm.mode === 4) s.bottom = `${(dm.text.length % 3) * 32 + 6}px`
+    else s.top = `${(dm.text.length % 3) * 32 + 6}px`
+    s.animation = 'bili-dm-stay 4s ease forwards'
   } else {
     // 滚动弹幕（mode 1/2/3/6 统一按滚动处理），时长随长度微调
     dmTrackRot = (dmTrackRot + 3) % 10
-    el.style.top = `${dmTrackRot * 8 + 2}%`
-    el.style.animationDuration = `${Math.min(12, Math.max(6, 6 + dm.text.length * 0.15))}s`
+    s.left = '100%'
+    s.top = `${dmTrackRot * 8 + 2}%`
+    const dur = Math.min(12, Math.max(6, 6 + dm.text.length * 0.15))
+    lifeMs = dur * 1000
+    s.animation = `bili-dm-scroll ${dur}s linear forwards`
   }
-  el.addEventListener('animationend', () => el.remove(), { once: true })
+  let removed = false
+  const removeEl = () => { if (!removed) { removed = true; el.remove() } }
+  el.addEventListener('animationend', removeEl, { once: true })
+  // 兜底移除：动画被系统偏好禁用或事件丢失时防止 DOM 泄漏
+  setTimeout(removeEl, lifeMs + 500)
   layer.appendChild(el)
 }
 
@@ -1701,12 +1776,12 @@ html.dark .bili-search-input {
 }
 
 .bili-player-side {
-  width: 320px;
+  width: 264px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-height: 72vh;
+  gap: 10px;
+  max-height: 58vh;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -2019,49 +2094,13 @@ html.dark .bili-action-btn {
   }
 }
 
-/* ── v3.5.5：弹幕层 ── */
+/* ── v3.5.5：弹幕层（条目样式与 keyframes 见 spawnDanmaku 行内注入） ── */
 .bili-danmaku-layer {
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
   z-index: 5;
-}
-
-/* 弹幕条目为 JS 动态创建，需 :deep 穿透 scoped 作用域 */
-:deep(.bili-dm) {
-  position: absolute;
-  left: 100%;
-  white-space: nowrap;
-  font-size: 18px;
-  line-height: 28px;
-  font-weight: 600;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-  will-change: transform;
-  animation: bili-dm-scroll linear forwards;
-}
-
-@keyframes bili-dm-scroll {
-  from { transform: translateX(0); }
-  to { transform: translateX(calc(-100% - 100vw)); }
-}
-
-/* 顶部 / 底部固定弹幕：原位停留数秒后淡出 */
-:deep(.bili-dm-stay) {
-  left: 50%;
-  transform: translateX(-50%);
-  animation: bili-dm-stay 4s ease forwards;
-}
-
-:deep(.bili-dm-top) { top: 6px; }
-:deep(.bili-dm-bottom) { bottom: 6px; }
-
-@keyframes bili-dm-stay {
-  0% { opacity: 0; }
-  8% { opacity: 1; }
-  80% { opacity: 1; }
-  100% { opacity: 0; }
 }
 
 /* 弹幕开关按钮（播放信息栏右侧） */
@@ -2167,6 +2206,45 @@ html.dark .bili-action-btn {
 .bili-player-side .bili-up-stats {
   flex-direction: row;
   gap: 10px;
+}
+
+/* v3.5.7：右侧栏整体紧凑化 —— 缩小作者卡片与视频列表的宽高占用 */
+.bili-player-side .bili-up-card {
+  padding: 10px 12px;
+}
+
+.bili-player-side .bili-up-face {
+  width: 42px;
+  height: 42px;
+}
+
+.bili-player-side .bili-up-face-ph {
+  font-size: 20px;
+}
+
+.bili-player-side .bili-up-name {
+  font-size: 13px;
+}
+
+.bili-player-side .bili-up-sign {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.bili-player-side .bili-up-stats {
+  font-size: 11px;
+}
+
+.bili-player-side .bili-card-info {
+  padding: 6px 8px;
+}
+
+.bili-player-side .bili-card-title {
+  font-size: 12px;
+}
+
+.bili-player-side .bili-card-meta {
+  font-size: 11px;
 }
 
 .bili-load-more {
