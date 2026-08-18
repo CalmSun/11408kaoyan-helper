@@ -1391,6 +1391,13 @@ function startDmLoop(): void {
   dmLoopActive = true
   const loop = () => {
     if (!dmLoopActive) return
+    // v3.6.2：弹窗打开初期（dialog 异步渲染）ref 可能尚未绑定——
+    // 此时跳过本帧继续等待，而非停止循环；组件卸载后 ref 置空且
+    // onBeforeUnmount 已 stopDmLoop，不会长期空转。
+    if (!danmakuLayerEl.value) {
+      dmLoopRaf = requestAnimationFrame(loop)
+      return
+    }
     if (danmakuEnabled.value) onDanmakuTick()
     dmLoopRaf = requestAnimationFrame(loop)
   }
@@ -1479,15 +1486,23 @@ function spawnDanmaku(dm: BiliDanmaku): void {
     s.top = `${dmTrackRot * 8 + 2}%`
     const dur = timer
     const start = performance.now()
+    let warnedZero = false
     const tick = (now: number) => {
       if (removed) return
-      const layerW = layer.clientWidth
+      // v3.6.2：弹窗过渡动画期间 layer.clientWidth 可能为 0——
+      // 若 total<=0 会无限空转 rAF，弹幕永不移动（"看不到弹幕"的真实场景）。
+      // 兜底：宽度为 0 时用父容器（stage）宽度，仍为 0 则用 800px 默认值，
+      // 保证弹幕立即进入可视区并正常滚动。
+      let layerW = layer.clientWidth
+      if (!layerW || layerW <= 0) {
+        layerW = layer.parentElement ? layer.parentElement.clientWidth : 0
+        if (!warnedZero) { warnedZero = true; console.warn('[弹幕] 层宽为0，使用兜底宽度', layerW) }
+      }
       const elW = el.offsetWidth
-      const total = layerW + elW
-      if (total <= 0) { raf = requestAnimationFrame(tick); return }
+      const total = (layerW || 800) + elW
       const p = (now - start) / dur
       if (p >= 1) { removeEl(); return }
-      const x = layerW - total * p
+      const x = (layerW || 800) - total * p
       el.style.transform = `translateX(${x}px)`
       raf = requestAnimationFrame(tick)
     }
@@ -1567,6 +1582,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopQrPolling()
+  stopDmLoop()  // v3.6.2：组件卸载前必须停止弹幕 rAF 循环，避免销毁后访问已释放 DOM
   stopDash()
   try { videoEl.value?.pause() } catch { /* ignore */ }
 })
@@ -1991,9 +2007,9 @@ html.dark .bili-search-input {
 /* ── 播放器弹窗（v3.5.6：左右分栏，右侧栏承载 UP 主卡片/投稿/相关视频） ── */
 .bili-player-body {
   display: flex;
-  /* v3.6.2：stretch 等高——评论/投稿/相关列表卡片底部与左侧视频信息底部齐平，
-     不再固定 max-height 独立滚动造成左右底部错位 */
-  align-items: stretch;
+  /* v3.6.2：侧栏改为 flex-start + 固定高度，评论/投稿/相关列表**缩短高度**、
+     内部滚动——不再 stretch 撑满导致过高 */
+  align-items: flex-start;
   gap: 14px;
 }
 
@@ -2012,9 +2028,9 @@ html.dark .bili-search-input {
   flex-direction: column;
   gap: 9px;
   min-height: 0;
-  /* v3.6.2：移除 max-height + 自身滚动——高度由 stretch 撑满与左侧齐平，
-     滚动下沉到内容区 .bili-side-content */
-  overflow: hidden;
+  /* v3.6.2：缩短列表高度——固定 42vh，超长内容内部滚动，避免撑满整个弹窗 */
+  max-height: 42vh;
+  overflow-y: auto;
   padding-right: 2px;
 }
 /* v3.6.0：作者卡片固定顶部，不参与滚动 */
@@ -2077,8 +2093,9 @@ html.dark .bili-search-input {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* v3.6.2：滚动下沉到内容区——列表底部与左侧视频信息底部齐平 */
-  overflow-y: auto;
+  /* v3.6.2：滚动由 .bili-player-side 统一负责（固定高度 42vh），
+     内容区不再独立滚动，避免双重滚动条 */
+  overflow: hidden;
 }
 .bili-section {
   flex: 1;
@@ -2087,8 +2104,6 @@ html.dark .bili-search-input {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-sm);
-  /* v3.6.2：移除独立 max-height/滚动，由 .bili-side-content 统一滚动，
-     保证卡片列表高度随左侧伸展、底部齐平 */
   overflow: hidden;
 }
 .bili-section.replies-only {
