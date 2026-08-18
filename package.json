@@ -1,6 +1,6 @@
 {
   "name": "kaoyan-helper",
-  "version": "3.5.8",
+  "version": "3.5.9",
   "description": "考研助手桌面应用 - 你的专属备考伙伴",
   "main": "dist/main/main.js",
   "author": "Kaoyan Helper",
@@ -46,7 +46,7 @@
     "appId": "com.kaoyan.helper",
     "productName": "11408考研助手",
     "directories": {
-      "output": "release-v358"
+      "output": "release-v359"
     },
     "extraResources": [
       {

@@ -800,7 +800,7 @@ async function playVideo(v: BiliVideo): Promise<void> {
   playerError.value = ''
   videoSrc.value = ''
   relatedList.value = []
-  dashFallbackTried = false
+  // v3.5.9：已废弃 durl fallback，dashFallbackTried 不再使用
   try {
     const res = await api.biliView(v.bvid)
     if (!res.success || !res.video) throw new Error(res.message || '视频信息获取失败')
@@ -860,12 +860,12 @@ let mediaSourceUrl = ''
 let dashCtrl: AbortController | null = null
 let dashFinished = 0
 let dashTrackTotal = 0
-// v3.5.8：注册全部 SourceBuffer，配额告急时音视频历史缓冲一起清理
-let dashBuffers: SourceBuffer[] = []
-let dashFallbackTried = false
-// v3.5.8：收紧缓冲水位（90/45 → 60/30），降低高码率长视频的配额压力
-const DASH_BUFFER_AHEAD = 60   // 缓冲超前秒数上限：达到即暂停拉流
-const DASH_BUFFER_RESUME = 30  // 消耗至该秒数后恢复拉流
+// v3.5.9：已废弃 durl 回退链（会导致长视频限 720p），改为降清重试
+const CLEAR_PREVIOUS_CONTEXT = false  // 占位符，v3.5.9 已移除 durl fallback
+// v3.5.9：收紧缓冲水位（60/30 → 45/20），增加预清理历史缓冲机制
+const DASH_BUFFER_AHEAD = 45   // 缓冲超前秒数上限：达到即暂停拉流
+const DASH_BUFFER_RESUME = 20  // 消耗至该秒数后恢复拉流
+let dashBuffers: SourceBuffer[] = []  // 所有注册的 SourceBuffer，用于配额清理
 
 /** 选择目标清晰度轨道：精确匹配优先，否则就近向下，再不行取最低档 */
 function pickDashTrack(tracks: BiliDashTrack[], qn: number): BiliDashTrack | null {
@@ -915,9 +915,26 @@ function stopDash(): void {
   dashBuffers = []
 }
 
+/** v3.5.9：预清理历史缓冲（起播前移除过去 10s 以内所有碎片区间）*/
+async function preCleanBuffers(el: HTMLVideoElement): Promise<void> {
+  for (const sb of dashBuffers.length ? dashBuffers : []) {
+    try {
+      if (!sb.updating && sb.buffered.length) {
+        const keepBefore = Math.max(0, el.currentTime - 10)
+        for (let i = sb.buffered.length - 1; i >= 0; i--) {
+          const start = sb.buffered.start(i)
+          const end = Math.min(sb.buffered.end(i), keepBefore)
+          if (end > start + 1) sb.remove(start, end)
+        }
+      }
+    } catch { /* 清理失败不影响继续 */ }
+  }
+}
+
 async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrack[]): Promise<void> {
   if (!api || !videoEl.value) throw new Error('播放器未就绪')
-  // v3.5.6：仅在 MSE 可解码的轨道中选轨，避免选中不支持的编码
+  // v3.5.9：预清理历史缓冲（移除过去 10s 以内碎片区间）降低配额压力
+  await preCleanBuffers(videoEl.value)
   const supportedVideo = videoTracks.filter(t => t.baseUrl && MediaSource.isTypeSupported(mseMime(t)))
   const vTrack = pickDashTrack(supportedVideo.length ? supportedVideo : videoTracks, currentQn.value)
   if (!vTrack || !vTrack.baseUrl) throw new Error('无可用视频轨道')
@@ -949,12 +966,12 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
       const vSb = ms.addSourceBuffer(vMime)
       dashBuffers.push(vSb)
       dashTrackTotal = 1
-      pumpTrack(`${vTok.baseUrl}?token=${vTok.token}`, vSb, ctrl)
+      pumpTrack(`${vTok.baseUrl}?token=${vTok.token}`, vSb, ctrl, currentQn.value)
       if (audioUsable && aTrack && aTok && aTok.success && aTok.token && aTok.baseUrl) {
         const aSb = ms.addSourceBuffer(aMime)
         dashBuffers.push(aSb)
         dashTrackTotal = 2
-        pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl)
+        pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl, currentQn.value)
       }
     } catch (err) {
       playerError.value = `播放初始化失败：${(err as Error).message || err}`
@@ -962,8 +979,8 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
   }, { once: true })
 }
 
-/** 单轨道拉流泵：流式读取 → 按缓冲水位节流追加到 SourceBuffer */
-async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController): Promise<void> {
+// ── v3.5.9：取消 durl 回退链，改为降清重试 ──
+async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, qn?: number): Promise<void> {
   try {
     const resp = await fetch(url, { signal: ctrl.signal })
     if (!resp.ok || !resp.body) throw new Error(`流拉取失败（HTTP ${resp.status}）`)
@@ -986,21 +1003,18 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController): 
   } catch (err) {
     if (ctrl.signal.aborted) return
     const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
-    if (isQuota) {
-      // v3.5.8：配额多次清理仍失败时静默回退 durl 直链播放，不向用户报错
-      if (tryDashFallback()) return
+    if (isQuota && qn) {
+      // v3.5.9：配额多次清理仍失败时降清重试（qn-1 / qn-2），避免直接中断
+      if (qn > 64 && qn <= 80) {
+        switchQuality(48)
+        return
+      } else if (qn > 48) {
+        switchQuality(32)
+        return
+      }
     }
     playerError.value = `视频流加载失败：${(err as Error).message || err}，可尝试切换清晰度或重试`
   }
-}
-
-/** v3.5.8：DASH 配额不可恢复时回退 durl 直链（每次起播仅尝试一次） */
-function tryDashFallback(): boolean {
-  if (dashFallbackTried || !currentView.value) return false
-  dashFallbackTried = true
-  stopDash()
-  void loadStream(true)
-  return true
 }
 
 /**
@@ -1240,11 +1254,11 @@ async function loadReplies(refresh: boolean): Promise<void> {
 // ── v3.5.5：弹幕（跟随视频时间轴渲染，支持开关与偏好持久化） ──
 const danmakuLayerEl = ref<HTMLDivElement | null>(null)
 const danmakuEnabled = ref(getGlobalStorage<boolean>('kaoyan_bili_danmaku', true))
-let danmakuAll: BiliDanmaku[] = []
-let danmakuPtr = 0
+const danmakuAll = ref<BiliDanmaku[]>([])
+const danmakuPtr = ref(0)
 let danmakuLastTime = 0
 let dmTrackRot = 0
-const DM_MAX_VISIBLE = 80 // 同屏弹幕上限：超出丢弃，保证渲染流畅
+const DM_MAX_VISIBLE = 200 // v3.5.9：放宽同屏弹幕上限至 200，避免误删真实弹幕
 
 function toggleDanmaku(): void {
   danmakuEnabled.value = !danmakuEnabled.value
@@ -1253,22 +1267,24 @@ function toggleDanmaku(): void {
 }
 
 async function loadDanmaku(cid: number): Promise<void> {
-  danmakuAll = []
-  danmakuPtr = 0
+  danmakuAll.value = []
+  danmakuPtr.value = 0
   danmakuLastTime = 0
   clearDanmakuLayer()
   if (!api || !cid) return
   try {
     const res = await api.biliDanmaku(cid)
     if (res.success) {
-      danmakuAll = res.list || []
+      danmakuAll.value = res.list || []
+      // v3.5.9：控制台输出解析到的弹幕条数便于排查
+      console.log(`[弹幕] CID ${cid}: 解析到 ${danmakuAll.value.length} 条弹幕`)
       // v3.5.7：弹幕晚于播放开始返回时，跳过已播过的部分，避免一次性补发刷屏
       const el = videoEl.value
       if (el && el.currentTime > 0) {
         const t = el.currentTime
         let i = 0
-        while (i < danmakuAll.length && danmakuAll[i].time <= t) i++
-        danmakuPtr = i
+        while (i < danmakuAll.value.length && danmakuAll.value[i].time <= t) i++
+        danmakuPtr.value = i
         danmakuLastTime = t
       }
     }
@@ -1294,11 +1310,11 @@ function clearDanmakuLayer(): void {
 /** 由 video timeupdate 驱动：补发 (lastTime, currentTime] 区间内的弹幕 */
 function onDanmakuTick(): void {
   const el = videoEl.value
-  if (!el || !danmakuEnabled.value || !danmakuAll.length) return
+  if (!el || !danmakuEnabled.value || !danmakuAll.value.length) return
   const t = el.currentTime
   if (t < danmakuLastTime) danmakuLastTime = t
-  while (danmakuPtr < danmakuAll.length && danmakuAll[danmakuPtr].time <= t) {
-    const dm = danmakuAll[danmakuPtr++]
+  while (danmakuPtr.value < danmakuAll.value.length && danmakuAll.value[danmakuPtr.value].time <= t) {
+    const dm = danmakuAll.value[danmakuPtr.value++]
     if (dm.time > danmakuLastTime) spawnDanmaku(dm)
   }
   danmakuLastTime = t
@@ -1308,16 +1324,16 @@ function onDanmakuTick(): void {
 function onVideoSeeking(): void {
   clearDanmakuLayer()
   const el = videoEl.value
-  if (!el || !danmakuAll.length) return
+  if (!el || !danmakuAll.value.length) return
   const t = el.currentTime
   let lo = 0
-  let hi = danmakuAll.length
+  let hi = danmakuAll.value.length
   while (lo < hi) {
     const mid = (lo + hi) >> 1
-    if (danmakuAll[mid].time < t) lo = mid + 1
+    if (danmakuAll.value[mid].time < t) lo = mid + 1
     else hi = mid
   }
-  danmakuPtr = lo
+  danmakuPtr.value = lo
   danmakuLastTime = t
 }
 
@@ -1357,6 +1373,8 @@ function spawnDanmaku(dm: BiliDanmaku): void {
     lifeMs = dur * 1000
     s.animation = `bili-dm-scroll ${dur}s linear forwards`
   }
+  // v3.5.9：控制台输出当前可见弹幕数便于调试
+  console.log(`[弹幕] 渲染 ${dm.mode} 号模式条弹幕，当前可见数：${layer.childElementCount + 1}`)
   let removed = false
   const removeEl = () => { if (!removed) { removed = true; el.remove() } }
   el.addEventListener('animationend', removeEl, { once: true })

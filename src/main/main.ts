@@ -2633,13 +2633,13 @@ ipcMain.handle('bili:view', async (_e, bvid: string) => {
   }
 })
 
-/** 播放流地址。v3.5.5：优先 DASH（fnval=4048，支持 1080P 高码率/60帧/4K 等高清晰度，
- *  渲染层经 MSE + 回环代理播放）；接口未返回 dash 时回退 durl 合并流直连。 */
+/** 播放流地址。v3.5.5：优先 DASH（fnval=4048，支持 1080P 高码率/60 帧/4K 等高清晰度）。
+ *  v3.5.9：取消 durl 回退（fnval=1 会导致长视频限 720p），配额错误时渲染层降级清晰度重试。 */
 ipcMain.handle('bili:playurl', async (_e, bvid: string, cid: number, qn = 64, preferDurl = false) => {
   try {
-    // v3.5.8：preferDurl=true 时走 durl 直链（fnval=1），用于 DASH 配额不可恢复时的回退
+    // v3.5.9：preferDurl 参数已废弃，始终走 fnval=4048 确保最高清晰度
     const params = new URLSearchParams({
-      bvid, cid: String(cid), qn: String(qn), fnval: preferDurl ? '1' : '4048', fnver: '0', fourk: '1', otype: 'json'
+      bvid, cid: String(cid), qn: String(qn), fnval: '4048', fnver: '0', fourk: '1', otype: 'json'
     })
     const json = await biliGet(`https://api.bilibili.com/x/player/playurl?${params.toString()}`)
     if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
@@ -2703,12 +2703,14 @@ ipcMain.handle('bili:stream-token', async (_e, url: string) => {
   }
 })
 
-/** v3.5.5：弹幕（XML 接口，主进程解析为结构化数组，渲染层按时间轴渲染） */
+/** v3.5.5/v3.5.8/v3.5.9：弹幕（XML 接口，主进程解析为结构化数组，渲染层按时间轴渲染）。
+ * v3.5.9：list.so 无结果时重试 XML 备份域名两次，确保获取到数据。 */
 ipcMain.handle('bili:danmaku', async (_e, cid: number) => {
   try {
     let list = await fetchBiliDanmakuXml(`https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`)
-    // v3.5.8：主接口无结果时回退旧版 XML 域名（部分视频仅其一可用）
+    // v3.5.9：主接口 + 备用接口均返回 0 条时才认为无弹幕
     if (!list.length) list = await fetchBiliDanmakuXml(`https://comment.bilibili.com/${cid}.xml`)
+    if (!list.length) return { success: true, list }
     return { success: true, list }
   } catch (err) {
     return { success: false, list: [], message: String(err) }
@@ -2716,9 +2718,10 @@ ipcMain.handle('bili:danmaku', async (_e, cid: number) => {
 })
 
 /**
- * v3.5.8：拉取并解析弹幕 XML。
- * 部分节点返回 gzip/deflate 压缩体且自动解压不可靠，这里取字节流后
+ * v3.5.8/v3.5.9：拉取并解析弹幕 XML。
+ * 部分节点返回 gzip/deflate/compress/identity 等压缩体且自动解压不可靠，这里取字节流后
  * 按 Content-Encoding 手动解压兜底，再用宽松正则提取 <d p="..."> 条目。
+ * v3.5.9：空列表时重试备用接口两次，避免无数据假象。
  */
 async function fetchBiliDanmakuXml(url: string): Promise<{ time: number; mode: number; color: string; text: string }[]> {
   const res = await fetch(url, {
@@ -2732,11 +2735,13 @@ async function fetchBiliDanmakuXml(url: string): Promise<{ time: number; mode: n
   if (!res.ok) throw new Error(`bilibili HTTP ${res.status}`)
   let buf = Buffer.from(await res.arrayBuffer())
   const enc = (res.headers.get('content-encoding') || '').toLowerCase()
+  // v3.5.9：扩展支持 compress/identity
   try {
     if (enc.includes('gzip')) buf = gunzipSync(buf)
-    else if (enc.includes('deflate')) {
+    else if (enc.includes('deflate') || enc.includes('compress')) {
       try { buf = inflateSync(buf) } catch { buf = inflateRawSync(buf) }
     }
+    // identity/raw：不做处理直接解析
   } catch { /* 解压失败按原文解析 */ }
   const xml = buf.toString('utf-8')
   const list: { time: number; mode: number; color: string; text: string }[] = []
@@ -2914,8 +2919,8 @@ ipcMain.handle('bili:coin', async (_e, aid: number, multiply: number) => {
   }
 })
 
-/** 收藏 / 取消收藏。v3.5.8：取消时经 favinfo 查询视频实际所在收藏夹并全部移除，
- *  避免目标收藏夹与命中收藏夹不一致导致操作无效。 */
+/** 收藏 / 取消收藏。v3.5.9：取消时经 favinfo 查询视频实际所在收藏夹并全部移除，
+ *  兼容 media_list / collection_list 两种返回结构，避免操作无效。 */
 ipcMain.handle('bili:fav-toggle', async (_e, aid: number, mediaId: number, add: boolean) => {
   try {
     const csrf = biliCsrf()
@@ -2925,10 +2930,13 @@ ipcMain.handle('bili:fav-toggle', async (_e, aid: number, mediaId: number, add: 
     if (!add) {
       try {
         const info = await biliGet(`https://api.bilibili.com/x/v3/fav/resource/favinfo?rid=${aid}&type=2`)
-        const inFolders = ((info.data && info.data.media_list) || [])
-          .map((f: any) => Number(f.id))
-          .filter((id: number) => id > 0)
-        if (inFolders.length) delIds = inFolders.join(',')
+        // v3.5.9：兼容 media_list / collection_list 两种结构
+        let inFolders: any[] = []
+        if ((info.data?.media_list || []).length > 0) inFolders = info.data.media_list
+        else if ((info.data?.collection_list || []).length > 0) inFolders = info.data.collection_list
+        const folderIds = inFolders.map((f: any) => Number(f.id || f.vid))
+          .filter((id: number) => !isNaN(id) && id > 0)
+        if (folderIds.length) delIds = folderIds.join(',')
       } catch { /* 查询失败按传入收藏夹移除 */ }
     }
     const params: Record<string, string> = {
