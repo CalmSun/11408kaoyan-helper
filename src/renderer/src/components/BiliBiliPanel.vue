@@ -951,6 +951,16 @@ function bufferedEndSec(): number {
   } catch { return 0 }
 }
 
+/** 指定 SourceBuffer 已缓冲的最远位置（秒）。v3.6.2：判断单轨道流是否完整读完，
+ *  必须看本轨道缓冲（videoEl.buffered 是音视频 union，音频文件小常先读完，不能用） */
+function sbBufferedEnd(sb: SourceBuffer): number {
+  try {
+    const buf = sb.buffered
+    if (!buf.length) return 0
+    return buf.end(buf.length - 1)
+  } catch { return 0 }
+}
+
 /** 拖动进度条超出缓冲时：重启拉流管道（Range 从目标偏移拉流），防止 MSE 顺序拉流追不上 → 播放头重置到开头 */
 let dashRestartSeq = 0  // v3.6.2：seek 重启序列号——连续快速拖动时丢弃过期重启，防止并发覆盖
 // v3.6.2：流中断自动恢复序列号 + 限次计数（防并发恢复 + 限次防网络持续抖动无限重启）
@@ -1267,12 +1277,14 @@ async function pumpTrack(urls: string[], sb: SourceBuffer, ctrl: AbortController
       })
       if (r === undefined) return  // 读取中断已触发恢复
       if (r.done) {
-        // v3.6.2：流提前结束（未播到已知时长末尾 = CDN 提前断流）→ 重启拉流续播；
-        // 否则为正常读到文件末尾，break 交给 endOfStream
+        // v3.6.2：判断"提前断流"必须看本轨道缓冲最远位置，而非播放头 currentTime——
+        // 文件正常读完时 currentTime 可能还很小（刚起播/短文件快网络整文件迅速缓冲完），
+        // 用它判断会误判为断流 → 无限重启恢复 → 30 秒 5 次后报"网络不稳定"，视频无法播放。
+        // 本轨道缓冲最远位置 < knownDur-2 才说明文件没读完整 = 真断流，才触发恢复。
         const knownDur = currentView.value?.pages[currentPageIdx.value]?.durationSec || 0
-        const ct = videoEl.value?.currentTime || 0
-        if (knownDur > 0 && ct < knownDur - 2) {
-          console.warn(`[DASH] 流提前结束（${ct.toFixed(1)}s / ${knownDur.toFixed(1)}s），自动恢复拉流`)
+        const bufEnd = sbBufferedEnd(sb)
+        if (knownDur > 0 && bufEnd < knownDur - 2) {
+          console.warn(`[DASH] 流提前结束（缓冲至 ${bufEnd.toFixed(1)}s / 共 ${knownDur.toFixed(1)}s），自动恢复拉流`)
           void recoverDashStream()
           return
         }
