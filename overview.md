@@ -1,43 +1,31 @@
-# v3.5.5 更新：DASH 高清晰度播放 + 弹幕显示与开关 + UP 主卡片投稿 + 推荐布局 4×6
+# v3.5.6 更新：修复 DASH 编码报错 + 推荐布局 6×4 + 播放弹窗左右分栏
 
-## 新功能：高清晰度播放（DASH + MSE）
+## 修复：所有清晰度提示「不支持的视频编码（avc1.640033）」
 
-v3.5.4 之前播放走 `fnval=1` 合并流（durl），未登录 / 大会员最高仅 720P。本版升级为 DASH 音视频分离 + MSE 播放：
+- **根因**：B 站 playurl 返回的 `mime_type` 形如 `video/mp4; codecs=avc1.640033`（codecs 未加引号），v3.5.5 直接将该字符串传给 `MediaSource.isTypeSupported` / `addSourceBuffer`，按 RFC 6381 解析失败，导致所有清晰度被判为不支持
+- **修复**：新增 `mseMime()`，只取容器类型（`split(';')[0]`）并用独立 `codecs` 字段重新组装标准 MIME（`video/mp4; codecs="avc1.640033"`）；选轨时先过滤出 MSE 可解码的轨道，同清晰度存在多编码变体时自动规避不可解码项；`isTypeSupported` 与 `addSourceBuffer` 统一使用组装后的 MIME
 
-| 环节 | 实现 |
-|---|---|
-| playurl | `fnval=4048 & fourk=1`，返回 `dash.video / dash.audio` 分离 fMP4 轨道；无 DASH 时回退 durl 合并流，兼容不受影响 |
-| 清晰度选择 | 清晰度下拉按视频轨 qn 生成（1080P 高码率 / 1080P60 / 4K 等大会员档位），切换即换轨重播 |
-| MSE 播放引擎 | `MediaSource` + 双 `SourceBuffer` 流式 append；流控水位：缓冲超前 90s 暂停拉流、消耗至 45s 恢复，长视频不整段载入 |
-| 回环流代理 | 渲染层 fetch CDN 有 CORS 限制，主进程新增 `127.0.0.1` 回环 HTTP 代理（token → CDN URL 内存映射，上限 64 FIFO），透传 Range、注入 UA/Referer/Origin，渲染层不接触真实 CDN 地址 |
+## 布局：推荐网格 4×6 → 6×4
 
-## 新功能：弹幕显示与开关
+- 个性推荐 / 热门推荐网格由固定 4 列改为固定 **6 列**（每批 24 条 = 6×4），卡片更紧凑适配整体页面；「换一批」刷新逻辑不变（rcmd 经 fresh_idx 递增，热门随机跳页）
+- **热门视频推荐首次点击不自动加载**：进入热门页签展示空态卡片，提示点击「换一批」手动加载，避免不必要的接口请求
 
-- `x/v1/dm/list.so?oid=cid` XML 弹幕拉取（主进程正则解析，实体解码，上限 4000 条，按时间排序）
-- video `timeupdate` 驱动补发区间弹幕，CSS 动画滚动；mode 4/5 顶底固定弹幕停留淡出；seek 二分重定位并清空重发；同屏上限 80 条
-- 播放信息栏新增「弹幕开 / 弹幕关」胶囊按钮，开关偏好经 `kaoyan_bili_danmaku` 本地持久化；加载失败静默不影响播放
+## 布局：播放弹窗左右分栏
 
-## 新功能：UP 主卡片与投稿播放
-
-- `web-interface/card?mid=&photo=true` 获取 UP 主头像 / 昵称 / 签名 / 粉丝数 / 投稿数
-- 播放弹窗交互栏下方展示 UP 主卡片，「查看投稿」展开 `space/wbi/arc/search`（WBI 签名）投稿列表，单行 6 列分页加载、点击直接播放
-
-## 布局调整
-
-- 个性推荐 / 热门推荐改为固定 **4 列 × 6 行**（每批 24 条），适配面板宽度；「换一批」经 `fresh_idx` 递增真刷新
-- 播放弹窗相关视频只展示 **一行 6 条**（1×6），控制弹窗高度
+- 播放弹窗加宽至 `min(1320px, 96vw)`，内容改为左右分栏：
+  - **左侧**：视频播放区 / 信息栏（弹幕开关、分 P、清晰度）/ 分 P 快捷条 / 点赞投币收藏
+  - **右侧栏（320px，独立滚动，最高 72vh）**：UP 主卡片（窄列自适应换行）、TA 的投稿（单列分页加载）、相关视频（单列，展示 10 条）
+- 窄窗口（≤1100px）自动降级为上下堆叠，不挤压播放区
+- 弹窗高度不再被投稿/相关列表撑高
 
 ## 改动文件
-- `src/main/main.ts`（playurl DASH 模式 / `startBiliStreamProxy` 回环流代理 / `bili:stream-token` / `bili:danmaku` / `bili:card` / `bili:space-videos`，rcmd 加 fresh_idx，stream/Readable 导入）
-- `src/preload/preload.ts`（新增 biliStreamToken / biliDanmaku / biliCard / biliSpaceVideos，rcmd 加 freshIdx）
-- `src/renderer/src/vite-env.d.ts`（新增 BiliDashTrack / BiliDanmaku / BiliUpCard 类型，playurl 返回加 mode/dash）
-- `src/renderer/src/components/BiliBiliPanel.vue`（4×6 网格 / 相关 1×6 / MSE DASH 引擎 / 弹幕层与开关 / UP 主卡片与投稿区 / 对应样式）
-- `package.json`（3.5.4 → 3.5.5，输出目录 release-v355）、`README.md`（版本徽章 / 功能说明）
+- `src/renderer/src/components/BiliBiliPanel.vue`（mseMime 组装与选轨过滤 / cols-6 网格与热门空态 / 弹窗左右分栏模板与样式）
+- `package.json`（3.5.5 → 3.5.6，输出目录 release-v356）、`README.md`（版本徽章 / 功能说明）
 
 ## 验证
 - `npm run build` 构建通过（vite + tsc 主进程编译）
-- durl 回退分支完整保留：DASH 不可用（版权受限 / 编码不支持）时自动走原合并流路径，播放能力不回退
-- 弹幕 / UP 主卡片加载失败均静默降级，不影响播放主流程；本地资料与其他功能零改动
+- DASH 播放主链路不变：仅修正 MIME 组装与选轨过滤，流代理 / 流控 / 弹幕 / durl 回退逻辑零改动
+- 本地资料与其他功能零改动路径
 
 ## 发布
-- 版本号 3.5.5，打 tag `v3.5.5` 推送触发 CI 自动构建 Windows 安装包
+- 版本号 3.5.6，打 tag `v3.5.6` 推送触发 CI 自动构建 Windows 安装包

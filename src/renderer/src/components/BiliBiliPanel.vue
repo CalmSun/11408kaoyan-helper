@@ -56,7 +56,7 @@
         <el-icon :size="48"><MagicStick /></el-icon>
         <p>暂无推荐内容，点击「换一批」重试</p>
       </div>
-      <div v-else class="bili-grid cols-4">
+      <div v-else class="bili-grid cols-6">
         <div v-for="v in rcmdList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
           <div class="bili-cover-wrap">
             <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
@@ -88,7 +88,12 @@
         <el-icon class="is-loading" :size="28"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
-      <div v-else class="bili-grid cols-4">
+      <!-- v3.5.6：热门不自动加载，首次进入提示手动点「换一批」 -->
+      <div v-else-if="!popularList.length" class="bili-empty glass-card">
+        <el-icon :size="48"><Promotion /></el-icon>
+        <p>点击上方「换一批」加载热门视频推荐</p>
+      </div>
+      <div v-else class="bili-grid cols-6">
         <div v-for="v in popularList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
           <div class="bili-cover-wrap">
             <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
@@ -236,7 +241,7 @@
     <el-dialog
       v-model="playerVisible"
       :title="currentView?.title || '视频播放'"
-      width="1080px"
+      width="min(1320px, 96vw)"
       class="bili-player-dialog"
       align-center
       append-to-body
@@ -244,6 +249,7 @@
       @close="onPlayerClose"
     >
       <div class="bili-player-body">
+        <div class="bili-player-main">
         <div class="bili-player-stage">
           <video
             ref="videoEl"
@@ -349,6 +355,9 @@
             <em>{{ formatCount(currentView.stat.favorite + (relFaved ? 1 : 0)) }}</em>
           </button>
         </div>
+        </div>
+        <!-- v3.5.6：右侧栏 —— UP 主卡片 / 投稿 / 相关视频，独立滚动不撑高弹窗 -->
+        <div class="bili-player-side" v-if="currentView && (upCard || relatedList.length)">
         <!-- v3.5.5：UP 主卡片（头像 / 粉丝 / 签名 / 查看投稿） -->
         <div class="bili-up-card" v-if="currentView && upCard">
           <img v-if="upCard.face" class="bili-up-face" :src="upCard.face" alt="UP 主头像" />
@@ -374,7 +383,7 @@
             <el-icon class="is-loading"><Loading /></el-icon><span>加载中...</span>
           </div>
           <div v-else-if="!spaceList.length" class="bili-folder-empty">暂无投稿视频</div>
-          <div v-else class="bili-grid related row-6">
+          <div v-else class="bili-grid related side-col">
             <div v-for="v in spaceList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
               <div class="bili-cover-wrap">
                 <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
@@ -395,13 +404,13 @@
             <el-button size="small" :loading="spaceLoading" @click="loadSpaceVideos(false)">加载更多</el-button>
           </div>
         </div>
-        <!-- 相关视频推荐（v3.5.5：仅展示一行 6 条，控制弹窗高度） -->
+        <!-- 相关视频推荐（v3.5.6：移入右侧栏单列展示，独立滚动） -->
         <div class="bili-related" v-if="relatedList.length">
           <div class="bili-content-head">
             <span class="bili-content-title small"><el-icon><VideoPlay /></el-icon> 相关视频</span>
           </div>
-          <div class="bili-grid related row-6">
-            <div v-for="v in relatedList.slice(0, 6)" :key="v.bvid" class="bili-card" @click="playVideo(v)">
+          <div class="bili-grid related side-col">
+            <div v-for="v in relatedList.slice(0, 10)" :key="v.bvid" class="bili-card" @click="playVideo(v)">
               <div class="bili-cover-wrap">
                 <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
                 <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
@@ -418,6 +427,7 @@
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
     </el-dialog>
@@ -602,7 +612,7 @@ async function loadRcmd(): Promise<void> {
   rcmdLoading.value = true
   rcmdIdx++
   try {
-    // 每批 24 条（4 列 x 6 行），fresh_idx 递增保证换一批拿到新内容
+    // 每批 24 条（6 列 x 4 行），fresh_idx 递增保证换一批拿到新内容
     const res = await api.biliRcmd(24, rcmdIdx)
     if (!res.success) throw new Error(res.message || '加载失败')
     rcmdList.value = res.list || []
@@ -625,7 +635,7 @@ async function loadPopular(refresh: boolean): Promise<void> {
   try {
     // 换一批：随机跳页（热门接口无总数，限定前 20 页内随机），避免一直看同一批
     const page = refresh ? 1 + Math.floor(Math.random() * 20) : popularPage.value + 1
-    // v3.5.5：每页 24 条（4 列 x 6 行）
+    // v3.5.6：每页 24 条（6 列 x 4 行）
     const res = await api.biliPopular(page, 24)
     if (!res.success) throw new Error(res.message || '加载失败')
     popularList.value = refresh ? (res.list || []) : [...popularList.value, ...(res.list || [])]
@@ -831,6 +841,17 @@ function pickDashTrack(tracks: BiliDashTrack[], qn: number): BiliDashTrack | nul
   return [...pool].sort((a, b) => b.qn - a.qn)[0]
 }
 
+/**
+ * v3.5.6：组装标准 MSE MIME。
+ * B 站返回的 mime_type 形如 `video/mp4; codecs=avc1.640033`（codecs 未加引号），
+ * 直接传给 isTypeSupported / addSourceBuffer 会按 RFC 6381 解析失败，
+ * 因此只取容器类型，再用独立 codecs 字段重新拼装。
+ */
+function mseMime(t: BiliDashTrack): string {
+  const container = (t.mimeType || '').split(';')[0].trim() || 'video/mp4'
+  return t.codecs ? `${container}; codecs="${t.codecs}"` : container
+}
+
 /** 视频已缓冲的前瞻秒数（供流控判断） */
 function bufferedAhead(): number {
   const el = videoEl.value
@@ -859,15 +880,19 @@ function stopDash(): void {
 
 async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrack[]): Promise<void> {
   if (!api || !videoEl.value) throw new Error('播放器未就绪')
-  const vTrack = pickDashTrack(videoTracks, currentQn.value)
+  // v3.5.6：仅在 MSE 可解码的轨道中选轨，避免选中不支持的编码
+  const supportedVideo = videoTracks.filter(t => t.baseUrl && MediaSource.isTypeSupported(mseMime(t)))
+  const vTrack = pickDashTrack(supportedVideo.length ? supportedVideo : videoTracks, currentQn.value)
   if (!vTrack || !vTrack.baseUrl) throw new Error('无可用视频轨道')
+  const vMime = mseMime(vTrack)
+  if (!MediaSource.isTypeSupported(vMime)) {
+    throw new Error(`不支持的视频编码（${vTrack.codecs || vTrack.mimeType}），请尝试降低清晰度`)
+  }
   const aTrack = audioTracks.length
     ? [...audioTracks].sort((a, b) => b.bandwidth - a.bandwidth)[0]
     : null
-  if (!MediaSource.isTypeSupported(vTrack.mimeType)) {
-    throw new Error(`不支持的视频编码（${vTrack.codecs || vTrack.mimeType}），请尝试降低清晰度`)
-  }
-  const audioUsable = !!(aTrack && aTrack.baseUrl && MediaSource.isTypeSupported(aTrack.mimeType))
+  const aMime = aTrack ? mseMime(aTrack) : ''
+  const audioUsable = !!(aTrack && aTrack.baseUrl && MediaSource.isTypeSupported(aMime))
   // 经主进程回环代理拉流：规避 CORS 并携带防盗链头
   const [vTok, aTok] = await Promise.all([
     api.biliStreamToken(vTrack.baseUrl),
@@ -884,11 +909,11 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
   videoEl.value.src = mediaSourceUrl
   ms.addEventListener('sourceopen', () => {
     try {
-      const vSb = ms.addSourceBuffer(vTrack.mimeType)
+      const vSb = ms.addSourceBuffer(vMime)
       dashTrackTotal = 1
       pumpTrack(`${vTok.baseUrl}?token=${vTok.token}`, vSb, ctrl)
       if (audioUsable && aTrack && aTok && aTok.success && aTok.token && aTok.baseUrl) {
-        const aSb = ms.addSourceBuffer(aTrack.mimeType)
+        const aSb = ms.addSourceBuffer(aMime)
         dashTrackTotal = 2
         pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl)
       }
@@ -1425,14 +1450,14 @@ html.dark .bili-search-input {
   gap: 8px;
 }
 
-/* v3.5.5：推荐/热门固定 4 列（每批 24 条 = 4×6），适配面板宽度 */
-.bili-grid.cols-4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+/* v3.5.6：推荐/热门固定 6 列（每批 24 条 = 6×4），适配面板宽度 */
+.bili-grid.cols-6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
-/* v3.5.5：相关视频 / UP 主投稿固定 6 列（单行展示） */
-.bili-grid.related.row-6 {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+/* v3.5.6：播放弹窗右侧栏单列卡片（UP 主投稿 / 相关视频） */
+.bili-grid.related.side-col {
+  grid-template-columns: 1fr;
 }
 
 .bili-card {
@@ -1660,11 +1685,41 @@ html.dark .bili-search-input {
   text-align: center;
 }
 
-/* ── 播放器弹窗 ── */
+/* ── 播放器弹窗（v3.5.6：左右分栏，右侧栏承载 UP 主卡片/投稿/相关视频） ── */
 .bili-player-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.bili-player-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.bili-player-side {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 72vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* 窄窗口下右侧栏落到视频下方，避免挤压播放区 */
+@media (max-width: 1100px) {
+  .bili-player-body {
+    flex-direction: column;
+  }
+  .bili-player-side {
+    width: 100%;
+    max-height: none;
+  }
 }
 
 .bili-player-stage {
@@ -2100,6 +2155,17 @@ html.dark .bili-action-btn {
 .bili-space {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+
+/* v3.5.6：右侧栏窄列适配 —— 粉丝/投稿统计与按钮换行，避免挤压 */
+.bili-player-side .bili-up-card {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.bili-player-side .bili-up-stats {
+  flex-direction: row;
   gap: 10px;
 }
 
