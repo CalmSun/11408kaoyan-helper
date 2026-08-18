@@ -77,6 +77,11 @@
 - **修复**：判据改为**本轨道 SourceBuffer 缓冲最远位置** `sbBufferedEnd(sb) < knownDur - 2` 才算真断流；新增 `sbBufferedEnd` 辅助函数（不用 `videoEl.buffered` 的 union——音频文件小常先读完，union 会误判音频轨）。恢复逻辑与 Range 续播保持不变。
 - 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 39.26s`。
 
+播放器弹窗右移生效（f5b010b）：
+- **根因**：`.bili-player-dialog { margin-left: 160px }` 写在 `<style scoped>` 块中，而 el-dialog 设置了 `append-to-body` 渲染到 body 下——scoped CSS 的 `[data-v-xxx]` 属性选择器不会附加到 body 下的元素，该选择器**从 v3.6.2 起就匹配不上**，等同于未生效，所以弹窗从未真正右移。
+- **修复**：把该样式从 `<style scoped>` 块移至文件末尾新增的**非 scoped `<style>` 块**，成为全局样式才能命中 body 下的 `.bili-player-dialog`，`margin-left: 160px` 终于生效（中心相对视口中心右移约 80px）。
+- 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 35.05s`。
+
 ---
 
 ### 历史（v3.6.2 前序轮次）
