@@ -229,10 +229,10 @@ interface ElectronAPI {
   biliView: (bvid: string) => Promise<{
     success: boolean
     video?: {
-      bvid: string; aid: number; title: string; pic: string; desc: string; duration: string; pubdate: number
+      bvid: string; aid: number; title: string; pic: string; desc: string; duration: string; durationSec: number; pubdate: number
       owner: { mid: number; name: string; face: string }
       stat: { view: number; danmaku: number; like: number; coin: number; favorite: number; reply: number }
-      pages: { cid: number; page: number; part: string; duration: string }[]
+      pages: { cid: number; page: number; part: string; duration: string; durationSec: number }[]
     } | null
     message?: string
   }>
@@ -255,7 +255,7 @@ interface ElectronAPI {
   biliFavToggle: (aid: number, mediaId: number, add: boolean) => Promise<{ success: boolean; message?: string }>
   // v3.5.5：DASH 流代理 token、弹幕、UP 主卡片与投稿
   biliStreamToken: (url: string) => Promise<{ success: boolean; token?: string; baseUrl?: string; message?: string }>
-  biliDanmaku: (cid: number) => Promise<{ success: boolean; list?: BiliDanmaku[]; message?: string }>
+  biliDanmaku: (cid: number, durationSec?: number) => Promise<{ success: boolean; list?: BiliDanmaku[]; message?: string }>
   biliCard: (mid: number) => Promise<{ success: boolean; card?: BiliUpCard | null; message?: string }>
   biliSpaceVideos: (mid: number, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
   // v3.5.8：视频评论

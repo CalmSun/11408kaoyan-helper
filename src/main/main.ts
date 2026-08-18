@@ -2619,13 +2619,14 @@ ipcMain.handle('bili:view', async (_e, bvid: string) => {
         pic: (d.pic || '').startsWith('//') ? `https:${d.pic}` : (d.pic || ''),
         desc: d.desc || '',
         duration: formatBiliDuration(d.duration || 0),
+        durationSec: d.duration || 0,
         pubdate: d.pubdate || 0,
         owner: { mid: d.owner?.mid || 0, name: d.owner?.name || '', face: d.owner?.face || '' },
         stat: {
           view: d.stat?.view || 0, danmaku: d.stat?.danmaku || 0, like: d.stat?.like || 0,
           coin: d.stat?.coin || 0, favorite: d.stat?.favorite || 0, reply: d.stat?.reply || 0
         },
-        pages: (d.pages || []).map((p: any) => ({ cid: p.cid, page: p.page, part: p.part || '', duration: formatBiliDuration(p.duration || 0) }))
+        pages: (d.pages || []).map((p: any) => ({ cid: p.cid, page: p.page, part: p.part || '', duration: formatBiliDuration(p.duration || 0), durationSec: p.duration || 0 }))
       }
     }
   } catch (err) {
@@ -2703,14 +2704,31 @@ ipcMain.handle('bili:stream-token', async (_e, url: string) => {
   }
 })
 
-/** v3.5.5/v3.5.8/v3.5.9：弹幕（XML 接口，主进程解析为结构化数组，渲染层按时间轴渲染）。
- * v3.5.9：list.so 无结果时重试 XML 备份域名两次，确保获取到数据。 */
-ipcMain.handle('bili:danmaku', async (_e, cid: number) => {
+/** v3.6.0：弹幕 —— 优先 Protobuf seg.so 分段接口（长视频/新版弹幕系统），失败回退 XML。
+ *  seg.so 每 6 分钟（360s）一段，根据视频时长并行拉取全部分段后合并排序。 */
+ipcMain.handle('bili:danmaku', async (_e, cid: number, durationSec = 0) => {
   try {
-    let list = await fetchBiliDanmakuXml(`https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`)
-    // v3.5.9：主接口 + 备用接口均返回 0 条时才认为无弹幕
+    let list: { time: number; mode: number; color: string; text: string }[] = []
+    const segCount = durationSec > 0 ? Math.min(40, Math.ceil(durationSec / 360)) : 1
+    try {
+      for (let batch = 0; batch < segCount; batch += 10) {
+        const end = Math.min(batch + 10, segCount)
+        const promises: Promise<{ time: number; mode: number; color: string; text: string }[]>[] = []
+        for (let seg = batch + 1; seg <= end; seg++) {
+          promises.push(fetchBiliDanmakuSeg(cid, seg).catch(() => []))
+        }
+        const results = await Promise.all(promises)
+        for (const segList of results) list.push(...segList)
+        if (list.length >= 8000) { list = list.slice(0, 8000); break }
+      }
+      if (list.length) {
+        list.sort((a, b) => a.time - b.time)
+        return { success: true, list }
+      }
+    } catch { /* seg.so 失败，回退 XML */ }
+    // 回退 XML 接口（老版弹幕/兼容）
+    list = await fetchBiliDanmakuXml(`https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`)
     if (!list.length) list = await fetchBiliDanmakuXml(`https://comment.bilibili.com/${cid}.xml`)
-    if (!list.length) return { success: true, list }
     return { success: true, list }
   } catch (err) {
     return { success: false, list: [], message: String(err) }
@@ -2763,6 +2781,119 @@ async function fetchBiliDanmakuXml(url: string): Promise<{ time: number; mode: n
   }
   list.sort((a, b) => a.time - b.time)
   return list
+}
+
+// ── v3.6.0：Protobuf wire format 解析器（仅解析 DmSegMobileReply/DanmakuElem 所需字段） ──
+
+function protoReadVarint(buf: Buffer, pos: number): { value: number; next: number } {
+  let result = 0
+  let shift = 0
+  let p = pos
+  while (p < buf.length) {
+    const byte = buf[p++]
+    result |= (byte & 0x7f) << shift
+    shift += 7
+    if ((byte & 0x80) === 0) return { value: result >>> 0, next: p }
+    if (shift > 35) break
+  }
+  return { value: result >>> 0, next: p }
+}
+
+function protoSkipField(buf: Buffer, pos: number, wireType: number): number {
+  switch (wireType) {
+    case 0: return protoReadVarint(buf, pos).next
+    case 2: { const l = protoReadVarint(buf, pos); return l.next + l.value }
+    case 5: return pos + 4
+    case 1: return pos + 8
+    default: return buf.length
+  }
+}
+
+/** 解析 DmSegMobileReply → DanmakuElem[]（仅提取 progress/mode/color/content） */
+function parseDmSegProto(buf: Buffer): { time: number; mode: number; color: string; text: string }[] {
+  const list: { time: number; mode: number; color: string; text: string }[] = []
+  let pos = 0
+  while (pos < buf.length) {
+    const tag = protoReadVarint(buf, pos)
+    pos = tag.next
+    const fieldNum = tag.value >> 3
+    const wireType = tag.value & 7
+    if (fieldNum === 1 && wireType === 2) {
+      const lenRes = protoReadVarint(buf, pos)
+      pos = lenRes.next
+      const elemLen = lenRes.value
+      if (elemLen > 0 && pos + elemLen <= buf.length) {
+        const elem = parseDanmakuElemProto(buf.subarray(pos, pos + elemLen))
+        if (elem) list.push(elem)
+      }
+      pos += elemLen
+    } else {
+      pos = protoSkipField(buf, pos, wireType)
+    }
+  }
+  return list
+}
+
+/** 解析单个 DanmakuElem（field 2=progress ms, 3=mode, 5=color, 7=content） */
+function parseDanmakuElemProto(buf: Buffer): { time: number; mode: number; color: string; text: string } | null {
+  let time = 0, mode = 1, colorNum = 16777215, text = ''
+  let pos = 0
+  while (pos < buf.length) {
+    const tag = protoReadVarint(buf, pos)
+    pos = tag.next
+    const fieldNum = tag.value >> 3
+    const wireType = tag.value & 7
+    if (wireType === 0) {
+      const v = protoReadVarint(buf, pos)
+      pos = v.next
+      if (fieldNum === 2) time = v.value / 1000
+      else if (fieldNum === 3) mode = v.value || 1
+      else if (fieldNum === 5) colorNum = v.value >>> 0
+    } else if (wireType === 2) {
+      const l = protoReadVarint(buf, pos)
+      pos = l.next
+      if (fieldNum === 7) text = buf.toString('utf-8', pos, pos + l.value)
+      pos += l.value
+    } else {
+      pos = protoSkipField(buf, pos, wireType)
+    }
+  }
+  if (!text) return null
+  return {
+    time,
+    mode,
+    color: colorNum === 16777215 ? '#ffffff' : `#${colorNum.toString(16).padStart(6, '0')}`,
+    text
+  }
+}
+
+/** v3.6.0：拉取分段弹幕（seg.so Protobuf 接口，WBI 签名） */
+async function fetchBiliDanmakuSeg(cid: number, segIdx: number): Promise<{ time: number; mode: number; color: string; text: string }[]> {
+  const signed = await biliWbiSign({
+    type: '1', oid: String(cid), segment_index: String(segIdx), web_location: '333.999'
+  })
+  const url = `https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?${new URLSearchParams(signed).toString()}`
+  const res = await fetch(url, {
+    headers: { 'User-Agent': BILI_UA, 'Referer': BILI_REFERER, 'Accept': '*/*', 'Cookie': biliCookieHeader() }
+  })
+  if (!res.ok) throw new Error(`seg.so HTTP ${res.status}`)
+  let buf = Buffer.from(await res.arrayBuffer())
+  const enc = (res.headers.get('content-encoding') || '').toLowerCase()
+  try {
+    if (enc.includes('gzip')) buf = gunzipSync(buf)
+    else if (enc.includes('deflate') || enc.includes('compress')) {
+      try { buf = inflateSync(buf) } catch { buf = inflateRawSync(buf) }
+    }
+  } catch { /* 解压失败按原数据解析 */ }
+  // seg.so 成功返回二进制 Protobuf，失败返回 JSON
+  if (buf.length > 0 && (buf[0] === 0x7b || buf[0] === 0x5b)) {
+    try {
+      const json = JSON.parse(buf.toString('utf-8'))
+      if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+      return []
+    } catch { /* 非 JSON，按 Protobuf 解析 */ }
+  }
+  return parseDmSegProto(buf)
 }
 
 /** v3.5.8：视频评论（热评优先，分页加载，供播放卡片右侧评论区展示） */
@@ -2929,7 +3060,7 @@ ipcMain.handle('bili:fav-toggle', async (_e, aid: number, mediaId: number, add: 
     let delIds = add ? '0' : String(mediaId)
     if (!add) {
       try {
-        const info = await biliGet(`https://api.bilibili.com/x/v3/fav/resource/favinfo?rid=${aid}&type=2`)
+        const info = await biliGet(`https://api.bilibili.com/x/v3/fav/resource/favinfo?oid=${aid}&type=2&platform=web`)
         // v3.5.9：兼容 media_list / collection_list 两种结构
         let inFolders: any[] = []
         if ((info.data?.media_list || []).length > 0) inFolders = info.data.media_list

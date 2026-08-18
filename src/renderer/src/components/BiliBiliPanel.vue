@@ -276,7 +276,7 @@
             <el-button size="small" type="primary" @click="retryPlay">重试</el-button>
           </div>
         </div>
-        <!-- 播放信息栏：分 P / 清晰度 / 数据 -->
+        <!-- v3.6.0：播放信息栏 —— 数据 / 三连 / 清晰度同一行 -->
         <div class="bili-player-bar" v-if="currentView">
           <div class="bili-player-bar-left">
             <span class="bili-player-up">
@@ -285,6 +285,31 @@
             <span class="bili-player-stat">{{ formatCount(currentView.stat.view) }} 播放</span>
             <span class="bili-player-stat">{{ formatCount(currentView.stat.danmaku) }} 弹幕</span>
             <span class="bili-player-stat">{{ formatCount(currentView.stat.like) }} 点赞</span>
+          </div>
+          <div class="bili-player-bar-center">
+            <button class="bili-action-btn" :class="{ liked: relLiked }" :disabled="relBusy" @click="toggleLike">
+              <el-icon><SuccessFilled /></el-icon>
+              <span>{{ relLiked ? '已点赞' : '点赞' }}</span>
+              <em>{{ formatCount(currentView.stat.like + (relLiked ? 1 : 0)) }}</em>
+            </button>
+            <el-dropdown trigger="click" :disabled="relBusy" @command="giveCoin">
+              <button class="bili-action-btn" :class="{ coined: relCoin > 0 }" :disabled="relBusy">
+                <el-icon><Present /></el-icon>
+                <span>{{ relCoin > 0 ? `已投 ${relCoin} 币` : '投币' }}</span>
+                <em>{{ formatCount(currentView.stat.coin) }}</em>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :command="1">投 1 个币</el-dropdown-item>
+                  <el-dropdown-item :command="2">投 2 个币</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <button class="bili-action-btn" :class="{ faved: relFaved }" :disabled="relBusy" @click="toggleFav">
+              <el-icon><StarFilled /></el-icon>
+              <span>{{ relFaved ? '已收藏' : '收藏' }}</span>
+              <em>{{ formatCount(currentView.stat.favorite + (relFaved ? 1 : 0)) }}</em>
+            </button>
           </div>
           <div class="bili-player-bar-right">
             <button
@@ -329,36 +354,10 @@
             @click="switchPage(idx)"
           >P{{ p.page }}</button>
         </div>
-        <!-- v3.5.4：视频交互（点赞 / 投币 / 收藏，需登录） -->
-        <div class="bili-player-actions" v-if="currentView">
-          <button class="bili-action-btn" :class="{ liked: relLiked }" :disabled="relBusy" @click="toggleLike">
-            <el-icon><SuccessFilled /></el-icon>
-            <span>{{ relLiked ? '已点赞' : '点赞' }}</span>
-            <em>{{ formatCount(currentView.stat.like + (relLiked ? 1 : 0)) }}</em>
-          </button>
-          <el-dropdown trigger="click" :disabled="relBusy" @command="giveCoin">
-            <button class="bili-action-btn" :class="{ coined: relCoin > 0 }" :disabled="relBusy">
-              <el-icon><Present /></el-icon>
-              <span>{{ relCoin > 0 ? `已投 ${relCoin} 币` : '投币' }}</span>
-              <em>{{ formatCount(currentView.stat.coin) }}</em>
-            </button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item :command="1">投 1 个币</el-dropdown-item>
-                <el-dropdown-item :command="2">投 2 个币</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-          <button class="bili-action-btn" :class="{ faved: relFaved }" :disabled="relBusy" @click="toggleFav">
-            <el-icon><StarFilled /></el-icon>
-            <span>{{ relFaved ? '已收藏' : '收藏' }}</span>
-            <em>{{ formatCount(currentView.stat.favorite + (relFaved ? 1 : 0)) }}</em>
-          </button>
         </div>
-        </div>
-        <!-- v3.6.0：右侧栏 —— UP 主卡片固定顶部 + 三 Tab 切换 (简介/投稿/相关/评论) -->
+        <!-- v3.6.0：右侧栏 —— UP 主卡片 + 作品简介固定顶部，下方评论/投稿/相关切换 -->
         <div class="bili-player-side" v-if="currentView">
-        <!-- UP 主卡片（固定顶部，不参与滚动） -->
+        <!-- UP 主卡片（固定顶部：作者信息 + 查看投稿按钮） -->
         <div class="bili-up-card fixed-top" v-if="upCard">
           <img v-if="upCard.face" class="bili-up-face" :src="upCard.face" alt="UP 主头像" />
           <el-icon v-else class="bili-up-face bili-up-face-ph"><UserFilled /></el-icon>
@@ -368,22 +367,45 @@
             <div class="bili-up-fans">{{ formatCount(upCard.fans) }} 粉丝</div>
           </div>
           <el-button size="small" class="bili-up-btn" @click="openAuthorVideos">
-            <el-icon><Film /></el-icon> 看 TA 的投稿
+            <el-icon><Film /></el-icon> {{ rightTab === 'space' ? '返回评论' : '查看投稿' }}
           </el-button>
         </div>
-        <!-- 简介、投稿、相关视频、评论区（通过 Tab 切换只显示其一） -->
-        <div class="bili-side-content" :class="{ show: showSection }">
-          <div class="bili-tabs">
-            <button :class="{ active: rightTab === 'desc' && !showSection }" @click="switchRightTab('desc')"><el-icon><Document /></el-icon> 简介</button>
-            <button :class="{ active: rightTab === 'space' }" @click="switchRightTab('space')"><el-icon><Film /></el-icon> 投稿 {{ formatCount(upCard?.archives || 0) }}</button>
-            <button :class="{ active: rightTab === 'related' }" @click="switchRightTab('related')"><el-icon><VideoPlay /></el-icon> 相关 {{ relatedList.length }}</button>
-            <button :class="{ active: rightTab === 'replies' }" @click="switchRightTab('replies')"><el-icon><ChatDotRound /></el-icon> 评论 {{ formatCount(currentView.stat.reply) }}</button>
+        <!-- 作品简介（固定顶部，作者卡片下方） -->
+        <div class="bili-up-desc" v-if="currentView.desc && currentView.desc.trim()">
+          <p class="bili-desc-text">{{ currentView.desc }}</p>
+        </div>
+        <!-- Tab 切换栏 -->
+        <div class="bili-side-tabs">
+          <button :class="{ active: rightTab === 'replies' }" @click="switchRightTab('replies')"><el-icon><ChatDotRound /></el-icon> 评论 {{ formatCount(currentView.stat.reply) }}</button>
+          <button :class="{ active: rightTab === 'space' }" @click="switchRightTab('space')"><el-icon><Film /></el-icon> 投稿 {{ formatCount(upCard?.archives || 0) }}</button>
+          <button :class="{ active: rightTab === 'related' }" @click="switchRightTab('related')"><el-icon><VideoPlay /></el-icon> 相关 {{ relatedList.length }}</button>
+        </div>
+        <!-- 内容区（独立滚动，默认评论） -->
+        <div class="bili-side-content">
+          <!-- v3.5.8：评论区（热评优先，分页加载） -->
+          <div class="bili-section" v-if="rightTab === 'replies'">
+            <div v-if="replyLoading && !replyList.length" class="bili-loading small">
+              <el-icon class="is-loading"><Loading /></el-icon><span>加载中...</span>
+            </div>
+            <div v-else-if="!replyList.length" class="bili-folder-empty">暂无评论</div>
+            <div v-else class="bili-reply-list">
+              <div v-for="r in replyList" :key="r.rpid" class="bili-reply-item">
+                <img v-if="r.face" class="bili-reply-face" :src="r.face" alt="" />
+                <div v-else class="bili-reply-face bili-reply-face-ph"><el-icon><UserFilled /></el-icon></div>
+                <div class="bili-reply-body">
+                  <div class="bili-reply-head">
+                    <span class="bili-reply-uname">{{ r.uname }}</span>
+                    <span class="bili-reply-like"><el-icon><SuccessFilled /></el-icon>{{ formatCount(r.like) }}</span>
+                  </div>
+                  <p class="bili-reply-msg">{{ r.message }}</p>
+                </div>
+              </div>
+            </div>
+            <div class="bili-load-more" v-if="replyList.length && replyHasMore">
+              <el-button size="small" :loading="replyLoading" @click="loadReplies(false)">加载更多</el-button>
+            </div>
           </div>
-          <!-- v3.5.8：当前视频简介 -->
-          <div class="bili-section" v-if="rightTab === 'desc' && currentView.desc && currentView.desc.trim()">
-            <p class="bili-desc-text">{{ currentView.desc }}</p>
-          </div>
-          <!-- UP 主投稿视频（v3.5.8：左图右文紧凑行） -->
+          <!-- UP 主投稿视频（v3.6.0：点击查看投稿后替换评论区） -->
           <div class="bili-section" v-if="rightTab === 'space'">
             <div v-if="spaceLoading && !spaceList.length" class="bili-loading small">
               <el-icon class="is-loading"><Loading /></el-icon><span>加载中...</span>
@@ -408,7 +430,7 @@
           <!-- 相关视频推荐（v3.5.8：左图右文紧凑行） -->
           <div class="bili-section" v-if="rightTab === 'related' && relatedList.length">
             <div class="bili-side-list">
-              <div v-for="v in relatedList.slice(0, 10)" :key="v.bvid" class="bili-row-card" @click="playVideo(v)">
+              <div v-for="v in relatedList.slice(0, 20)" :key="v.bvid" class="bili-row-card" @click="playVideo(v)">
                 <div class="bili-row-thumb">
                   <img :src="v.pic" loading="lazy" alt="" />
                   <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
@@ -421,29 +443,6 @@
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <!-- v3.5.8：评论区（热评优先，分页加载） -->
-          <div class="bili-section replies-only" v-if="rightTab === 'replies'">
-            <div v-if="replyLoading && !replyList.length" class="bili-loading small">
-              <el-icon class="is-loading"><Loading /></el-icon><span>加载中...</span>
-            </div>
-            <div v-else-if="!replyList.length" class="bili-folder-empty">暂无评论</div>
-            <div v-else class="bili-reply-list">
-              <div v-for="r in replyList" :key="r.rpid" class="bili-reply-item">
-                <img v-if="r.face" class="bili-reply-face" :src="r.face" alt="" />
-                <div v-else class="bili-reply-face bili-reply-face-ph"><el-icon><UserFilled /></el-icon></div>
-                <div class="bili-reply-body">
-                  <div class="bili-reply-head">
-                    <span class="bili-reply-uname">{{ r.uname }}</span>
-                    <span class="bili-reply-like"><el-icon><SuccessFilled /></el-icon>{{ formatCount(r.like) }}</span>
-                  </div>
-                  <p class="bili-reply-msg">{{ r.message }}</p>
-                </div>
-              </div>
-            </div>
-            <div class="bili-load-more" v-if="replyList.length && replyHasMore">
-              <el-button size="small" :loading="replyLoading" @click="loadReplies(false)">加载更多</el-button>
             </div>
           </div>
         </div>
@@ -774,10 +773,10 @@ const playerVisible = ref(false)
 const playerLoading = ref(false)
 const playerError = ref('')
 const currentView = ref<{
-  bvid: string; aid: number; title: string; pic: string; desc: string; duration: string; pubdate: number
+  bvid: string; aid: number; title: string; pic: string; desc: string; duration: string; durationSec: number; pubdate: number
   owner: { mid: number; name: string; face: string }
   stat: { view: number; danmaku: number; like: number; coin: number; favorite: number; reply: number }
-  pages: { cid: number; page: number; part: string; duration: string }[]
+  pages: { cid: number; page: number; part: string; duration: string; durationSec: number }[]
 } | null>(null)
 const currentPageIdx = ref(0)
 const currentQn = ref(64)
@@ -803,11 +802,15 @@ async function playVideo(v: BiliVideo): Promise<void> {
     if (!res.success || !res.video) throw new Error(res.message || '视频信息获取失败')
     currentView.value = res.video
     currentPageIdx.value = 0
+    // v3.6.0：新视频始终请求最高可用清晰度，避免上个视频降清后残留 320p
+    currentQn.value = 127
+    acceptQualities.value = []
     // v3.5.4：查询点赞/投币/收藏状态（异步，不阻塞播放）
     loadRelation(res.video.aid)
     // v3.5.5：UP 主卡片与弹幕（异步加载，不阻塞起播）
     loadUpCard(res.video.owner.mid)
-    loadDanmaku(res.video.pages[0]?.cid || 0)
+    const firstPage = res.video.pages[0]
+    loadDanmaku(firstPage?.cid || 0, firstPage?.durationSec || 0)
     // 相关视频推荐（异步加载，不阻塞播放）
     api.biliRelated(v.bvid).then(r => {
       if (r.success && currentView.value?.bvid === v.bvid) relatedList.value = r.list || []
@@ -1012,12 +1015,15 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
     if (ctrl.signal.aborted) return
     const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
     if (isQuota && qn) {
-      // v3.5.9：配额多次清理仍失败时降清重试（qn-1 / qn-2），避免直接中断
-      if (qn > 64 && qn <= 80) {
-        switchQuality(48)
+      // v3.6.0：配额不足时逐级降清，最低 480P（qn=48），避免 320P 影响观看
+      if (qn > 80) {
+        switchQuality(80)
+        return
+      } else if (qn > 64) {
+        switchQuality(64)
         return
       } else if (qn > 48) {
-        switchQuality(32)
+        switchQuality(48)
         return
       }
     }
@@ -1085,7 +1091,8 @@ function switchPage(idx: number): void {
   if (!currentView.value || idx === currentPageIdx.value) return
   currentPageIdx.value = idx
   // v3.5.5：分 P 的弹幕独立，切换后重载
-  loadDanmaku(currentView.value.pages[idx]?.cid || 0)
+  const page = currentView.value.pages[idx]
+  loadDanmaku(page?.cid || 0, page?.durationSec || 0)
   loadStream()
 }
 
@@ -1137,6 +1144,7 @@ function onPlayerClose(): void {
   danmakuLastTime = 0
   upCard.value = null
   authorSectionVisible.value = false
+  rightTab.value = 'replies'
   // v3.5.8：清理评论列表
   replyList.value = []
   replyPage.value = 1
@@ -1274,14 +1282,14 @@ function toggleDanmaku(): void {
   if (!danmakuEnabled.value) clearDanmakuLayer()
 }
 
-async function loadDanmaku(cid: number): Promise<void> {
+async function loadDanmaku(cid: number, durationSec = 0): Promise<void> {
   danmakuAll.value = []
   danmakuPtr.value = 0
   danmakuLastTime = 0
   clearDanmakuLayer()
   if (!api || !cid) return
   try {
-    const res = await api.biliDanmaku(cid)
+    const res = await api.biliDanmaku(cid, durationSec)
     if (res.success) {
       danmakuAll.value = res.list || []
       // v3.5.9：控制台输出解析到的弹幕条数便于排查
@@ -1398,11 +1406,20 @@ const spaceList = ref<BiliVideo[]>([])
 const spacePage = ref(1)
 const spaceHasMore = ref(false)
 const spaceLoading = ref(false)
-// v3.6.0：右侧栏三视图 (简介/投稿/相关/评论) + 作者按钮直接打开弹窗
-const showSection = ref(true) // 是否显示下方内容区（默认隐藏）
-const rightTab = ref<'desc' | 'space' | 'related' | 'replies'>('desc') // v3.6.0: 当前 Tab
-const openAuthorVideos = () => { window.open(`https://space.bilibili.com/${upCard.value?.mid}`, '_blank') }
-const switchRightTab = (tab: 'desc' | 'space' | 'related' | 'replies'): void => { rightTab.value = tab }
+// v3.6.0：右侧栏三视图 (评论/投稿/相关)，默认评论；查看投稿按钮切换
+const rightTab = ref<'replies' | 'space' | 'related'>('replies')
+const openAuthorVideos = (): void => {
+  if (rightTab.value === 'space') {
+    rightTab.value = 'replies'
+  } else {
+    rightTab.value = 'space'
+    if (!spaceList.value.length) loadSpaceVideos(true)
+  }
+}
+const switchRightTab = (tab: 'replies' | 'space' | 'related'): void => {
+  rightTab.value = tab
+  if (tab === 'space' && !spaceList.value.length) loadSpaceVideos(true)
+}
 
 async function loadUpCard(mid: number): Promise<void> {
   upCard.value = null
@@ -1919,14 +1936,14 @@ html.dark .bili-search-input {
   }
 }
 
-/* v3.6.0：内容区独立滚动 + 默认隐藏 + Tab 切换 */
-.bili-player-side .bili-tabs {
+/* v3.6.0：右侧栏 Tab 切换栏 + 内容区 */
+.bili-player-side .bili-side-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 8px;
 }
-.bili-tabs button {
+.bili-side-tabs button {
   flex: 1;
   min-width: 50px;
   padding: 6px 8px;
@@ -1942,21 +1959,19 @@ html.dark .bili-search-input {
   justify-content: center;
   gap: 4px;
 }
-.bili-tabs button:hover {
+.bili-side-tabs button:hover {
   background: var(--glass-hover);
 }
-.bili-tabs button.active {
+.bili-side-tabs button.active {
   background: var(--mo-accent);
   color: #fff;
   border-color: var(--mo-accent);
 }
 .bili-player-side .bili-side-content {
-  display: none;
   flex: 1;
   min-height: 0;
-}
-.bili-player-side .bili-side-content.show {
-  display: block;
+  display: flex;
+  flex-direction: column;
 }
 .bili-section {
   flex: 1;
@@ -2019,6 +2034,15 @@ html.dark .bili-search-input {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+
+.bili-player-bar-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -2413,6 +2437,14 @@ html.dark .bili-action-btn {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.bili-up-desc {
+  padding: 8px 10px;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--mo-radius-sm);
+  margin-bottom: 8px;
 }
 
 .bili-desc-text {
