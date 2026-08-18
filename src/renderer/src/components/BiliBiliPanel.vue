@@ -1035,11 +1035,7 @@ function sbBufferedEnd(sb: SourceBuffer): number {
 }
 
 // v3.6.2：播放优化与拖动进度条修复
-// 用户已手动 seek 过（restore 竞态消除：打开视频 12s 内 restore 轮询不再覆盖用户拖动）
-let userSeeked = false
-// 管道重启后待定位的 seek 目标（秒）；startDash 读取后清零
-let pendingSeekSec = 0
-// v3.6.2-final: 取消自动恢复计数限制——改为持续尝试直至成功或用户干预
+// v3.6.2-final: 取消恢复次数限制——持续尝试直至成功或用户干预
 // let dashRecoverySeq = 0
 // let dashRecoveryCount = 0
 // let dashRecoveryWindowStart = 0
