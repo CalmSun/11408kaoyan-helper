@@ -72,6 +72,11 @@
 - **主进程流代理 pipe 错误处理**：`Readable.pipe` 前挂 `error` 监听，upstream 中途断流时 `res.destroy()`，让渲染层明确感知中断并触发自动恢复，避免响应静默挂起表现为缓冲卡住。
 - 验证：`vue-tsc` + `tsc -p tsconfig.node.json`（主进程）均通过，`vite build` 到临时目录 `✓ built in 35.28s`。
 
+回归修复（5dd6659）：
+- **视频无法播放（回归根因）**：上轮"提前断流自动恢复"用 `el.currentTime` 判断是否读完——正常播放读完整个文件时 `currentTime` 可能还很小（刚起播/短文件快网络整文件迅速缓冲完），被误判为断流 → 无限重启恢复 → 30 秒 5 次上限后报"网络不稳定"，视频完全无法正常播放。
+- **修复**：判据改为**本轨道 SourceBuffer 缓冲最远位置** `sbBufferedEnd(sb) < knownDur - 2` 才算真断流；新增 `sbBufferedEnd` 辅助函数（不用 `videoEl.buffered` 的 union——音频文件小常先读完，union 会误判音频轨）。恢复逻辑与 Range 续播保持不变。
+- 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 39.26s`。
+
 ---
 
 ### 历史（v3.6.2 前序轮次）
