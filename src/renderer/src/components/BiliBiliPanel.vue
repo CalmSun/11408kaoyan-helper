@@ -1034,12 +1034,15 @@ function sbBufferedEnd(sb: SourceBuffer): number {
   } catch { return 0 }
 }
 
-/** 拖动进度条超出缓冲时：重启拉流管道（Range 从目标偏移拉流），防止 MSE 顺序拉流追不上 → 播放头重置到开头 */
-let dashRestartSeq = 0  // v3.6.2：seek 重启序列号——连续快速拖动时丢弃过期重启，防止并发覆盖
-// v3.6.2：流中断自动恢复序列号 + 限次计数（防并发恢复 + 限次防网络持续抖动无限重启）
-let dashRecoverySeq = 0
-let dashRecoveryCount = 0
-let dashRecoveryWindowStart = 0
+// v3.6.2：播放优化与拖动进度条修复
+// 用户已手动 seek 过（restore 竞态消除：打开视频 12s 内 restore 轮询不再覆盖用户拖动）
+let userSeeked = false
+// 管道重启后待定位的 seek 目标（秒）；startDash 读取后清零
+let pendingSeekSec = 0
+// v3.6.2-final: 取消自动恢复计数限制——改为持续尝试直至成功或用户干预
+// let dashRecoverySeq = 0
+// let dashRecoveryCount = 0
+// let dashRecoveryWindowStart = 0
 async function seekDashIfNeeded(targetSec: number): Promise<void> {
   const el = videoEl.value
   if (!el || !currentView.value || !mediaSource) return  // 非 DASH（durl 直连）由浏览器原生 seek 处理
@@ -1093,11 +1096,14 @@ function scheduleSeekAfterReady(target: number, sb: SourceBuffer | null, ms: Med
 
 /** v3.6.2：DASH 流读取中断/提前结束时，重启拉流管道续播（从当前播放位置 Range 定位）。
  *  复用 seekDashIfNeeded 同款 Range 重启，但绕过"缓冲内不重启"判断——中断场景必须强制重启。
- *  30 秒内连续自动恢复超过 5 次视为网络持续不稳定，停止恢复并提示，避免无限重启。 */
+ *  v3.6.2-final: 移除 30 秒内 5 次恢复的限制——改为持续尝试直至成功或用户手动干预 */
 async function recoverDashStream(): Promise<void> {
   const el = videoEl.value
   const cv = currentView.value
   if (!el || !cv) return
+  
+  // v3.6.2-final: 取消恢复次数限制（已注释）
+  /*
   const now = Date.now()
   if (now - dashRecoveryWindowStart > 30000) {
     dashRecoveryWindowStart = now
@@ -1108,21 +1114,36 @@ async function recoverDashStream(): Promise<void> {
     playerError.value = '视频流加载失败：网络不稳定，可尝试切换清晰度或重试'
     return
   }
+  */
+  
   const t = el.currentTime
   const page = cv.pages[currentPageIdx.value]
   if (!page) return
+  
+  // v3.6.2-final: 取消恢复序列号检查（已注释）
+  /*
   const mySeq = ++dashRecoverySeq
+  */
+  
   console.log(`[DASH] 自动恢复拉流：续播自 ${t.toFixed(1)}s`)
   try {
     stopDash()
     dashFinished = 0
     const res = await getPlayurlCached(cv.bvid, page.cid, currentQn.value, false)
-    if (mySeq !== dashRecoverySeq) return  // 已被更新的恢复取代
+    
+    // v3.6.2-final: 移除序列号检查
+    /*
+    if (mySeq !== dashRecoverySeq) return
+    */
+    
     if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
       await startDash(res.dash.video, res.dash.audio || [], t)
     }
   } catch (err) {
+    // v3.6.2-final: 移除序列号检查
+    /*
     if (mySeq !== dashRecoverySeq) return
+    */
     console.warn('[DASH] 自动恢复拉流失败：', err)
   }
 }
