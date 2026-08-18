@@ -1804,13 +1804,8 @@ onBeforeUnmount(() => {
   margin: 0 auto;
 }
 
-/* v3.6.2：播放悬浮窗口卡片右移——el-dialog（align-center + append-to-body）
-   默认视口居中，margin-left:160px 使悬浮窗中心相对视口中心右移约 80px；
-   用 margin 而非 transform，避免与 el-dialog 打开动画（zoom-in）的 transform 冲突 */
-.bili-player-dialog {
-  margin-left: 160px;
-}
-
+/* v3.6.2：播放悬浮窗口卡片右移样式已移至文件末尾非 scoped 块（el-dialog append-to-body
+   渲染到 body，scoped 的 [data-v-xxx] 选择器匹配不到） */
 .glass-card {
   position: relative;
   background: var(--glass-bg);
@@ -2921,5 +2916,16 @@ html.dark .bili-action-btn {
 .bili-load-more {
   display: flex;
   justify-content: center;
+}
+</style>
+
+<style>
+/* v3.6.2：播放悬浮窗口卡片右移——el-dialog（align-center + append-to-body）默认视口居中，
+   margin-left:160px 使悬浮窗中心相对视口中心右移约 80px；用 margin 而非 transform，
+   避免与 el-dialog 打开动画（zoom-in）的 transform 冲突。
+   必须放在非 scoped 块：append-to-body 渲染到 body 下，scoped 的 [data-v-xxx] 属性
+   不会附加到该元素，scoped 选择器匹配不上。 */
+.bili-player-dialog {
+  margin-left: 160px;
 }
 </style>
