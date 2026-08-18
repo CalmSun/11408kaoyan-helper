@@ -1003,11 +1003,14 @@ function scheduleSeekAfterReady(target: number, sb: SourceBuffer | null, ms: Med
   if (!el || !ms || ms !== mediaSource) return  // 管道已被替换，放弃
   if (!sb || n >= 75) {
     try { el.currentTime = target } catch { /* ignore */ }
+    el.play().catch(() => { /* 自动播放被拦截时忽略 */ })
     return
   }
   try {
     if (el.readyState >= 1 && sb.buffered.length > 0 && sb.buffered.end(sb.buffered.length - 1) >= target - 5) {
       el.currentTime = target
+      // v3.6.2：seek 定位后显式 play() 恢复播放（管道重启后 video 处于 paused）
+      el.play().catch(() => { /* 自动播放被拦截时忽略 */ })
       console.log(`[DASH] 已定位到 ${target.toFixed(1)}s`)
       return
     }
@@ -1182,6 +1185,12 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
         dashBuffers.push(aSb)
         dashTrackTotal = 2
         pumpTrack(aProxyUrls, aSb, ctrl, currentQn.value, seekSec)
+      }
+      // v3.6.2：从头起播（seekSec<=0）时显式 play()——管道重启时 stopDash 撤销旧 src
+      // 会让 video 进入 paused，autoplay 属性不会对"仅改 src"的重新加载再次触发播放，
+      // 必须显式 play()，否则表现为"刚播放就暂停、无法继续播放"
+      if (seekSec <= 0) {
+        videoEl.value!.play().catch(() => { /* 自动播放被拦截时等待用户手动播放 */ })
       }
       // Range 数据从目标附近开始 append，缓冲就绪后立即 seek 定位（绑定本管道 sb/ms）
       if (seekSec > 0) scheduleSeekAfterReady(seekSec, vSb, ms)
