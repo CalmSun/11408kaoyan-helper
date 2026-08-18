@@ -1,6 +1,6 @@
 # 11408 考研助手 v3.6.2 更新概述
 
-本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**、**优化高清晰度视频播放卡顿**。
+本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**、**优化高清晰度视频播放卡顿**、**修复切换按钮位置漂移**、**缩短推荐/热门卡片高度**、**视频信息缓存加速二次起播**、**封面图片异步解码**。
 
 ## 1. 修复拖动进度条报错 `SourceBuffer has been removed` 与仍重置到开头
 
@@ -45,6 +45,17 @@
 - 行为模拟 24 项断言全 PASS：并发重启序列（慢旧丢弃/快新应用/串行应用）、append 竞态静默分类（abort/InvalidState/Quota/网络错误）、read 后 abort 提前返回、Range 失败回退、就绪轮询管道绑定、轨道选择（同 qn 优先 avc 低带宽/无 avc 选 hev 低带宽/无匹配 qn 选 avc）、水位自适应（1080P+ 低水位 18/8、低清 30/12）；
 - 产物核查：面板右移特征（`padding-left:160px`）**已消失**、悬浮窗右移（`margin-left:160px`）已编入、`InvalidStateError` 静默防护已编入、`materials-mode-bar` 已移除、`calc(100% - 56px)` 已生效、`avc1` 轨道选择特征已编入；
 - 版本号 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
+
+## 6. 本轮追加修复（2026-08-18）
+
+| 项目 | 内容 |
+|---|---|
+| **切换按钮位置固定** | `.materials-header` 由 `flex + space-between` 改为三列 `grid`（标题居左 / 切换按钮居中 / 文件夹·刷新按钮居右）；bili 模式下 `.materials-actions` 由 `v-show`（`display:none`）改为 `visibility: hidden` 占位——旧实现会在 actions 隐藏后把切换按钮挤到最右，造成切换本地/哔哩时位置漂移，现固定不动 |
+| **缩短卡片高度** | `.bili-card-info` padding `8/10 → 6/8`、`.bili-card-title` min-height `36 → 34`、`.bili-card-meta` margin-top `6 → 4`，个性推荐/热门推荐卡片整体更紧凑（两行标题仍完整显示） |
+| **二次起播加速** | 新增 `getViewCached`：`biliView` 结果缓存 5 分钟 TTL（LRU 上限 40 条），配合已有 playurl 10 分钟缓存，重开同一视频免重复请求 |
+| **图片异步解码** | 推荐/热门/收藏/搜索封面与投稿/相关缩略图 `img` 加 `decoding="async"`，减少 24 张卡片同时解码造成的主线程卡顿 |
+
+验证：`vite build` 到临时目录 `✓ built`；`vue-tsc` 仅 2 个预存无关错误（main.ts ElMessage / stores pomodoro），改动文件零新增错误。
 
 ---
 
