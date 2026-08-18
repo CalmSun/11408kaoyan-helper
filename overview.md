@@ -67,6 +67,11 @@
 
 验证：`vite build` 到临时目录 `✓ built in 35.49s`；`vue-tsc` 改动文件零新增错误（仅 2 个预存无关错误）。
 
+补充完善（66cfb9f）：
+- **Range 定位 init 重复追加**：init 与目标偏移流改为并行拉取、两者都成功才追加 init——避免 init 已追加但流片段失败后从头重拉造成 init 重复追加（备用地址轮换下更易触发）；
+- **主进程流代理 pipe 错误处理**：`Readable.pipe` 前挂 `error` 监听，upstream 中途断流时 `res.destroy()`，让渲染层明确感知中断并触发自动恢复，避免响应静默挂起表现为缓冲卡住。
+- 验证：`vue-tsc` + `tsc -p tsconfig.node.json`（主进程）均通过，`vite build` 到临时目录 `✓ built in 35.28s`。
+
 ---
 
 ### 历史（v3.6.2 前序轮次）
