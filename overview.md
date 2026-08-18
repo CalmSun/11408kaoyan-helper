@@ -1,6 +1,6 @@
 # 11408 考研助手 v3.6.2 更新概述
 
-本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**。
+本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**。
 
 ## 1. 修复拖动进度条报错 `SourceBuffer has been removed` 与仍重置到开头
 
@@ -24,11 +24,16 @@
 - **撤销**：`.bili-host` 的 `padding-left: 160px`（面板右移）已移除；`.bili-panel` 的 `flex: 0 1 auto` 还原为 `flex: 1`。
 - **正确实现**：`.bili-player-dialog { margin-left: 160px; }`——播放悬浮窗（el-dialog，`align-center` + `append-to-body` + `width: min(1400px, 96vw)`）默认视口居中，`margin-left: 160px` 使其**中心相对视口水平中心右移约 80px**；用 margin 而非 transform，避免与 el-dialog 打开动画（zoom-in）的 transform 冲突。
 
-## 3. 验证与发布
+## 3. 模式切换按钮上移至顶栏同一行
+
+- "本地资料 / 哔哩哔哩"切换按钮从独立一行（原 `.materials-mode-bar`）**上移并入 `.materials-header`**，与"学习资料"标题、选择资料文件夹按钮、刷新按钮**同一行**（header 为 `flex + space-between`：标题左、切换按钮中、操作按钮右）；
+- 移除 `.materials-mode-bar` 模板与 CSS；`.materials-mode-switch` 加 `flex-shrink: 0` 防压缩；`.materials-body` 高度由 `calc(100% - 70px)` 收紧为 `calc(100% - 56px)`（让出原 mode-bar 行的高度）。
+
+## 4. 验证与发布
 
 - `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误（ElMessage / pomodoro），零新增；
 - 行为模拟 16 项断言全 PASS：并发重启序列（慢旧丢弃/快新应用/串行应用）、append 竞态静默分类（abort/InvalidState/Quota/网络错误）、read 后 abort 提前返回、Range 失败回退、就绪轮询管道绑定；
-- 产物核查：面板右移特征（`padding-left:160px`）**已消失**、悬浮窗右移（`margin-left:160px`）已编入、`InvalidStateError` 静默防护已编入；
+- 产物核查：面板右移特征（`padding-left:160px`）**已消失**、悬浮窗右移（`margin-left:160px`）已编入、`InvalidStateError` 静默防护已编入、`materials-mode-bar` 已移除、`calc(100% - 56px)` 已生效；
 - 版本号 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
 
 ---

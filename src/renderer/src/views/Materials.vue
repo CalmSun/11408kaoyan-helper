@@ -5,6 +5,15 @@
         <el-icon><Folder /></el-icon>
         学习资料
       </h2>
+      <!-- v3.6.2：模式切换按钮上移，与"学习资料"标题、文件夹/刷新按钮同一行 -->
+      <div class="materials-mode-switch">
+        <button class="mode-btn" :class="{ active: materialsMode === 'local' }" @click="materialsMode = 'local'">
+          <el-icon><FolderOpened /></el-icon> 本地资料
+        </button>
+        <button class="mode-btn" :class="{ active: materialsMode === 'bili' }" @click="enterBili">
+          <el-icon><VideoCamera /></el-icon> 哔哩哔哩
+        </button>
+      </div>
       <div class="materials-actions" v-show="materialsMode === 'local'">
         <el-button size="small" type="primary" @click="pickFolder">
           <el-icon><FolderOpened /></el-icon> 选择资料文件夹
@@ -13,18 +22,6 @@
           <el-icon><Refresh /></el-icon> 刷新
         </el-button>
         <span v-if="materialsFolder" class="folder-path">{{ materialsFolder }}</span>
-      </div>
-    </div>
-
-    <!-- v3.5.4：模式切换独立成行并水平居中，两种模式下位置统一（B 站面板懒挂载，v-show 保活不中断播放） -->
-    <div class="materials-mode-bar">
-      <div class="materials-mode-switch">
-        <button class="mode-btn" :class="{ active: materialsMode === 'local' }" @click="materialsMode = 'local'">
-          <el-icon><FolderOpened /></el-icon> 本地资料
-        </button>
-        <button class="mode-btn" :class="{ active: materialsMode === 'bili' }" @click="enterBili">
-          <el-icon><VideoCamera /></el-icon> 哔哩哔哩
-        </button>
       </div>
     </div>
 
@@ -1753,12 +1750,7 @@ function downloadFile() {
 }
 
 /* v3.5.4：模式切换独立成行并水平居中，两种模式下位置统一 */
-.materials-mode-bar {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 16px;
-}
-
+/* v3.6.2：模式切换已上移至 .materials-header 同一行，原独立 mode-bar 行移除 */
 /* v3.5.3：本地资料 / 哔哩哔哩模式切换（胶囊分段控件，玻璃拟态） */
 .materials-mode-switch {
   display: flex;
@@ -1770,6 +1762,8 @@ function downloadFile() {
   border: 1px solid var(--glass-border);
   backdrop-filter: var(--glass-filter);
   -webkit-backdrop-filter: var(--glass-filter);
+  /* v3.6.2：在 header 行内不被压缩 */
+  flex-shrink: 0;
 }
 
 .materials-mode-switch .mode-btn {
@@ -1811,7 +1805,9 @@ function downloadFile() {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 16px;
-  height: calc(100% - 70px);
+  /* v3.6.2：mode-bar 独立行已移除（切换按钮并入 header 行），
+     内容区可用高度增加，由 calc(100% - 70px) 收紧为 calc(100% - 56px) */
+  height: calc(100% - 56px);
 }
 
 /* v3.6.2：B 站面板宿主——水平居中，使面板内容中心与顶栏
