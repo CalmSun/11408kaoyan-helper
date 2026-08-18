@@ -793,6 +793,9 @@ async function playVideo(v: BiliVideo): Promise<void> {
     if (!res.success || !res.video) throw new Error(res.message || '视频信息获取失败')
     currentView.value = res.video
     currentPageIdx.value = 0
+    // v3.6.2：新视频重置 seek 状态（恢复进度只在用户未手动操作时生效）
+    userSeeked = false
+    pendingSeekSec = 0
     // v3.6.0：新视频始终请求最高可用清晰度，避免上个视频降清后残留 320p
     currentQn.value = 127
     acceptQualities.value = []
@@ -831,7 +834,8 @@ async function loadStream(preferDurl = false): Promise<void> {
   try {
     const page = currentView.value.pages[currentPageIdx.value]
     if (!page) throw new Error('视频分 P 信息缺失')
-    const res = await api.biliPlayurl(currentView.value.bvid, page.cid, currentQn.value, preferDurl)
+    // v3.6.2：播放地址走缓存（10 分钟 TTL），重开/seek 重启管道免重复请求
+    const res = await getPlayurlCached(currentView.value.bvid, page.cid, currentQn.value, preferDurl)
     if (!res.success) throw new Error(res.message || '播放地址获取失败')
     acceptQualities.value = res.acceptQuality || []
     qualityLabel.value = res.qualityLabel || ''
@@ -877,6 +881,87 @@ const CLEAR_PREVIOUS_CONTEXT = false  // 占位符，v3.5.9 已移除 durl fallb
 const DASH_BUFFER_AHEAD = 30   // 缓冲超前秒数上限：达到即暂停拉流
 const DASH_BUFFER_RESUME = 12  // 消耗至该秒数后恢复拉流
 let dashBuffers: SourceBuffer[] = []  // 所有注册的 SourceBuffer，用于配额清理
+
+// ── v3.6.2：播放优化与拖动进度条修复 ──
+// 用户已手动 seek 过（restore 竞态消除：打开视频 12s 内 restore 轮询不再覆盖用户拖动）
+let userSeeked = false
+// 管道重启后待定位的 seek 目标（秒）；startDash 读取后清零
+let pendingSeekSec = 0
+// 播放地址缓存（bvid:cid:qn:preferDurl → 结果，10 分钟 TTL）——
+// 重开视频/切清晰度/seek 重启管道时免重复请求，显著提升响应速度
+type PlayurlResult = ReturnType<NonNullable<ElectronAPI['biliPlayurl']>> extends Promise<infer R> ? R : never
+const playurlCache = new Map<string, { data: PlayurlResult; exp: number }>()
+const PLAYURL_TTL = 10 * 60 * 1000
+async function getPlayurlCached(bvid: string, cid: number, qn: number, preferDurl = false): Promise<PlayurlResult> {
+  const key = `${bvid}:${cid}:${qn}:${preferDurl}`
+  const hit = playurlCache.get(key)
+  if (hit && hit.exp > Date.now()) return hit.data
+  const res = await api!.biliPlayurl(bvid, cid, qn, preferDurl)
+  if (res.success && res.mode === 'dash' && res.dash?.video?.length) {
+    playurlCache.set(key, { data: res, exp: Date.now() + PLAYURL_TTL })
+    if (playurlCache.size > 40) {
+      const first = playurlCache.keys().next().value
+      if (first) playurlCache.delete(first)
+    }
+  }
+  return res
+}
+
+/** 已缓冲区间最远位置（秒） */
+function bufferedEndSec(): number {
+  const el = videoEl.value
+  if (!el) return 0
+  try {
+    const buf = el.buffered
+    let end = 0
+    for (let i = 0; i < buf.length; i++) end = Math.max(end, buf.end(i))
+    return end
+  } catch { return 0 }
+}
+
+/** 拖动进度条超出缓冲时：重启拉流管道（Range 从目标偏移拉流），防止 MSE 顺序拉流追不上 → 播放头重置到开头 */
+async function seekDashIfNeeded(targetSec: number): Promise<void> {
+  const el = videoEl.value
+  if (!el || !currentView.value || !mediaSource) return  // 非 DASH（durl 直连）由浏览器原生 seek 处理
+  const bufEnd = bufferedEndSec()
+  if (bufEnd <= 0 || targetSec <= bufEnd + 2) return  // 缓冲内：浏览器原生处理
+  console.log(`[DASH] seek 目标 ${targetSec.toFixed(1)}s 超出缓冲 ${bufEnd.toFixed(1)}s，重启拉流管道`)
+  pendingSeekSec = targetSec
+  try {
+    const page = currentView.value.pages[currentPageIdx.value]
+    if (!page) return
+    stopDash()
+    dashFinished = 0
+    const res = await getPlayurlCached(currentView.value.bvid, page.cid, currentQn.value, false)
+    if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
+      await startDash(res.dash.video, res.dash.audio || [])
+    } else {
+      try { el.currentTime = targetSec } catch { /* ignore */ }
+    }
+  } catch (err) {
+    console.warn('[DASH] seek 重启拉流失败，直接 seek：', err)
+    try { el.currentTime = targetSec } catch { /* ignore */ }
+  }
+}
+
+/** Range 管道数据就绪后定位到目标时间（最多轮询 15s，超时直接 seek 兜底） */
+function scheduleSeekAfterReady(target: number, n = 0): void {
+  const el = videoEl.value
+  if (!el || !mediaSource || !dashBuffers.length) return
+  if (n >= 75) {
+    try { el.currentTime = target } catch { /* ignore */ }
+    return
+  }
+  try {
+    const vSb = dashBuffers[0]
+    if (el.readyState >= 1 && vSb.buffered.length > 0 && vSb.buffered.end(vSb.buffered.length - 1) >= target - 5) {
+      el.currentTime = target
+      console.log(`[DASH] 已定位到 ${target.toFixed(1)}s`)
+      return
+    }
+  } catch { /* 尚未就绪 */ }
+  setTimeout(() => scheduleSeekAfterReady(target, n + 1), 200)
+}
 
 /** v3.6.0：选择目标清晰度轨道（优先最高带宽）：指定 qn 不存在时按 bandwidth 倒序选择，避免高 qn 低带宽轨道干扰 */
 function pickDashTrack(tracks: BiliDashTrack[], qn: number): BiliDashTrack | null {
@@ -975,16 +1060,22 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
   videoEl.value.src = mediaSourceUrl
   ms.addEventListener('sourceopen', () => {
     try {
+      // v3.6.2：管道重启时携带 seek 目标（拖动进度条超缓冲场景），
+      // pumpTrack 从目标字节偏移 Range 拉流，就绪后自动定位
+      const seekSec = pendingSeekSec
+      pendingSeekSec = 0
       const vSb = ms.addSourceBuffer(vMime)
       dashBuffers.push(vSb)
       dashTrackTotal = 1
-      pumpTrack(`${vTok.baseUrl}?token=${vTok.token}`, vSb, ctrl, currentQn.value)
+      pumpTrack(`${vTok.baseUrl}?token=${vTok.token}`, vSb, ctrl, currentQn.value, seekSec)
       if (audioUsable && aTrack && aTok && aTok.success && aTok.token && aTok.baseUrl) {
         const aSb = ms.addSourceBuffer(aMime)
         dashBuffers.push(aSb)
         dashTrackTotal = 2
-        pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl, currentQn.value)
+        pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl, currentQn.value, seekSec)
       }
+      // Range 数据从目标附近开始 append，缓冲就绪后立即 seek 定位
+      if (seekSec > 0) scheduleSeekAfterReady(seekSec)
     } catch (err) {
       playerError.value = `播放初始化失败：${(err as Error).message || err}`
     }
@@ -996,9 +1087,32 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
 //  **主动定期清理播放点前的历史缓冲**（MSE 实践：updateend 后 evict 旧区间），
 //  而非降清晰度。降清只应由用户手动选择（清晰度下拉框）。
 //  播放中遇到 QuotaExceededError：清理 → 等待缓冲消耗 → 重试同清晰度，绝不自动降清。
-async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, qn?: number): Promise<void> {
+async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, qn?: number, startSec = 0): Promise<void> {
   try {
-    const resp = await fetch(url, { signal: ctrl.signal })
+    let resp: Response | null = null
+    if (startSec > 0) {
+      // v3.6.2：Range 定位拉流（拖动进度条超出缓冲时的管道重启）——
+      // 先取文件总大小与 init segment（fMP4 的 moov/init 位于文件头），再从目标
+      // 时间对应的字节偏移 Range 拉取，避免顺序拉流从 0 追赶到目标导致长时间
+      // waiting/播放头重置到开头。主进程流代理已透传 Range 与 206/Content-Range。
+      const head = await fetch(url, { method: 'HEAD', signal: ctrl.signal })
+      const total = Number(head.headers.get('content-length') || 0)
+      const dur = currentView.value?.pages[currentPageIdx.value]?.durationSec || videoEl.value?.duration || 0
+      if (total > 0 && dur > 0) {
+        // 1) init segment：B 站 fMP4 头部 2MB 足够覆盖 moov/init
+        const initResp = await fetch(url, { headers: { Range: 'bytes=0-2097151' }, signal: ctrl.signal })
+        if ((initResp.ok || initResp.status === 206) && initResp.body) {
+          const initBuf = await initResp.arrayBuffer()
+          if (initBuf.byteLength > 0) await appendWithQuotaGuard(sb, initBuf, ctrl)
+        }
+        // 2) 目标偏移：时间比例 × 总大小，乘 0.95 保守前移（VBR 码率波动时宁可多拉）
+        const offset = Math.max(0, Math.min(total - 1, Math.floor((startSec / dur) * total * 0.95)))
+        const segResp = await fetch(url, { headers: { Range: `bytes=${offset}-` }, signal: ctrl.signal })
+        if (segResp.ok || segResp.status === 206) resp = segResp
+      }
+    }
+    // 兜底：无 startSec 或 Range 失败时从头拉取
+    if (!resp) resp = await fetch(url, { signal: ctrl.signal })
     if (!resp.ok || !resp.body) throw new Error(`流拉取失败（HTTP ${resp.status}）`)
     const reader = resp.body.getReader()
     for (;;) {
@@ -1037,7 +1151,7 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
       try {
         const page = currentView.value?.pages[currentPageIdx.value]
         if (page) {
-          const res = await api!.biliPlayurl(currentView.value!.bvid, page.cid, currentQn.value, false)
+          const res = await getPlayurlCached(currentView.value!.bvid, page.cid, currentQn.value, false)
           if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
             stopDash()
             dashFinished = 0
@@ -1166,6 +1280,7 @@ function onVideoError(): void {
 function onPlayerClose(): void {
   // 弹窗关闭：停止播放并清理，释放带宽与内存
   stopDash()
+  pendingSeekSec = 0  // v3.6.2：清理待定位 seek 目标，防止残留影响下次播放
   // v3.6.2：关闭前保存当前观看进度（续播用）
   try {
     if (currentView.value && videoEl.value && videoEl.value.currentTime > 0) {
@@ -1358,11 +1473,14 @@ function onVideoTick(): void {
 
 let lastTickSaveTime = 0
 
-/** 拖动进度条：立即保存最新位置（续播以最新 seek 为准；<10s 由阈值过滤） */
+/** 拖动进度条：立即保存最新位置；目标超出缓冲时重启拉流管道（Range 定位），防"重置到开头" */
 function onVideoSeeking(): void {
   const el = videoEl.value
   if (!el || !currentView.value) return
-  saveBiliProgress(currentView.value.bvid, currentPageIdx.value, el.currentTime)
+  userSeeked = true  // v3.6.2：标记用户已手动 seek，restore 轮询不再覆盖
+  const t = el.currentTime
+  saveBiliProgress(currentView.value.bvid, currentPageIdx.value, t)
+  void seekDashIfNeeded(t)
 }
 
 /** 打开视频时尝试恢复到上次进度（仅当上次 > 10s，且未播放到末尾） */
@@ -1378,7 +1496,8 @@ function restoreBiliProgress(): void {
   let attempts = 0
   let seekDone = false
   const trySeek = () => {
-    if (seekDone) return
+    // v3.6.2：用户已手动拖动过进度条 → 不再自动恢复，避免覆盖用户拖动（"跳回开头"竞态）
+    if (seekDone || userSeeked) return
     try {
       const dur = el.duration
       if (isFinite(dur) && dur > 0 && saved.time < dur - 5) {
@@ -1925,9 +2044,9 @@ html.dark .bili-search-input {
   flex-direction: column;
   gap: 9px;
   min-height: 0;
-  /* v3.6.2：列表高度 63vh → 51vh；滚动下沉到内容区 .bili-side-content 内部滚动，
+  /* v3.6.2：列表高度 51vh → 58vh；滚动发生在内容区 .bili-side-content 内部，
      UP 主卡片 sticky 固定顶部不随列表滚动 */
-  max-height: 51vh;
+  max-height: 58vh;
   overflow: hidden;
   padding-right: 2px;
 }
@@ -1991,9 +2110,9 @@ html.dark .bili-search-input {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* v3.6.2：列表内容内部滚动——侧栏固定 51vh 不滚，滚动只发生在内容区，
-     避免 UP 主卡片与 Tab 栏随列表滚走 */
-  overflow-y: auto;
+  /* v3.6.2：滚动发生在各 .bili-section 内部——side-content 自身不滚，
+     避免 flex:1 的 section 被拉伸填满后无溢出（旧实现滚动失效、内容被裁剪） */
+  overflow: hidden;
 }
 .bili-section {
   flex: 1;
@@ -2002,7 +2121,8 @@ html.dark .bili-search-input {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-sm);
-  overflow: hidden;
+  /* v3.6.2：每个内容区内部独立滚动（评论/投稿/相关列表超长时滚动，UP 卡片与 Tab 固定） */
+  overflow-y: auto;
 }
 .bili-section.replies-only {
   /* 保持 flex:1，无需独立高度限制 */

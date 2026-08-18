@@ -314,7 +314,9 @@
     <!-- v3.5.3：哔哩哔哩在线视频面板（登录/收藏夹/搜索/推荐/播放）。
          首次切入才挂载（biliVisited），之后 v-show 保活，视频播放不被模式切换打断；
          本地资料功能完全独立，互不影响。 -->
-    <BiliBiliPanel v-if="biliVisited" v-show="materialsMode === 'bili'" />
+    <div v-if="biliVisited" v-show="materialsMode === 'bili'" class="bili-host">
+      <BiliBiliPanel />
+    </div>
   </div>
 </template>
 
@@ -1810,6 +1812,14 @@ function downloadFile() {
   grid-template-columns: 320px 1fr;
   gap: 16px;
   height: calc(100% - 70px);
+}
+
+/* v3.6.2：B 站面板宿主——水平居中，使面板内容中心与顶栏
+   "本地资料/哔哩哔哩"切换按钮（同容器居中）严格对齐 */
+.bili-host {
+  display: flex;
+  justify-content: center;
+  min-height: 0;
 }
 
 .glass-card {
