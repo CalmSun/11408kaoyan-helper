@@ -82,6 +82,11 @@
 - **修复**：把该样式从 `<style scoped>` 块移至文件末尾新增的**非 scoped `<style>` 块**，成为全局样式才能命中 body 下的 `.bili-player-dialog`，`margin-left: 160px` 终于生效（中心相对视口中心右移约 80px）。
 - 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 35.05s`。
 
+播放自动停止（起播即暂停、无法继续）修复（c582cf8）：
+- **根因**：seek 续播（拖到缓冲外/恢复进度）与断流恢复都会走 `stopDash()`（撤销旧 blob URL → video 进入 paused）+ `startDash()`（仅改 src）。但**没有任何地方调用 `play()`**——首次播放靠 `<video autoplay>` 属性，而"仅改 src"的重新加载不会再次触发 autoplay，video 停在 paused，点击播放按钮也因无缓冲数据推动而无法继续。
+- **修复**：`startDash` 的 `sourceopen` 回调里 `seekSec <= 0`（从头起播）时显式 `play()`；`scheduleSeekAfterReady` 的 seek 定位后（含超时兜底分支）显式 `play()`。确保起播/管道重启/续播后都能恢复播放。
+- 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 39.72s`。
+
 ---
 
 ### 历史（v3.6.2 前序轮次）
