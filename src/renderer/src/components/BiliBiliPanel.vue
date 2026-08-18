@@ -871,6 +871,7 @@ async function loadStream(preferDurl = true): Promise<void> {
       // ① 首选：durl 合并流原生播放（浏览器接管，体验最稳）
       if (res.mode === 'durl' && res.durl && res.durl.length && res.durl[0].url) {
         stopDash()
+        currentPlayMode = 'durl'
         segments = res.durl
         videoSrc.value = segments[0].url
         playerLoading.value = false
@@ -879,6 +880,7 @@ async function loadStream(preferDurl = true): Promise<void> {
       // ② 主进程已兜底返回 dash（durl 空但 dash 可用）→ 直接用，不再二次请求
       if (res.mode === 'dash' && res.dash && res.dash.video.length) {
         console.warn('[播放] durl 不可用，主进程已兜底 DASH，直接 MSE 播放')
+        currentPlayMode = 'dash'
         await startDash(res.dash.video, res.dash.audio || [])
         playerLoading.value = false
         return
@@ -891,10 +893,12 @@ async function loadStream(preferDurl = true): Promise<void> {
 
     // ③ DASH 音视频分离流（高清晰度兜底，MSE + 回环代理）
     if (res.mode === 'dash' && res.dash && res.dash.video.length) {
+      currentPlayMode = 'dash'
       await startDash(res.dash.video, res.dash.audio || [])
     } else {
       stopDash()
       if (!res.durl || !res.durl.length) throw new Error('未获取到播放地址（版权受限或清晰度不足）')
+      currentPlayMode = 'durl'
       segments = res.durl
       videoSrc.value = segments[0].url
     }
@@ -1499,6 +1503,7 @@ let stallCheckTimer: ReturnType<typeof setInterval> | null = null
 let stallLastTime = -1
 let stallSeconds = 0
 let lastAutoDowngradeAt = 0   // 上次自动降清时间戳（30s 防抖）
+let currentPlayMode: 'durl' | 'dash' | '' = ''  // v3.6.2：当前播放模式（降清保持模式）
 function startStallCheck(): void {
   if (stallCheckTimer) return
   stallLastTime = -1
@@ -1535,7 +1540,8 @@ function autoDowngradeQuality(): void {
   console.warn(`[播放] 播放停滞，自动降清 ${currentQn.value} → ${lower}`)
   ElMessage.warning('网络缓冲不足，已自动切换清晰度（可在清晰度菜单手动切回）')
   currentQn.value = lower
-  void loadStream()
+  // v3.6.2：降清保持当前播放模式（durl 原生 / DASH MSE），避免跳模式
+  void loadStream(currentPlayMode === 'dash')
 }
 
 /** 多分段（长视频 FLV 分段）自动连播 */
@@ -1565,6 +1571,7 @@ function onPlayerClose(): void {
   // 弹窗关闭：停止播放并清理，释放带宽与内存
   stopDash()
   stopStallCheck()  // v3.6.2：停止播放停滞检测
+  currentPlayMode = ''  // v3.6.2：重置播放模式
   pendingSeekSec = 0  // v3.6.2：清理待定位 seek 目标，防止残留影响下次播放
   // v3.6.2：关闭前保存当前观看进度（续播用）
   try {

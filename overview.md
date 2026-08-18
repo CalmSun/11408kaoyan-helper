@@ -161,3 +161,25 @@
 - `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误，零新增；
 - 产物核查：`播放停滞，自动降清`/`网络缓冲不足，已自动切换清晰度` 特征已编入；
 - 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
+
+---
+
+## 审查并完善 DASH 路径优化（v3.6.2 收尾）
+
+### 审查结论（逐项复核）
+| DASH 优化项 | 状态 |
+|---|---|
+| pickDashTrack（avc1 硬解优先 + 组内带宽最低） | ✅ 完好——durl 优先重构未影响，DASH 兜底路径仍生效 |
+| applyBufferWatermark（qn≥80 → 18/8 低水位） | ✅ 完好——loadStream 在 durl 分支前调用，DASH 兜底（loadStream(false)）会重设 |
+| append 流水线化（不等 updateend） | ✅ 完好——循环顶部 `sb.updating` 检查保证最多 1 个在途，无队列堆积；Quota 同步抛不受影响 |
+| Range 定位（seekDashIfNeeded） | ✅ 完好——仅 DASH（mediaSource 存在）时触发，durl 模式自动跳过 |
+| 断流自动恢复（recoverDashStream） | ✅ 完好——30s 窗口 5 次限制，与水位/降清无冲突 |
+
+### 发现并修复的改进点
+**自动降清会跳播放模式**：`autoDowngradeQuality` 此前无条件 `loadStream()`（durl 优先）——若当前是 DASH 模式（durl 不可用才走 DASH），降清后可能切到 durl（低清 durl 可用时）或再回退，行为不可控。
+→ 新增 `currentPlayMode` 记录当前播放模式（loadStream 各分支设置），**降清保持当前模式**（`loadStream(currentPlayMode === 'dash')`）；onPlayerClose 重置。
+
+### 验证
+- 行为模拟 5 项断言全 PASS：DASH 模式降清保持 DASH / durl 模式降清保持 durl / 无模式默认 durl 优先 / 最低档不降 / 降清取低一档最高；
+- `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误，零新增；
+- 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
