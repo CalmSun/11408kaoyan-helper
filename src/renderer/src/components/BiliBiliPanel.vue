@@ -56,7 +56,7 @@
         <el-icon :size="48"><MagicStick /></el-icon>
         <p>暂无推荐内容，点击「换一批」重试</p>
       </div>
-      <div v-else class="bili-grid">
+      <div v-else class="bili-grid cols-4">
         <div v-for="v in rcmdList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
           <div class="bili-cover-wrap">
             <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
@@ -88,7 +88,7 @@
         <el-icon class="is-loading" :size="28"><Loading /></el-icon>
         <span>加载中...</span>
       </div>
-      <div v-else class="bili-grid">
+      <div v-else class="bili-grid cols-4">
         <div v-for="v in popularList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
           <div class="bili-cover-wrap">
             <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
@@ -255,7 +255,11 @@
             playsinline
             @ended="onVideoEnded"
             @error="onVideoError"
+            @seeking="onVideoSeeking"
+            @timeupdate="onDanmakuTick"
           ></video>
+          <!-- v3.5.5：弹幕覆盖层（跟随视频时间轴渲染，可开关） -->
+          <div ref="danmakuLayerEl" class="bili-danmaku-layer"></div>
           <div v-if="playerLoading" class="bili-player-loading">
             <el-icon class="is-loading" :size="32"><Loading /></el-icon>
             <span>正在获取播放地址...</span>
@@ -277,6 +281,14 @@
             <span class="bili-player-stat">{{ formatCount(currentView.stat.like) }} 点赞</span>
           </div>
           <div class="bili-player-bar-right">
+            <button
+              class="bili-dm-toggle"
+              :class="{ on: danmakuEnabled }"
+              :title="danmakuEnabled ? '关闭弹幕' : '开启弹幕'"
+              @click="toggleDanmaku"
+            >
+              <el-icon><ChatDotRound /></el-icon> {{ danmakuEnabled ? '弹幕开' : '弹幕关' }}
+            </button>
             <select
               v-if="currentView.pages.length > 1"
               class="bili-select"
@@ -337,13 +349,59 @@
             <em>{{ formatCount(currentView.stat.favorite + (relFaved ? 1 : 0)) }}</em>
           </button>
         </div>
-        <!-- 相关视频推荐（v3.5.4：最多展示 8 条，避免弹窗被过度拉长） -->
+        <!-- v3.5.5：UP 主卡片（头像 / 粉丝 / 签名 / 查看投稿） -->
+        <div class="bili-up-card" v-if="currentView && upCard">
+          <img v-if="upCard.face" class="bili-up-face" :src="upCard.face" alt="UP 主头像" />
+          <el-icon v-else class="bili-up-face bili-up-face-ph"><UserFilled /></el-icon>
+          <div class="bili-up-info">
+            <div class="bili-up-name">{{ upCard.name }}</div>
+            <div class="bili-up-sign" :title="upCard.sign">{{ upCard.sign || '这个人很懒，什么都没有写~' }}</div>
+          </div>
+          <div class="bili-up-stats">
+            <span>{{ formatCount(upCard.fans) }} 粉丝</span>
+            <span>{{ formatCount(upCard.archives) }} 投稿</span>
+          </div>
+          <el-button size="small" :loading="spaceLoading && !spaceList.length" @click="toggleAuthorVideos">
+            <el-icon><Film /></el-icon> {{ authorSectionVisible ? '收起投稿' : '查看投稿' }}
+          </el-button>
+        </div>
+        <!-- v3.5.5：UP 主投稿视频（点击直接播放） -->
+        <div class="bili-space" v-if="authorSectionVisible">
+          <div class="bili-content-head">
+            <span class="bili-content-title small"><el-icon><Film /></el-icon> TA 的投稿</span>
+          </div>
+          <div v-if="spaceLoading && !spaceList.length" class="bili-loading small">
+            <el-icon class="is-loading"><Loading /></el-icon><span>加载中...</span>
+          </div>
+          <div v-else-if="!spaceList.length" class="bili-folder-empty">暂无投稿视频</div>
+          <div v-else class="bili-grid related row-6">
+            <div v-for="v in spaceList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
+              <div class="bili-cover-wrap">
+                <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
+                <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
+                <div class="bili-cover-mask">
+                  <el-icon class="bili-play-icon"><VideoPlay /></el-icon>
+                </div>
+              </div>
+              <div class="bili-card-info">
+                <div class="bili-card-title" :title="v.title">{{ v.title }}</div>
+                <div class="bili-card-meta">
+                  <span class="bili-meta-stat">{{ formatCount(v.play) }} 播放</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bili-load-more" v-if="spaceList.length && spaceHasMore">
+            <el-button size="small" :loading="spaceLoading" @click="loadSpaceVideos(false)">加载更多</el-button>
+          </div>
+        </div>
+        <!-- 相关视频推荐（v3.5.5：仅展示一行 6 条，控制弹窗高度） -->
         <div class="bili-related" v-if="relatedList.length">
           <div class="bili-content-head">
             <span class="bili-content-title small"><el-icon><VideoPlay /></el-icon> 相关视频</span>
           </div>
-          <div class="bili-grid related">
-            <div v-for="v in relatedList.slice(0, 8)" :key="v.bvid" class="bili-card" @click="playVideo(v)">
+          <div class="bili-grid related row-6">
+            <div v-for="v in relatedList.slice(0, 6)" :key="v.bvid" class="bili-card" @click="playVideo(v)">
               <div class="bili-cover-wrap">
                 <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
                 <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
@@ -408,8 +466,10 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   Search, Star, StarFilled, Promotion, User, UserFilled, Refresh, Loading,
-  VideoPlay, FolderOpened, Warning, MagicStick, SuccessFilled, Present
+  VideoPlay, FolderOpened, Warning, MagicStick, SuccessFilled, Present,
+  ChatDotRound, Film
 } from '@element-plus/icons-vue'
+import { getGlobalStorage, setGlobalStorage } from '@/utils/storage'
 
 const api = window.electronAPI
 
@@ -532,15 +592,18 @@ async function loginByCookie(): Promise<void> {
   }
 }
 
-// ── 个性推荐（v3.5.4：首页 feed/rcmd，WBI 签名） ──
+// ── 个性推荐（v3.5.4：首页 feed/rcmd，WBI 签名；v3.5.5：4x6 布局，换一批递增 fresh_idx） ──
 const rcmdList = ref<BiliVideo[]>([])
 const rcmdLoading = ref(false)
+let rcmdIdx = 0
 
 async function loadRcmd(): Promise<void> {
   if (!api || rcmdLoading.value) return
   rcmdLoading.value = true
+  rcmdIdx++
   try {
-    const res = await api.biliRcmd(12)
+    // 每批 24 条（4 列 x 6 行），fresh_idx 递增保证换一批拿到新内容
+    const res = await api.biliRcmd(24, rcmdIdx)
     if (!res.success) throw new Error(res.message || '加载失败')
     rcmdList.value = res.list || []
   } catch (err) {
@@ -562,7 +625,8 @@ async function loadPopular(refresh: boolean): Promise<void> {
   try {
     // 换一批：随机跳页（热门接口无总数，限定前 20 页内随机），避免一直看同一批
     const page = refresh ? 1 + Math.floor(Math.random() * 20) : popularPage.value + 1
-    const res = await api.biliPopular(page, 20)
+    // v3.5.5：每页 24 条（4 列 x 6 行）
+    const res = await api.biliPopular(page, 24)
     if (!res.success) throw new Error(res.message || '加载失败')
     popularList.value = refresh ? (res.list || []) : [...popularList.value, ...(res.list || [])]
     popularPage.value = page
@@ -704,6 +768,9 @@ async function playVideo(v: BiliVideo): Promise<void> {
     currentPageIdx.value = 0
     // v3.5.4：查询点赞/投币/收藏状态（异步，不阻塞播放）
     loadRelation(res.video.aid)
+    // v3.5.5：UP 主卡片与弹幕（异步加载，不阻塞起播）
+    loadUpCard(res.video.owner.mid)
+    loadDanmaku(res.video.pages[0]?.cid || 0)
     // 相关视频推荐（异步加载，不阻塞播放）
     api.biliRelated(v.bvid).then(r => {
       if (r.success && currentView.value?.bvid === v.bvid) relatedList.value = r.list || []
@@ -725,17 +792,157 @@ async function loadStream(): Promise<void> {
     const page = currentView.value.pages[currentPageIdx.value]
     if (!page) throw new Error('视频分 P 信息缺失')
     const res = await api.biliPlayurl(currentView.value.bvid, page.cid, currentQn.value)
-    if (!res.success || !res.durl?.length) throw new Error(res.message || '播放地址获取失败')
-    segments = res.durl
+    if (!res.success) throw new Error(res.message || '播放地址获取失败')
     acceptQualities.value = res.acceptQuality || []
     qualityLabel.value = res.qualityLabel || ''
     if (res.quality) currentQn.value = res.quality
-    videoSrc.value = segments[0].url
+    if (res.mode === 'dash' && res.dash && res.dash.video.length) {
+      // v3.5.5：DASH 音视频分离流，经 MSE + 回环代理播放（支持高清晰度）
+      await startDash(res.dash.video, res.dash.audio || [])
+    } else {
+      stopDash()
+      if (!res.durl || !res.durl.length) throw new Error('未获取到播放地址（版权受限或清晰度不足）')
+      segments = res.durl
+      videoSrc.value = segments[0].url
+    }
     playerLoading.value = false
   } catch (err) {
     playerLoading.value = false
     playerError.value = (err as Error).message || String(err)
   }
+}
+
+// ── v3.5.5：MSE DASH 播放引擎（音视频分离 fMP4；流控避免长视频吃内存） ──
+let mediaSource: MediaSource | null = null
+let mediaSourceUrl = ''
+let dashCtrl: AbortController | null = null
+let dashFinished = 0
+let dashTrackTotal = 0
+const DASH_BUFFER_AHEAD = 90   // 缓冲超前秒数上限：达到即暂停拉流
+const DASH_BUFFER_RESUME = 45  // 消耗至该秒数后恢复拉流
+
+/** 选择目标清晰度轨道：精确匹配优先，否则就近向下，再不行取最低档 */
+function pickDashTrack(tracks: BiliDashTrack[], qn: number): BiliDashTrack | null {
+  if (!tracks.length) return null
+  const exact = tracks.filter(t => t.qn === qn)
+  if (exact.length) return exact.sort((a, b) => b.bandwidth - a.bandwidth)[0]
+  const lower = tracks.filter(t => t.qn < qn)
+  const pool = lower.length ? lower : tracks
+  return [...pool].sort((a, b) => b.qn - a.qn)[0]
+}
+
+/** 视频已缓冲的前瞻秒数（供流控判断） */
+function bufferedAhead(): number {
+  const el = videoEl.value
+  if (!el) return 0
+  try {
+    const buf = el.buffered
+    for (let i = buf.length - 1; i >= 0; i--) {
+      if (el.currentTime >= buf.start(i) - 1 && el.currentTime <= buf.end(i)) {
+        return buf.end(i) - el.currentTime
+      }
+    }
+  } catch { /* ignore */ }
+  return 0
+}
+
+function stopDash(): void {
+  if (dashCtrl) { dashCtrl.abort(); dashCtrl = null }
+  if (mediaSourceUrl) {
+    try { URL.revokeObjectURL(mediaSourceUrl) } catch { /* ignore */ }
+    mediaSourceUrl = ''
+  }
+  mediaSource = null
+  dashFinished = 0
+  dashTrackTotal = 0
+}
+
+async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrack[]): Promise<void> {
+  if (!api || !videoEl.value) throw new Error('播放器未就绪')
+  const vTrack = pickDashTrack(videoTracks, currentQn.value)
+  if (!vTrack || !vTrack.baseUrl) throw new Error('无可用视频轨道')
+  const aTrack = audioTracks.length
+    ? [...audioTracks].sort((a, b) => b.bandwidth - a.bandwidth)[0]
+    : null
+  if (!MediaSource.isTypeSupported(vTrack.mimeType)) {
+    throw new Error(`不支持的视频编码（${vTrack.codecs || vTrack.mimeType}），请尝试降低清晰度`)
+  }
+  const audioUsable = !!(aTrack && aTrack.baseUrl && MediaSource.isTypeSupported(aTrack.mimeType))
+  // 经主进程回环代理拉流：规避 CORS 并携带防盗链头
+  const [vTok, aTok] = await Promise.all([
+    api.biliStreamToken(vTrack.baseUrl),
+    audioUsable && aTrack ? api.biliStreamToken(aTrack.baseUrl) : Promise.resolve(null)
+  ])
+  if (!vTok.success || !vTok.token || !vTok.baseUrl) throw new Error(vTok.message || '流代理获取失败')
+  stopDash()
+  dashCtrl = new AbortController()
+  const ctrl = dashCtrl
+  const ms = new MediaSource()
+  mediaSource = ms
+  mediaSourceUrl = URL.createObjectURL(ms)
+  videoSrc.value = '' // DASH 模式不走 :src 直连绑定，避免 error 处理器误判
+  videoEl.value.src = mediaSourceUrl
+  ms.addEventListener('sourceopen', () => {
+    try {
+      const vSb = ms.addSourceBuffer(vTrack.mimeType)
+      dashTrackTotal = 1
+      pumpTrack(`${vTok.baseUrl}?token=${vTok.token}`, vSb, ctrl)
+      if (audioUsable && aTrack && aTok && aTok.success && aTok.token && aTok.baseUrl) {
+        const aSb = ms.addSourceBuffer(aTrack.mimeType)
+        dashTrackTotal = 2
+        pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl)
+      }
+    } catch (err) {
+      playerError.value = `播放初始化失败：${(err as Error).message || err}`
+    }
+  }, { once: true })
+}
+
+/** 单轨道拉流泵：流式读取 → 按缓冲水位节流追加到 SourceBuffer */
+async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController): Promise<void> {
+  try {
+    const resp = await fetch(url, { signal: ctrl.signal })
+    if (!resp.ok || !resp.body) throw new Error(`流拉取失败（HTTP ${resp.status}）`)
+    const reader = resp.body.getReader()
+    for (;;) {
+      if (ctrl.signal.aborted) return
+      while (!ctrl.signal.aborted && bufferedAhead() > DASH_BUFFER_AHEAD) {
+        await waitEvent(videoEl.value!, 'timeupdate', ctrl, 1000)
+      }
+      if (ctrl.signal.aborted) return
+      const { done, value } = await reader.read()
+      if (done) break
+      if (sb.updating) await waitEvent(sb, 'updateend', ctrl)
+      if (ctrl.signal.aborted) return
+      sb.appendBuffer(value)
+      await waitEvent(sb, 'updateend', ctrl)
+    }
+    dashFinished++
+    if (dashFinished >= dashTrackTotal && mediaSource && mediaSource.readyState === 'open') {
+      try { mediaSource.endOfStream() } catch { /* ignore */ }
+    }
+  } catch (err) {
+    if (ctrl.signal.aborted) return
+    playerError.value = `视频流加载失败：${(err as Error).message || err}，可尝试切换清晰度或重试`
+  }
+}
+
+/** 等待事件或轮询超时（abort 时立即返回），用于流控节流 */
+function waitEvent(target: EventTarget, ev: string, ctrl: AbortController, pollMs = 0): Promise<void> {
+  return new Promise(resolve => {
+    let timer: ReturnType<typeof setInterval> | null = null
+    const cleanup = () => {
+      target.removeEventListener(ev, onEvent)
+      ctrl.signal.removeEventListener('abort', onAbort)
+      if (timer) clearInterval(timer)
+      resolve()
+    }
+    const onEvent = () => cleanup()
+    const onAbort = () => cleanup()
+    target.addEventListener(ev, onEvent, { once: true })
+    ctrl.signal.addEventListener('abort', onAbort, { once: true })
+    if (pollMs > 0) timer = setInterval(cleanup, pollMs)
+  })
 }
 
 function retryPlay(): void {
@@ -745,6 +952,8 @@ function retryPlay(): void {
 function switchPage(idx: number): void {
   if (!currentView.value || idx === currentPageIdx.value) return
   currentPageIdx.value = idx
+  // v3.5.5：分 P 的弹幕独立，切换后重载
+  loadDanmaku(currentView.value.pages[idx]?.cid || 0)
   loadStream()
 }
 
@@ -779,6 +988,7 @@ function onVideoError(): void {
 
 function onPlayerClose(): void {
   // 弹窗关闭：停止播放并清理，释放带宽与内存
+  stopDash()
   try { videoEl.value?.pause() } catch { /* ignore */ }
   videoSrc.value = ''
   segments = []
@@ -788,6 +998,14 @@ function onPlayerClose(): void {
   relLiked.value = false
   relCoin.value = 0
   relFaved.value = false
+  // v3.5.5：清理弹幕与 UP 主卡片状态
+  clearDanmakuLayer()
+  danmakuAll = []
+  danmakuPtr = 0
+  danmakuLastTime = 0
+  upCard.value = null
+  authorSectionVisible.value = false
+  spaceList.value = []
 }
 
 // ── v3.5.4：视频交互（点赞 / 投币 / 收藏） ──
@@ -878,6 +1096,137 @@ async function toggleFav(): Promise<void> {
   }
 }
 
+// ── v3.5.5：弹幕（跟随视频时间轴渲染，支持开关与偏好持久化） ──
+const danmakuLayerEl = ref<HTMLDivElement | null>(null)
+const danmakuEnabled = ref(getGlobalStorage<boolean>('kaoyan_bili_danmaku', true))
+let danmakuAll: BiliDanmaku[] = []
+let danmakuPtr = 0
+let danmakuLastTime = 0
+let dmTrackRot = 0
+const DM_MAX_VISIBLE = 80 // 同屏弹幕上限：超出丢弃，保证渲染流畅
+
+function toggleDanmaku(): void {
+  danmakuEnabled.value = !danmakuEnabled.value
+  setGlobalStorage('kaoyan_bili_danmaku', danmakuEnabled.value)
+  if (!danmakuEnabled.value) clearDanmakuLayer()
+}
+
+async function loadDanmaku(cid: number): Promise<void> {
+  danmakuAll = []
+  danmakuPtr = 0
+  danmakuLastTime = 0
+  clearDanmakuLayer()
+  if (!api || !cid) return
+  try {
+    const res = await api.biliDanmaku(cid)
+    if (res.success) danmakuAll = res.list || []
+  } catch { /* 弹幕加载失败不影响播放 */ }
+}
+
+function clearDanmakuLayer(): void {
+  const layer = danmakuLayerEl.value
+  if (layer) layer.innerHTML = ''
+}
+
+/** 由 video timeupdate 驱动：补发 (lastTime, currentTime] 区间内的弹幕 */
+function onDanmakuTick(): void {
+  const el = videoEl.value
+  if (!el || !danmakuEnabled.value || !danmakuAll.length) return
+  const t = el.currentTime
+  if (t < danmakuLastTime) danmakuLastTime = t
+  while (danmakuPtr < danmakuAll.length && danmakuAll[danmakuPtr].time <= t) {
+    const dm = danmakuAll[danmakuPtr++]
+    if (dm.time > danmakuLastTime) spawnDanmaku(dm)
+  }
+  danmakuLastTime = t
+}
+
+/** 拖动进度条：清空屏幕弹幕并将指针二分定位到新时间点 */
+function onVideoSeeking(): void {
+  clearDanmakuLayer()
+  const el = videoEl.value
+  if (!el || !danmakuAll.length) return
+  const t = el.currentTime
+  let lo = 0
+  let hi = danmakuAll.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (danmakuAll[mid].time < t) lo = mid + 1
+    else hi = mid
+  }
+  danmakuPtr = lo
+  danmakuLastTime = t
+}
+
+function spawnDanmaku(dm: BiliDanmaku): void {
+  const layer = danmakuLayerEl.value
+  if (!layer || !dm.text) return
+  if (layer.childElementCount >= DM_MAX_VISIBLE) return
+  const el = document.createElement('div')
+  el.className = 'bili-dm'
+  el.textContent = dm.text
+  el.style.color = dm.color
+  if (dm.mode === 4) {
+    // 底部固定弹幕
+    el.classList.add('bili-dm-stay', 'bili-dm-bottom')
+    el.style.bottom = `${(dm.text.length % 3) * 34 + 6}px`
+  } else if (dm.mode === 5) {
+    // 顶部固定弹幕
+    el.classList.add('bili-dm-stay', 'bili-dm-top')
+    el.style.top = `${(dm.text.length % 3) * 34 + 6}px`
+  } else {
+    // 滚动弹幕（mode 1/2/3/6 统一按滚动处理），时长随长度微调
+    dmTrackRot = (dmTrackRot + 3) % 10
+    el.style.top = `${dmTrackRot * 8 + 2}%`
+    el.style.animationDuration = `${Math.min(12, Math.max(6, 6 + dm.text.length * 0.15))}s`
+  }
+  el.addEventListener('animationend', () => el.remove(), { once: true })
+  layer.appendChild(el)
+}
+
+// ── v3.5.5：UP 主卡片与投稿 ──
+const upCard = ref<BiliUpCard | null>(null)
+const authorSectionVisible = ref(false)
+const spaceList = ref<BiliVideo[]>([])
+const spacePage = ref(1)
+const spaceHasMore = ref(false)
+const spaceLoading = ref(false)
+
+async function loadUpCard(mid: number): Promise<void> {
+  upCard.value = null
+  authorSectionVisible.value = false
+  spaceList.value = []
+  spacePage.value = 1
+  spaceHasMore.value = false
+  if (!api || !mid) return
+  try {
+    const res = await api.biliCard(mid)
+    if (res.success && res.card) upCard.value = res.card
+  } catch { /* UP 主信息获取失败不影响播放 */ }
+}
+
+function toggleAuthorVideos(): void {
+  authorSectionVisible.value = !authorSectionVisible.value
+  if (authorSectionVisible.value && !spaceList.value.length) loadSpaceVideos(true)
+}
+
+async function loadSpaceVideos(refresh: boolean): Promise<void> {
+  if (!api || !upCard.value || spaceLoading.value) return
+  spaceLoading.value = true
+  try {
+    const page = refresh ? 1 : spacePage.value + 1
+    const res = await api.biliSpaceVideos(upCard.value.mid, page)
+    if (!res.success) throw new Error(res.message || '获取失败')
+    spaceList.value = refresh ? (res.list || []) : [...spaceList.value, ...(res.list || [])]
+    spacePage.value = page
+    spaceHasMore.value = !!res.hasMore
+  } catch (err) {
+    ElMessage.error(`投稿视频获取失败: ${(err as Error).message || err}`)
+  } finally {
+    spaceLoading.value = false
+  }
+}
+
 // ── 工具函数 ──
 function formatCount(n: number | string): string {
   const num = typeof n === 'number' ? n : Number(n) || 0
@@ -893,6 +1242,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopQrPolling()
+  stopDash()
   try { videoEl.value?.pause() } catch { /* ignore */ }
 })
 </script>
@@ -1073,6 +1423,16 @@ html.dark .bili-search-input {
 .bili-grid.related {
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   gap: 8px;
+}
+
+/* v3.5.5：推荐/热门固定 4 列（每批 24 条 = 4×6），适配面板宽度 */
+.bili-grid.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* v3.5.5：相关视频 / UP 主投稿固定 6 列（单行展示） */
+.bili-grid.related.row-6 {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .bili-card {
@@ -1602,5 +1962,149 @@ html.dark .bili-action-btn {
     width: 100%;
     max-height: 200px;
   }
+}
+
+/* ── v3.5.5：弹幕层 ── */
+.bili-danmaku-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* 弹幕条目为 JS 动态创建，需 :deep 穿透 scoped 作用域 */
+:deep(.bili-dm) {
+  position: absolute;
+  left: 100%;
+  white-space: nowrap;
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  will-change: transform;
+  animation: bili-dm-scroll linear forwards;
+}
+
+@keyframes bili-dm-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-100% - 100vw)); }
+}
+
+/* 顶部 / 底部固定弹幕：原位停留数秒后淡出 */
+:deep(.bili-dm-stay) {
+  left: 50%;
+  transform: translateX(-50%);
+  animation: bili-dm-stay 4s ease forwards;
+}
+
+:deep(.bili-dm-top) { top: 6px; }
+:deep(.bili-dm-bottom) { bottom: 6px; }
+
+@keyframes bili-dm-stay {
+  0% { opacity: 0; }
+  8% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* 弹幕开关按钮（播放信息栏右侧） */
+.bili-dm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--mo-text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.bili-dm-toggle:hover {
+  border-color: var(--mo-accent);
+  color: var(--mo-accent);
+}
+
+.bili-dm-toggle.on {
+  color: var(--mo-accent);
+  border-color: var(--mo-accent);
+  background: rgba(59, 130, 246, 0.12);
+}
+
+/* ── v3.5.5：UP 主卡片与投稿 ── */
+.bili-up-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--mo-radius-sm);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+}
+
+.bili-up-face {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid var(--glass-border);
+}
+
+.bili-up-face-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--mo-text-2);
+  font-size: 26px;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.bili-up-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.bili-up-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--mo-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bili-up-sign {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--mo-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bili-up-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--mo-text-2);
+  flex-shrink: 0;
+}
+
+.bili-space {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bili-load-more {
+  display: flex;
+  justify-content: center;
 }
 </style>

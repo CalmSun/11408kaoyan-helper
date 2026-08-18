@@ -1,39 +1,43 @@
-# v3.5.4 更新：B 站视频一键三连 + 个性化推荐 + 播放器弹窗体验优化
+# v3.5.5 更新：DASH 高清晰度播放 + 弹幕显示与开关 + UP 主卡片投稿 + 推荐布局 4×6
 
-## 新功能：视频交互与个性化推荐
+## 新功能：高清晰度播放（DASH + MSE）
 
-在 v3.5.3 哔哩哔哩集成基础上，补齐视频互动能力与推荐体验，全部沿用主进程 API 代理模式（渲染层零新依赖）。
+v3.5.4 之前播放走 `fnval=1` 合并流（durl），未登录 / 大会员最高仅 720P。本版升级为 DASH 音视频分离 + MSE 播放：
 
-### 功能清单
-| 功能 | 说明 |
-|---|------|
-| 点赞 / 取消点赞 | `web-interface/archive/like`（POST + csrf=bili_jct），按钮实时回显已点赞态 |
-| 投币（1/2 个） | `web-interface/web/coin/add`，下拉选择投币数，已投满 2 币自动拦截 |
-| 收藏 / 取消收藏 | `v3/fav/resource/deal` 收藏至默认收藏夹（收藏夹列表首项），成功提示目标收藏夹名 |
-| 交互状态查询 | `web-interface/archive/relation` 打开视频时异步查询点赞/投币/收藏状态，未登录静默降级为默认态 |
-| 个性化推荐 | `web-interface/wbi/index/top/feed/rcmd`（WBI 签名：nav 获取 img_key/sub_key → 混排表 → md5，密钥缓存 30 分钟），过滤直播与商业推广；登录后按兴趣个性化 |
-| 页签体系 | 「个性推荐 / 热门推荐 / 收藏夹 / 搜索结果」四页签，默认进入个性推荐 |
+| 环节 | 实现 |
+|---|---|
+| playurl | `fnval=4048 & fourk=1`，返回 `dash.video / dash.audio` 分离 fMP4 轨道；无 DASH 时回退 durl 合并流，兼容不受影响 |
+| 清晰度选择 | 清晰度下拉按视频轨 qn 生成（1080P 高码率 / 1080P60 / 4K 等大会员档位），切换即换轨重播 |
+| MSE 播放引擎 | `MediaSource` + 双 `SourceBuffer` 流式 append；流控水位：缓冲超前 90s 暂停拉流、消耗至 45s 恢复，长视频不整段载入 |
+| 回环流代理 | 渲染层 fetch CDN 有 CORS 限制，主进程新增 `127.0.0.1` 回环 HTTP 代理（token → CDN URL 内存映射，上限 64 FIFO），透传 Range、注入 UA/Referer/Origin，渲染层不接触真实 CDN 地址 |
 
-### 播放器弹窗体验优化
-- 弹窗宽度 920px → 1080px，改用 `align-center` 屏幕水平垂直居中
-- 相关视频限制展示 8 条并紧凑化卡片（minmax 150px / 字号缩小），弹窗不再被过度拉长
-- 播放信息栏下新增点赞 / 投币 / 收藏胶囊按钮栏，玻璃拟态风格与整体一致
+## 新功能：弹幕显示与开关
 
-### 界面布局统一
-- 「本地资料 / 哔哩哔哩」模式切换从头部右侧移出，独立成行水平居中，两种模式下位置统一
+- `x/v1/dm/list.so?oid=cid` XML 弹幕拉取（主进程正则解析，实体解码，上限 4000 条，按时间排序）
+- video `timeupdate` 驱动补发区间弹幕，CSS 动画滚动；mode 4/5 顶底固定弹幕停留淡出；seek 二分重定位并清空重发；同屏上限 80 条
+- 播放信息栏新增「弹幕开 / 弹幕关」胶囊按钮，开关偏好经 `kaoyan_bili_danmaku` 本地持久化；加载失败静默不影响播放
+
+## 新功能：UP 主卡片与投稿播放
+
+- `web-interface/card?mid=&photo=true` 获取 UP 主头像 / 昵称 / 签名 / 粉丝数 / 投稿数
+- 播放弹窗交互栏下方展示 UP 主卡片，「查看投稿」展开 `space/wbi/arc/search`（WBI 签名）投稿列表，单行 6 列分页加载、点击直接播放
+
+## 布局调整
+
+- 个性推荐 / 热门推荐改为固定 **4 列 × 6 行**（每批 24 条），适配面板宽度；「换一批」经 `fresh_idx` 递增真刷新
+- 播放弹窗相关视频只展示 **一行 6 条**（1×6），控制弹窗高度
 
 ## 改动文件
-- `src/main/main.ts`（biliPost / WBI 签名 / bili:rcmd / bili:relation / bili:like / bili:coin / bili:fav-toggle，crypto 导入）
-- `src/preload/preload.ts`（bili* 桥接新增 5 项，共 17 项）
-- `src/renderer/src/vite-env.d.ts`（新增 5 个 bili* 类型声明）
-- `src/renderer/src/components/BiliBiliPanel.vue`（推荐页签 / 交互按钮 / 弹窗居中增大 / 相关视频紧凑化）
-- `src/renderer/src/views/Materials.vue`（模式切换栏居中，本地逻辑未动）
-- `package.json`（3.5.3 → 3.5.4，输出目录 release-v354）、`README.md`（版本徽章 / 功能说明）
+- `src/main/main.ts`（playurl DASH 模式 / `startBiliStreamProxy` 回环流代理 / `bili:stream-token` / `bili:danmaku` / `bili:card` / `bili:space-videos`，rcmd 加 fresh_idx，stream/Readable 导入）
+- `src/preload/preload.ts`（新增 biliStreamToken / biliDanmaku / biliCard / biliSpaceVideos，rcmd 加 freshIdx）
+- `src/renderer/src/vite-env.d.ts`（新增 BiliDashTrack / BiliDanmaku / BiliUpCard 类型，playurl 返回加 mode/dash）
+- `src/renderer/src/components/BiliBiliPanel.vue`（4×6 网格 / 相关 1×6 / MSE DASH 引擎 / 弹幕层与开关 / UP 主卡片与投稿区 / 对应样式）
+- `package.json`（3.5.4 → 3.5.5，输出目录 release-v355）、`README.md`（版本徽章 / 功能说明）
 
 ## 验证
 - `npm run build` 构建通过（vite + tsc 主进程编译）
-- 本地资料功能回归核查：Materials.vue 仅移动模式切换 DOM 位置并新增居中样式，文件树 / PDF / 视频逻辑零改动
-- 已有功能（网易云 / 天气 / 更新 / 本地播放）无任何改动路径
+- durl 回退分支完整保留：DASH 不可用（版权受限 / 编码不支持）时自动走原合并流路径，播放能力不回退
+- 弹幕 / UP 主卡片加载失败均静默降级，不影响播放主流程；本地资料与其他功能零改动
 
 ## 发布
-- 版本号 3.5.4，打 tag `v3.5.4` 推送触发 CI 自动构建 Windows 安装包
+- 版本号 3.5.5，打 tag `v3.5.5` 推送触发 CI 自动构建 Windows 安装包
