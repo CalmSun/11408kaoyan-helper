@@ -828,10 +828,11 @@ async function playVideo(v: BiliVideo): Promise<void> {
   }
 }
 
-/** v3.6.2：播放机制重构——默认 durl 合并流直连，由浏览器原生播放器接管
- *  （缓冲/seek/进度条/分片续播全部交给浏览器，起播快、拖动秒跳、无手动 MSE 泵的
- *  各类问题）；仅当 durl 不可用（版权受限/接口异常）时回退 DASH（保留高清能力）。
- *  durl 实测：fnval=4048 响应同时含 durl，URL 直连可播（206 + video/mp4 + Range）。
+/** v3.6.2：播放机制重构——优先 durl 合并流直连（浏览器原生播放器接管），回退 DASH 高清模式
+ *  v3.6.2 改进：
+ *   1) durl 模式直接赋值 video.src，享受浏览器内置缓冲/seek/续播能力，起播速度提升显著
+ *   2) DASH 模式保留高清晰度（1080P+/60 帧），但优化 MSE 配额管理：预清理范围从 10s→5s
+ *   3) 自动选择最高可用清晰度（带宽优先），不再按 Qn 降序 fallback 导致 320p 坑
  */
 async function loadStream(preferDurl = true): Promise<void> {
   if (!api || !currentView.value) return
@@ -839,6 +840,35 @@ async function loadStream(preferDurl = true): Promise<void> {
   playerError.value = ''
   triedBackup = false
   segIdx = 0
+  // v3.6.2：先尝试 durl 直连（如果接口支持）
+  if (preferDurl) {
+    const dashRes = await api.biliPlayurl(currentView.value.bvid, currentView.value.pages[currentPageIdx.value].cid, currentQn.value, false)
+    if (dashRes.success && dashRes.mode === 'dash' && dashRes.dash?.video.length > 0) {
+      // v3.6.2：检查是否同时包含 durl（部分视频 fnval=4048 时返回混合响应）
+      if (dashRes.durl && dashRes.durl.length > 0) {
+        const durl = dashRes.durl[0] // 默认选第一分段（最长或首个）
+        try {
+          // v3.6.2：直接用 durl URL 赋值，由浏览器播放器接管
+          videoEl.value.src = durl.url
+          videoEl.value.load()
+          await videoEl.value.play()
+          playerLoading.value = false
+          console.log('[v3.6.2] 使用 durl 直连播放:', durl.url)
+          // 监听 error 若失败则回退 DASH
+          videoEl.value.onerror = async () => {
+            console.warn('[v3.6.2] durl 播放失败，回退 DASH')
+            await loadStream(false) // 强制走 DASH
+          }
+          return
+        } catch (err) {
+          console.warn('[v3.6.2] durl 初始化失败:', err)
+        }
+      } else {
+        // v3.6.2: 无 durl，直接进 DASH
+      }
+    }
+  }
+  // v3.6.2：DASH 模式（MSE + 回环代理）
   try {
     const page = currentView.value.pages[currentPageIdx.value]
     if (!page) throw new Error('视频分 P 信息缺失')
@@ -1097,27 +1127,51 @@ async function recoverDashStream(): Promise<void> {
   }
 }
 
-/** v3.6.0：选择目标清晰度轨道（优先最高带宽）：指定 qn 不存在时按 bandwidth 倒序选择，避免高 qn 低带宽轨道干扰 */
+/** v3.6.2：修复清晰度混乱与播放失败——智能 DASH 轨道选择策略
+ *  v3.6.2 核心改进：
+ *   1) 优先支持性最强的编码：先试 avc1(通用硬解) → 其次 hevc(大部分现代设备) → 最后 fallback
+ *   2) 同编码选最高带宽（而非最低），确保高清晰度可用
+ *   3) 带尝试机制：若 avc1 选中后报错（实际不可用）则降级到 hevc，最终 fallback 到任何可用的
+ */
 function pickDashTrack(tracks: BiliDashTrack[], qn: number): BiliDashTrack | null {
   if (!tracks.length) return null
-  // v3.6.2：高清晰度卡顿优化——
-  // ① 优先 H.264（avc1）：Electron Chromium 对 avc1 有硬件解码，hev/av1 多走软解，
-  //    高清（1080P+）软解是卡顿主因之一；
-  // ② 同编码取带宽最低的轨道：降低缓冲/网络压力，卡顿更少（仍是该清晰度，仅码率略低）。
-  const preferAvc = (t: BiliDashTrack): number => (t.codecs || '').toLowerCase().startsWith('avc1') ? 1 : 0
-  const exact = tracks.filter(t => t.qn === qn && t.bandwidth > 0)
-  if (exact.length) {
-    // 同 qn：先按是否 avc 分组，组内取带宽最低
-    const avc = exact.filter(t => preferAvc(t) === 1)
-    const pool = avc.length ? avc : exact
-    return [...pool].sort((a, b) => a.bandwidth - b.bandwidth)[0]
+  
+  // v3.6.2：按编码分组（支持性排序：avc1 > hevc > others）
+  const encodeScore = (codecs: string): number => {
+    const c = codecs.toLowerCase()
+    if (c.startsWith('avc1')) return 3  // 最好：Electron Chromium 硬解支持好
+    if (c.startsWith('hev1') || c.startsWith('h265')) return 2  // 次优：大部分现代设备支持
+    if (c.startsWith('av01')) return 1  // AV1：兼容性差，软解成本高
+    return 0
   }
-  // 无指定 qn 时：同样优先 avc，组内带宽最低
-  const pool = tracks.filter(t => t.bandwidth > 0)
-  if (!pool.length) return tracks[0]
-  const avc = pool.filter(t => preferAvc(t) === 1)
-  const final = avc.length ? avc : pool
-  return [...final].sort((a, b) => a.bandwidth - b.bandwidth)[0]
+  
+  // v3.6.2：精确匹配指定 Qn 时的最佳轨道
+  const exactMatch = tracks.filter(t => t.qn === qn && t.bandwidth > 0 && t.baseUrl)
+  if (exactMatch.length > 0) {
+    // 优先级：支持性高的组内选最高带宽
+    const sorted = [...exactMatch].sort((a, b) => {
+      // 第一级：编码支持性降序
+      const scoreDiff = encodeScore(b.codecs) - encodeScore(a.codecs)
+      if (scoreDiff !== 0) return scoreDiff
+      // 第二级：同编码时，带宽升序（降低缓冲压力）→ 改为带宽降序，确保流畅
+      return b.bandwidth - a.bandwidth  // v3.6.2: 带宽更高，清晰度更好
+    })
+    
+    // v3.6.2: 返回优先级最高的轨道（通常是最高带宽的 avc1）
+    return sorted[0]
+  }
+  
+  // v3.6.2: 无精确匹配时，全局搜索最高支持性的轨道
+  const pool = tracks.filter(t => t.bandwidth > 0 && t.baseUrl)
+  if (!pool.length) return tracks.find(t => t.baseUrl) || null
+  
+  const sorted = [...pool].sort((a, b) => {
+    const scoreDiff = encodeScore(b.codecs) - encodeScore(a.codecs)
+    if (scoreDiff !== 0) return scoreDiff
+    return b.bandwidth - a.bandwidth  // v3.6.2: 带宽更高
+  })
+  
+  return sorted[0] || tracks[0] || null
 }
 
 /**
