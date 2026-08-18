@@ -1234,7 +1234,7 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
   // v3.6.2-final: 预清理历史缓冲（移除过去 10s 以内碎片区间）降低配额压力
   await preCleanBuffers(videoEl.value)
   
-  // ✅ 核心改进 1：智能 Codec 选择与回退机制
+  // ✅ 核心改进 1：智能 Codec 选择与回退机制（简化版，避免过度验证）
   const codecFallbackOrder: ('avc1' | 'hev1' | 'any')[] = ['avc1', 'hev1', 'any']
   let selectedTrack: BiliDashTrack | null = null
   let lastCodecError: string | null = null
@@ -1246,9 +1246,9 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
       // v3.6.2: 按编码优先级过滤
       const encodeScore = (codecs: string): number => {
         const c = codecs.toLowerCase()
-        if (codecType === 'any') return 0 // any 模式不检查 codec
+        if (codecType === 'any') return 0
         if (c.startsWith(codecType === 'avc1' ? 'avc1' : codecType)) return 10
-        if (codecType === 'avc1' && c.startsWith('hev1')) return 5 // hev1 作为 avc1 的降级选项
+        if (codecType === 'avc1' && c.startsWith('hev1')) return 5
         return 0
       }
       
@@ -1258,7 +1258,7 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
       
       if (filtered.length === 0) continue
       
-      // v3.6.2: 同组内选最高带宽
+      // v3.6.2: 同组内选最高带宽（最清晰）
       const sorted = [...filtered].sort((a, b) => b.bandwidth - a.bandwidth)
       const trialTrack = sorted[0]
       
@@ -1267,26 +1267,12 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
       const trialMime = mseMime(trialTrack)
       if (!MediaSource.isTypeSupported(trialMime)) continue
       
-      // v3.6.2: 验证 codec 兼容性（通过添加临时 SourceBuffer 测试）
-      const tempMs = new MediaSource()
-      const tempUrl = URL.createObjectURL(tempMs)
-      try {
-        const sb = tempMs.addSourceBuffer(trialMime)
-        // 尝试 append 少量数据验证 codec 是否真的可用
-        const initSegment = await fetch(trialTrack.baseUrl, { method: 'HEAD' }).then(() => {
-          return fetch(trialTrack.baseUrl, { headers: { Range: 'bytes=0-2097151' } }).then(r => r.arrayBuffer())
-        })
-        sb.appendBuffer(new Uint8Array(initSegment).buffer)
-        selectedTrack = trialTrack
-        console.log(`[DASH] 成功初始化 ${codecType} 编码 (${trialTrack.codecs})`)
-        break
-      } catch {
-        console.warn(`[DASH] ${codecType} 编码不可用：${trialTrack.codecs}, 尝试下一个`)
-        lastCodecError = trialTrack.codecs
-      } finally {
-        URL.revokeObjectURL(tempUrl)
-        if (tempMs.readyState === 'open') tempMs.endOfStream()
-      }
+      // ✅ 简化策略：不实际测试 codec（避免 2MB 下载和 append 失败）
+      // 直接使用 MediaSource.isTypeSupported 作为判断标准即可
+      // 真正的问题通常是：网络延迟导致 metadata 未加载，而不是 codec 不可用
+      selectedTrack = trialTrack
+      console.log(`[DASH] 选中 ${codecType} 编码 (${trialTrack.codecs}, bandwidth=${trialTrack.bandwidth})`)
+      break
     } catch {}
   }
   
