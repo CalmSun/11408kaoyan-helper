@@ -87,6 +87,12 @@
 - **修复**：`startDash` 的 `sourceopen` 回调里 `seekSec <= 0`（从头起播）时显式 `play()`；`scheduleSeekAfterReady` 的 seek 定位后（含超时兜底分支）显式 `play()`。确保起播/管道重启/续播后都能恢复播放。
 - 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 39.72s`。
 
+播放地址 Wbi 签名 + buvid 预获取（a0e64d4，参考 bilibili-api-collect）：
+- **优化点**：playurl 由未签名的 `/x/player/playurl` 改为 **Wbi 签名**的 `/x/player/wbi/playurl`——未签名老接口易被风控限流（表现为 HTTP 502 / 清晰度受限），签名后地址更完整稳定。复用已有 `biliWbiSign`/`biliEnsureWbiKeys` 基础设施（rcmd 接口早已在用）。
+- **回退兼容**：签名失败或接口异常（含 `code !== 0`）时自动回退老接口，保证不破坏原有解析逻辑。
+- **buvid 预获取**：启动时 `void biliEnsureBuvid()` 预取 buvid3/buvid4 设备标识（降低风控），playurl 内 `await biliEnsureBuvid()` 幂等兜底。
+- 验证：主进程 `tsc -p tsconfig.node.json` exit 0。
+
 ---
 
 ### 历史（v3.6.2 前序轮次）
