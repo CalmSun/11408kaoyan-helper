@@ -1230,71 +1230,165 @@ async function preCleanBuffers(el: HTMLVideoElement): Promise<void> {
 
 async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrack[], seekSecOverride = -1): Promise<void> {
   if (!api || !videoEl.value) throw new Error('播放器未就绪')
-  // v3.5.9：预清理历史缓冲（移除过去 10s 以内碎片区间）降低配额压力
+  
+  // v3.6.2-final: 预清理历史缓冲（移除过去 10s 以内碎片区间）降低配额压力
   await preCleanBuffers(videoEl.value)
-  const supportedVideo = videoTracks.filter(t => t.baseUrl && MediaSource.isTypeSupported(mseMime(t)))
-  const vTrack = pickDashTrack(supportedVideo.length ? supportedVideo : videoTracks, currentQn.value)
-  if (!vTrack || !vTrack.baseUrl) throw new Error('无可用视频轨道')
-  const vMime = mseMime(vTrack)
-  if (!MediaSource.isTypeSupported(vMime)) {
-    throw new Error(`不支持的视频编码（${vTrack.codecs || vTrack.mimeType}），请尝试降低清晰度`)
+  
+  // ✅ 核心改进 1：智能 Codec 选择与回退机制
+  const codecFallbackOrder: ('avc1' | 'hev1' | 'any')[] = ['avc1', 'hev1', 'any']
+  let selectedTrack: BiliDashTrack | null = null
+  let lastCodecError: string | null = null
+  
+  for (const codecType of codecFallbackOrder) {
+    try {
+      const supportedVideo = videoTracks.filter(t => t.baseUrl && MediaSource.isTypeSupported(mseMime(t)))
+      
+      // v3.6.2: 按编码优先级过滤
+      const encodeScore = (codecs: string): number => {
+        const c = codecs.toLowerCase()
+        if (codecType === 'any') return 0 // any 模式不检查 codec
+        if (c.startsWith(codecType === 'avc1' ? 'avc1' : codecType)) return 10
+        if (codecType === 'avc1' && c.startsWith('hev1')) return 5 // hev1 作为 avc1 的降级选项
+        return 0
+      }
+      
+      const filtered = codecType === 'any' 
+        ? supportedVideo.length ? supportedVideo : videoTracks
+        : supportedVideo.filter(t => encodeScore(t.codecs || '') > 0)
+      
+      if (filtered.length === 0) continue
+      
+      // v3.6.2: 同组内选最高带宽
+      const sorted = [...filtered].sort((a, b) => b.bandwidth - a.bandwidth)
+      const trialTrack = sorted[0]
+      
+      if (!trialTrack || !trialTrack.baseUrl) continue
+      
+      const trialMime = mseMime(trialTrack)
+      if (!MediaSource.isTypeSupported(trialMime)) continue
+      
+      // v3.6.2: 验证 codec 兼容性（通过添加临时 SourceBuffer 测试）
+      const tempMs = new MediaSource()
+      const tempUrl = URL.createObjectURL(tempMs)
+      try {
+        const sb = tempMs.addSourceBuffer(trialMime)
+        // 尝试 append 少量数据验证 codec 是否真的可用
+        const initSegment = await fetch(trialTrack.baseUrl, { method: 'HEAD' }).then(() => {
+          return fetch(trialTrack.baseUrl, { headers: { Range: 'bytes=0-2097151' } }).then(r => r.arrayBuffer())
+        })
+        sb.appendBuffer(new Uint8Array(initSegment).buffer)
+        selectedTrack = trialTrack
+        console.log(`[DASH] 成功初始化 ${codecType} 编码 (${trialTrack.codecs})`)
+        break
+      } catch {
+        console.warn(`[DASH] ${codecType} 编码不可用：${trialTrack.codecs}, 尝试下一个`)
+        lastCodecError = trialTrack.codecs
+      } finally {
+        URL.revokeObjectURL(tempUrl)
+        if (tempMs.readyState === 'open') tempMs.endOfStream()
+      }
+    } catch {}
   }
-  const aTrack = audioTracks.length
-    ? [...audioTracks].sort((a, b) => b.bandwidth - a.bandwidth)[0]
+  
+  if (!selectedTrack || !selectedTrack.baseUrl) {
+    throw new Error(`所有编码均不可用（最后错误：${lastCodecError || '未知'}），请尝试降低清晰度`)
+  }
+  
+  const vMime = mseMime(selectedTrack)
+  
+  // ✅ 核心改进 2：音频轨道处理（支持无声视频）
+  const aTrack = audioTracks.length 
+    ? [...audioTracks].sort((a, b) => b.bandwidth - a.bandwidth)[0] 
     : null
   const aMime = aTrack ? mseMime(aTrack) : ''
   const audioUsable = !!(aTrack && aTrack.baseUrl && MediaSource.isTypeSupported(aMime))
-  // 经主进程回环代理拉流：规避 CORS 并携带防盗链头。
-  // v3.6.2：候选地址 = 主地址 + 全部备用 CDN（baseUrl 502/中断时自动切换，
-  // 根治"流拉取失败（HTTP 502）"——此前只用 baseUrl，单节点失败无备用可切）
-  const vCandidates = [vTrack.baseUrl, ...(vTrack.backupUrl || [])].filter(u => !!u && /^https?:\/\//.test(u))
+  
+  // ✅ 核心改进 3：流代理候选地址准备
+  const vCandidates = [selectedTrack.baseUrl, ...(selectedTrack.backupUrl || [])].filter(u => !!u && /^https?:\/\//.test(u))
   const aCandidates = audioUsable && aTrack
     ? [aTrack.baseUrl, ...(aTrack.backupUrl || [])].filter(u => !!u && /^https?:\/\//.test(u))
     : []
+  
   const [vToks, aToks] = await Promise.all([
     Promise.all(vCandidates.map(u => api.biliStreamToken(u))),
     Promise.all(aCandidates.map(u => api.biliStreamToken(u)))
   ])
   const vProxyUrls = vToks.filter(r => r.success && r.token && r.baseUrl).map(r => `${r.baseUrl}?token=${r.token}`)
   const aProxyUrls = aToks.filter(r => r.success && r.token && r.baseUrl).map(r => `${r.baseUrl}?token=${r.token}`)
+  
   if (!vProxyUrls.length) throw new Error('流代理获取失败')
+  
   stopDash()
   dashCtrl = new AbortController()
   const ctrl = dashCtrl
+  
+  // ✅ 核心改进 4：MediaSource + Video 生命周期重排
   const ms = new MediaSource()
   mediaSource = ms
   mediaSourceUrl = URL.createObjectURL(ms)
   videoSrc.value = '' // DASH 模式不走 :src 直连绑定，避免 error 处理器误判
   videoEl.value.src = mediaSourceUrl
+  
   ms.addEventListener('sourceopen', () => {
     try {
-      // v3.6.2：管道重启时携带 seek 目标（拖动进度条超缓冲场景），
-      // pumpTrack 从目标字节偏移 Range 拉流，就绪后自动定位。
-      // 显式参数优先（seekDashIfNeeded 传入），避免并发重启互相污染 pendingSeekSec
       const seekSec = seekSecOverride >= 0 ? seekSecOverride : pendingSeekSec
       if (seekSecOverride < 0) pendingSeekSec = 0
+      
+      // ✅ 核心改进 5：添加 SourceBuffer 并启动拉流管道
       const vSb = ms.addSourceBuffer(vMime)
       dashBuffers.push(vSb)
       dashTrackTotal = 1
       pumpTrack(vProxyUrls, vSb, ctrl, currentQn.value, seekSec)
+      
       if (audioUsable && aTrack && aProxyUrls.length) {
         const aSb = ms.addSourceBuffer(aMime)
         dashBuffers.push(aSb)
         dashTrackTotal = 2
         pumpTrack(aProxyUrls, aSb, ctrl, currentQn.value, seekSec)
       }
-      // v3.6.2：从头起播（seekSec<=0）时显式 play()——管道重启时 stopDash 撤销旧 src
-      // 会让 video 进入 paused，autoplay 属性不会对"仅改 src"的重新加载再次触发播放，
-      // 必须显式 play()，否则表现为"刚播放就暂停、无法继续播放"
-      if (seekSec <= 0) {
-        videoEl.value!.play().catch(() => { /* 自动播放被拦截时等待用户手动播放 */ })
-      }
-      // Range 数据从目标附近开始 append，缓冲就绪后立即 seek 定位（绑定本管道 sb/ms）
-      if (seekSec > 0) scheduleSeekAfterReady(seekSec, vSb, ms)
     } catch (err) {
       playerError.value = `播放初始化失败：${(err as Error).message || err}`
     }
   }, { once: true })
+  
+  // ✅ 核心改进 6: canplaythrough 事件监听——确保可流畅播放后再触发 play()
+  const onCanPlayThrough = async () => {
+    if (!videoEl.value || !currentView.value) return
+    
+    // ✅ 核心改进 7: 双重检查——确保 readyState 足够且元数据已加载
+    if (videoEl.value.readyState >= 3 && mediaSource?.readyState === 'open') {
+      // 清理临时事件监听
+      videoEl.value.removeEventListener('canplaythrough', onCanPlayThrough)
+      videoEl.value.removeEventListener('loadedmetadata', onCanPlayThrough)
+      
+      // ✅ 核心改进 8: 延迟 100ms 后执行 seek 和 play，确保内部状态稳定
+      setTimeout(() => {
+        const seekSec = seekSecOverride >= 0 ? seekSecOverride : pendingSeekSec
+        if (seekSec > 0) {
+          videoEl.value.currentTime = seekSec
+          console.log(`[DASH] 延迟 seek 到 ${seekSec.toFixed(1)}s (mediaSource ready: ${mediaSource.readyState})`)
+        }
+        
+        // ✅ 核心改进 9: play() 调用——此时保证元数据已加载且 buffer 充足
+        videoEl.value.play().catch(() => {
+          console.warn('[DASH] autoplay 被拦截，等待用户手动播放')
+        })
+      }, 100)
+    }
+  }
+  
+  // ✅ 核心改进 10: 双保险监听——canplaythrough 和 loadedmetadata
+  videoEl.value.addEventListener('canplaythrough', onCanPlayThrough, { once: true })
+  videoEl.value.addEventListener('loadedmetadata', onCanPlayThrough, { once: true })
+  
+  // ✅ 核心改进 11: fallback 超时机制（10 秒内若无响应则主动检查）
+  setTimeout(() => {
+    if (!videoEl.value || !currentView.value) return
+    if (videoEl.value.readyState >= 3 && mediaSource?.readyState === 'open') {
+      console.log('[DASH] 超时 fallback：强制触发 play()')
+      onCanPlayThrough()
+    }
+  }, 10000)
 }
 
 // ── v3.5.9：取消 durl 回退链，改为降清重试 ──
