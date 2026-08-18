@@ -1,6 +1,6 @@
 # 11408 考研助手 v3.6.2 更新概述
 
-本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**、**优化高清晰度视频播放卡顿**、**修复切换按钮位置漂移**、**缩短推荐/热门卡片高度**、**视频信息缓存加速二次起播**、**封面图片异步解码**。
+本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**、**优化高清晰度视频播放卡顿**、**修复切换按钮位置漂移**、**缩短推荐/热门卡片高度**、**视频信息缓存加速二次起播**、**封面图片异步解码**、**修复流拉取 502 与播放自动停止**。
 
 ## 1. 修复拖动进度条报错 `SourceBuffer has been removed` 与仍重置到开头
 
@@ -56,6 +56,16 @@
 | **图片异步解码** | 推荐/热门/收藏/搜索封面与投稿/相关缩略图 `img` 加 `decoding="async"`，减少 24 张卡片同时解码造成的主线程卡顿 |
 
 验证：`vite build` 到临时目录 `✓ built`；`vue-tsc` 仅 2 个预存无关错误（main.ts ElMessage / stores pomodoro），改动文件零新增错误。
+
+## 7. 修复"流拉取失败（HTTP 502）"与"播放自动停止"（2026-08-18 晚）
+
+| 项目 | 根因 | 修复 |
+|---|---|---|
+| **HTTP 502 报错** | `startDash` 只用 `vTrack.baseUrl` 单个 CDN 地址拉流，B 站备用 CDN（`backupUrl`）从未使用；主节点 502/被限流时无备用可切，`pumpTrack` 直接抛"流拉取失败（HTTP 502）" | `startDash` 收集 `[baseUrl, ...backupUrl]` 全部候选地址并逐一签发代理 token；`pumpTrack` 阶段一按候选地址**轮换**——非 2xx 或网络异常自动 `continue` 切下一个，全部失败才报错 |
+| **播放自动停止** | DASH 流播放中 CDN 连接被掐断：`reader.read()` 提前返回 `done` 或抛 `TypeError`，旧逻辑一律按"自然结束"或"加载失败"处理 → `endOfStream()` 后视频停住 / 直接弹错误页 | ① 读取中断（`.catch` 捕获网络错误）→ 触发 `recoverDashStream()` 续播；② `done` 时对比已知时长（`durationSec`），未播到末尾判定为提前断流 → 同样触发续播；③ `recoverDashStream()` 复用 Range 重启（`startDash(..., currentTime)`）从断点续播，带 `dashRecoverySeq` 并发防护 + 30 秒内限 5 次防网络持续抖动无限重启 |
+| **管道替换竞态防护** | 备用地址轮换期间可能发生 `appendBuffer` 到已移除 SourceBuffer | 阶段一 catch 中 `InvalidStateError/InvalidAccessError/AbortError` 静默返回；`QuotaExceededError` 透传外层配额恢复，不在此换地址 |
+
+验证：`vite build` 到临时目录 `✓ built in 35.49s`；`vue-tsc` 改动文件零新增错误（仅 2 个预存无关错误）。
 
 ---
 

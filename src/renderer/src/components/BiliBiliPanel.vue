@@ -953,6 +953,10 @@ function bufferedEndSec(): number {
 
 /** 拖动进度条超出缓冲时：重启拉流管道（Range 从目标偏移拉流），防止 MSE 顺序拉流追不上 → 播放头重置到开头 */
 let dashRestartSeq = 0  // v3.6.2：seek 重启序列号——连续快速拖动时丢弃过期重启，防止并发覆盖
+// v3.6.2：流中断自动恢复序列号 + 限次计数（防并发恢复 + 限次防网络持续抖动无限重启）
+let dashRecoverySeq = 0
+let dashRecoveryCount = 0
+let dashRecoveryWindowStart = 0
 async function seekDashIfNeeded(targetSec: number): Promise<void> {
   const el = videoEl.value
   if (!el || !currentView.value || !mediaSource) return  // 非 DASH（durl 直连）由浏览器原生 seek 处理
@@ -999,6 +1003,42 @@ function scheduleSeekAfterReady(target: number, sb: SourceBuffer | null, ms: Med
     }
   } catch { /* 尚未就绪 */ }
   setTimeout(() => scheduleSeekAfterReady(target, sb, ms, n + 1), 200)
+}
+
+/** v3.6.2：DASH 流读取中断/提前结束时，重启拉流管道续播（从当前播放位置 Range 定位）。
+ *  复用 seekDashIfNeeded 同款 Range 重启，但绕过"缓冲内不重启"判断——中断场景必须强制重启。
+ *  30 秒内连续自动恢复超过 5 次视为网络持续不稳定，停止恢复并提示，避免无限重启。 */
+async function recoverDashStream(): Promise<void> {
+  const el = videoEl.value
+  const cv = currentView.value
+  if (!el || !cv) return
+  const now = Date.now()
+  if (now - dashRecoveryWindowStart > 30000) {
+    dashRecoveryWindowStart = now
+    dashRecoveryCount = 0
+  }
+  if (++dashRecoveryCount > 5) {
+    console.warn('[DASH] 30 秒内连续自动恢复超过 5 次，网络持续不稳定，停止恢复')
+    playerError.value = '视频流加载失败：网络不稳定，可尝试切换清晰度或重试'
+    return
+  }
+  const t = el.currentTime
+  const page = cv.pages[currentPageIdx.value]
+  if (!page) return
+  const mySeq = ++dashRecoverySeq
+  console.log(`[DASH] 自动恢复拉流：续播自 ${t.toFixed(1)}s`)
+  try {
+    stopDash()
+    dashFinished = 0
+    const res = await getPlayurlCached(cv.bvid, page.cid, currentQn.value, false)
+    if (mySeq !== dashRecoverySeq) return  // 已被更新的恢复取代
+    if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
+      await startDash(res.dash.video, res.dash.audio || [], t)
+    }
+  } catch (err) {
+    if (mySeq !== dashRecoverySeq) return
+    console.warn('[DASH] 自动恢复拉流失败：', err)
+  }
 }
 
 /** v3.6.0：选择目标清晰度轨道（优先最高带宽）：指定 qn 不存在时按 bandwidth 倒序选择，避免高 qn 低带宽轨道干扰 */
@@ -1094,12 +1134,20 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
     : null
   const aMime = aTrack ? mseMime(aTrack) : ''
   const audioUsable = !!(aTrack && aTrack.baseUrl && MediaSource.isTypeSupported(aMime))
-  // 经主进程回环代理拉流：规避 CORS 并携带防盗链头
-  const [vTok, aTok] = await Promise.all([
-    api.biliStreamToken(vTrack.baseUrl),
-    audioUsable && aTrack ? api.biliStreamToken(aTrack.baseUrl) : Promise.resolve(null)
+  // 经主进程回环代理拉流：规避 CORS 并携带防盗链头。
+  // v3.6.2：候选地址 = 主地址 + 全部备用 CDN（baseUrl 502/中断时自动切换，
+  // 根治"流拉取失败（HTTP 502）"——此前只用 baseUrl，单节点失败无备用可切）
+  const vCandidates = [vTrack.baseUrl, ...(vTrack.backupUrl || [])].filter(u => !!u && /^https?:\/\//.test(u))
+  const aCandidates = audioUsable && aTrack
+    ? [aTrack.baseUrl, ...(aTrack.backupUrl || [])].filter(u => !!u && /^https?:\/\//.test(u))
+    : []
+  const [vToks, aToks] = await Promise.all([
+    Promise.all(vCandidates.map(u => api.biliStreamToken(u))),
+    Promise.all(aCandidates.map(u => api.biliStreamToken(u)))
   ])
-  if (!vTok.success || !vTok.token || !vTok.baseUrl) throw new Error(vTok.message || '流代理获取失败')
+  const vProxyUrls = vToks.filter(r => r.success && r.token && r.baseUrl).map(r => `${r.baseUrl}?token=${r.token}`)
+  const aProxyUrls = aToks.filter(r => r.success && r.token && r.baseUrl).map(r => `${r.baseUrl}?token=${r.token}`)
+  if (!vProxyUrls.length) throw new Error('流代理获取失败')
   stopDash()
   dashCtrl = new AbortController()
   const ctrl = dashCtrl
@@ -1118,12 +1166,12 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
       const vSb = ms.addSourceBuffer(vMime)
       dashBuffers.push(vSb)
       dashTrackTotal = 1
-      pumpTrack(`${vTok.baseUrl}?token=${vTok.token}`, vSb, ctrl, currentQn.value, seekSec)
-      if (audioUsable && aTrack && aTok && aTok.success && aTok.token && aTok.baseUrl) {
+      pumpTrack(vProxyUrls, vSb, ctrl, currentQn.value, seekSec)
+      if (audioUsable && aTrack && aProxyUrls.length) {
         const aSb = ms.addSourceBuffer(aMime)
         dashBuffers.push(aSb)
         dashTrackTotal = 2
-        pumpTrack(`${aTok.baseUrl}?token=${aTok.token}`, aSb, ctrl, currentQn.value, seekSec)
+        pumpTrack(aProxyUrls, aSb, ctrl, currentQn.value, seekSec)
       }
       // Range 数据从目标附近开始 append，缓冲就绪后立即 seek 定位（绑定本管道 sb/ms）
       if (seekSec > 0) scheduleSeekAfterReady(seekSec, vSb, ms)
@@ -1138,36 +1186,67 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
 //  **主动定期清理播放点前的历史缓冲**（MSE 实践：updateend 后 evict 旧区间），
 //  而非降清晰度。降清只应由用户手动选择（清晰度下拉框）。
 //  播放中遇到 QuotaExceededError：清理 → 等待缓冲消耗 → 重试同清晰度，绝不自动降清。
-async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, qn?: number, startSec = 0): Promise<void> {
+async function pumpTrack(urls: string[], sb: SourceBuffer, ctrl: AbortController, qn?: number, startSec = 0): Promise<void> {
   try {
+    // ── 阶段一：获取可读流（备用 CDN 地址轮换，主地址失败自动切换） ──
     let resp: Response | null = null
-    if (startSec > 0) {
-      // v3.6.2：Range 定位拉流（拖动进度条超出缓冲时的管道重启）——
-      // 先取文件总大小与 init segment（fMP4 的 moov/init 位于文件头），再从目标
-      // 时间对应的字节偏移 Range 拉取，避免顺序拉流从 0 追赶到目标导致长时间
-      // waiting/播放头重置到开头。主进程流代理已透传 Range 与 206/Content-Range。
-      // 任一环节失败（CDN 拒绝 Range/网络抖动）→ 静默回退从头拉取，不报错。
+    let lastErr: unknown = null
+    for (let i = 0; i < urls.length; i++) {
+      if (ctrl.signal.aborted) return
+      const url = urls[i]
       try {
-        const head = await fetch(url, { method: 'HEAD', signal: ctrl.signal })
-        const total = Number(head.headers.get('content-length') || 0)
-        const dur = currentView.value?.pages[currentPageIdx.value]?.durationSec || videoEl.value?.duration || 0
-        if (total > 0 && dur > 0) {
-          // 1) init segment：B 站 fMP4 头部 2MB 足够覆盖 moov/init
-          const initResp = await fetch(url, { headers: { Range: 'bytes=0-2097151' }, signal: ctrl.signal })
-          if ((initResp.ok || initResp.status === 206) && initResp.body) {
-            const initBuf = await initResp.arrayBuffer()
-            if (initBuf.byteLength > 0) await appendWithQuotaGuard(sb, initBuf, ctrl)
-          }
-          // 2) 目标偏移：时间比例 × 总大小，乘 0.95 保守前移（VBR 码率波动时宁可多拉）
-          const offset = Math.max(0, Math.min(total - 1, Math.floor((startSec / dur) * total * 0.95)))
-          const segResp = await fetch(url, { headers: { Range: `bytes=${offset}-` }, signal: ctrl.signal })
-          if (segResp.ok || segResp.status === 206) resp = segResp
+        if (startSec > 0) {
+          // v3.6.2：Range 定位拉流（拖动进度条超出缓冲时的管道重启）——
+          // 先取文件总大小与 init segment（fMP4 的 moov/init 位于文件头），再从目标
+          // 时间对应的字节偏移 Range 拉取，避免顺序拉流从 0 追赶到目标导致长时间
+          // waiting/播放头重置到开头。主进程流代理已透传 Range 与 206/Content-Range。
+          // 任一环节失败（CDN 拒绝 Range/网络抖动）→ 静默回退从头拉取，不报错。
+          try {
+            const head = await fetch(url, { method: 'HEAD', signal: ctrl.signal })
+            const total = Number(head.headers.get('content-length') || 0)
+            const dur = currentView.value?.pages[currentPageIdx.value]?.durationSec || videoEl.value?.duration || 0
+            if (total > 0 && dur > 0) {
+              // 1) init segment：B 站 fMP4 头部 2MB 足够覆盖 moov/init
+              const initResp = await fetch(url, { headers: { Range: 'bytes=0-2097151' }, signal: ctrl.signal })
+              if ((initResp.ok || initResp.status === 206) && initResp.body) {
+                const initBuf = await initResp.arrayBuffer()
+                if (initBuf.byteLength > 0) await appendWithQuotaGuard(sb, initBuf, ctrl)
+              }
+              // 2) 目标偏移：时间比例 × 总大小，乘 0.95 保守前移（VBR 码率波动时宁可多拉）
+              const offset = Math.max(0, Math.min(total - 1, Math.floor((startSec / dur) * total * 0.95)))
+              const segResp = await fetch(url, { headers: { Range: `bytes=${offset}-` }, signal: ctrl.signal })
+              if (segResp.ok || segResp.status === 206) resp = segResp
+            }
+          } catch { /* Range 不可用：走下方兜底从头拉取 */ }
         }
-      } catch { /* Range 不可用：走下方兜底从头拉取 */ }
+        // 兜底：无 startSec 或 Range 失败时从头拉取
+        if (!resp) resp = await fetch(url, { signal: ctrl.signal })
+        if (!resp.ok || !resp.body) {
+          lastErr = new Error(`流拉取失败（HTTP ${resp.status}）`)
+          console.warn(`[DASH] 流地址 ${i + 1}/${urls.length} 不可用（HTTP ${resp.status}），尝试备用 CDN`)
+          continue
+        }
+        break // 成功获取流
+      } catch (err) {
+        if (ctrl.signal.aborted) return
+        lastErr = err
+        // 管道替换/中止类错误：正常竞态，静默返回，不换地址不报错
+        if (err instanceof DOMException &&
+            (err.name === 'InvalidStateError' || err.name === 'InvalidAccessError' || err.name === 'AbortError')) {
+          return
+        }
+        // 配额错误：交给外层配额恢复处理，不在此换地址
+        if (err instanceof DOMException && err.name === 'QuotaExceededError') throw err
+        console.warn(`[DASH] 流地址 ${i + 1}/${urls.length} 异常，尝试备用 CDN：`, (err as Error).message)
+        // continue 尝试下一个备用地址
+      }
     }
-    // 兜底：无 startSec 或 Range 失败时从头拉取
-    if (!resp) resp = await fetch(url, { signal: ctrl.signal })
-    if (!resp.ok || !resp.body) throw new Error(`流拉取失败（HTTP ${resp.status}）`)
+    if (!resp || !resp.body) {
+      if (lastErr) throw lastErr
+      throw new Error('流拉取失败（无可用流地址）')
+    }
+
+    // ── 阶段二：读取循环（流控 + 提前结束/中断自动恢复续播） ──
     const reader = resp.body.getReader()
     for (;;) {
       if (ctrl.signal.aborted) return
@@ -1175,14 +1254,33 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
         await waitEvent(videoEl.value!, 'timeupdate', ctrl, 1000)
       }
       if (ctrl.signal.aborted) return
-      const { done, value } = await reader.read()
-      if (done) break
+      // v3.6.2：read 用 catch 捕获网络中断——读取中 CDN 连接被掐断时触发自动恢复续播，
+      // 不再让 TypeError 冒泡到外层被当作"加载失败"整段停止
+      const r = await reader.read().catch((readErr: unknown) => {
+        if (ctrl.signal.aborted) return undefined
+        console.warn('[DASH] 流读取中断，自动恢复拉流：', (readErr as Error).message)
+        void recoverDashStream()
+        return undefined
+      })
+      if (r === undefined) return  // 读取中断已触发恢复
+      if (r.done) {
+        // v3.6.2：流提前结束（未播到已知时长末尾 = CDN 提前断流）→ 重启拉流续播；
+        // 否则为正常读到文件末尾，break 交给 endOfStream
+        const knownDur = currentView.value?.pages[currentPageIdx.value]?.durationSec || 0
+        const ct = videoEl.value?.currentTime || 0
+        if (knownDur > 0 && ct < knownDur - 2) {
+          console.warn(`[DASH] 流提前结束（${ct.toFixed(1)}s / ${knownDur.toFixed(1)}s），自动恢复拉流`)
+          void recoverDashStream()
+          return
+        }
+        break
+      }
       // v3.6.2：read 返回后再次检查 abort——管道可能已被 seek 重启（stopDash），
       // 若继续 append 会抛 InvalidStateError（SourceBuffer removed）
       if (ctrl.signal.aborted) return
       // v3.6.2：append 前主动清理播放点前 10s 之外的历史缓冲，从源头防止配额打满
       evictOldBuffers(videoEl.value)
-      await appendWithQuotaGuard(sb, value, ctrl)
+      await appendWithQuotaGuard(sb, r.value, ctrl)
       if (ctrl.signal.aborted) return
     }
     dashFinished++
