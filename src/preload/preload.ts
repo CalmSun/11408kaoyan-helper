@@ -79,7 +79,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   biliFavFolders: () => ipcRenderer.invoke('bili:fav-folders'),
   biliFavList: (mediaId: number, page?: number) => ipcRenderer.invoke('bili:fav-list', mediaId, page),
   biliView: (bvid: string) => ipcRenderer.invoke('bili:view', bvid),
-  biliPlayurl: (bvid: string, cid: number, qn?: number) => ipcRenderer.invoke('bili:playurl', bvid, cid, qn),
+  biliPlayurl: (bvid: string, cid: number, qn?: number, preferDurl?: boolean) => ipcRenderer.invoke('bili:playurl', bvid, cid, qn, preferDurl),
   // v3.5.4：哔哩哔哩个性化推荐与视频交互（点赞/投币/收藏）
   biliRcmd: (pageSize?: number, freshIdx?: number) => ipcRenderer.invoke('bili:rcmd', pageSize, freshIdx),
   biliRelation: (aid: number) => ipcRenderer.invoke('bili:relation', aid),
@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   biliDanmaku: (cid: number) => ipcRenderer.invoke('bili:danmaku', cid),
   biliCard: (mid: number) => ipcRenderer.invoke('bili:card', mid),
   biliSpaceVideos: (mid: number, page?: number) => ipcRenderer.invoke('bili:space-videos', mid, page),
+  biliReply: (oid: number, page?: number) => ipcRenderer.invoke('bili:reply', oid, page),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

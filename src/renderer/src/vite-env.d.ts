@@ -49,6 +49,9 @@ interface BiliDanmaku { time: number; mode: number; color: string; text: string 
 // v3.5.5：UP 主卡片
 interface BiliUpCard { mid: number; name: string; face: string; sign: string; fans: number; archives: number }
 
+// v3.5.8：视频评论条目
+interface BiliReply { rpid: number; uname: string; face: string; message: string; like: number; ctime: number }
+
 interface ElectronAPI {
   exportData: (data: string) => Promise<{ success: boolean; path?: string }>
   importData: () => Promise<{ success: boolean; data?: string }>
@@ -233,7 +236,7 @@ interface ElectronAPI {
     } | null
     message?: string
   }>
-  biliPlayurl: (bvid: string, cid: number, qn?: number) => Promise<{
+  biliPlayurl: (bvid: string, cid: number, qn?: number, preferDurl?: boolean) => Promise<{
     success: boolean
     // v3.5.5：mode='dash' 时音视频分离（MSE 播放），'durl' 为合并流直连
     mode?: 'dash' | 'durl' | ''
@@ -255,6 +258,8 @@ interface ElectronAPI {
   biliDanmaku: (cid: number) => Promise<{ success: boolean; list?: BiliDanmaku[]; message?: string }>
   biliCard: (mid: number) => Promise<{ success: boolean; card?: BiliUpCard | null; message?: string }>
   biliSpaceVideos: (mid: number, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
+  // v3.5.8：视频评论
+  biliReply: (oid: number, page?: number) => Promise<{ success: boolean; list?: BiliReply[]; hasMore?: boolean; message?: string }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

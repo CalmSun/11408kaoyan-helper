@@ -5,6 +5,7 @@ import * as fs from 'fs'
 import * as http from 'http'
 import { createHash } from 'crypto'
 import { Readable } from 'stream'
+import { gunzipSync, inflateSync, inflateRawSync } from 'zlib'
 import { pathToFileURL } from 'url'
 
 // v3.1.2：全局未捕获异常处理，防止主进程崩溃弹窗
@@ -2634,17 +2635,18 @@ ipcMain.handle('bili:view', async (_e, bvid: string) => {
 
 /** 播放流地址。v3.5.5：优先 DASH（fnval=4048，支持 1080P 高码率/60帧/4K 等高清晰度，
  *  渲染层经 MSE + 回环代理播放）；接口未返回 dash 时回退 durl 合并流直连。 */
-ipcMain.handle('bili:playurl', async (_e, bvid: string, cid: number, qn = 64) => {
+ipcMain.handle('bili:playurl', async (_e, bvid: string, cid: number, qn = 64, preferDurl = false) => {
   try {
+    // v3.5.8：preferDurl=true 时走 durl 直链（fnval=1），用于 DASH 配额不可恢复时的回退
     const params = new URLSearchParams({
-      bvid, cid: String(cid), qn: String(qn), fnval: '4048', fnver: '0', fourk: '1', otype: 'json'
+      bvid, cid: String(cid), qn: String(qn), fnval: preferDurl ? '1' : '4048', fnver: '0', fourk: '1', otype: 'json'
     })
     const json = await biliGet(`https://api.bilibili.com/x/player/playurl?${params.toString()}`)
     if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
     const d = json.data
     const acceptQuality = (d.accept_quality || []).map((q: number) => ({ qn: q, label: BILI_QN_LABELS[q] || `${q}` }))
     // DASH 模式：音视频分离的 fMP4 流，渲染层 MSE 播放
-    if (d.dash && Array.isArray(d.dash.video) && d.dash.video.length) {
+    if (!preferDurl && d.dash && Array.isArray(d.dash.video) && d.dash.video.length) {
       const mapTrack = (t: any) => ({
         qn: t.id || 0,
         label: BILI_QN_LABELS[t.id] || `${t.id || 0}`,
@@ -2704,37 +2706,81 @@ ipcMain.handle('bili:stream-token', async (_e, url: string) => {
 /** v3.5.5：弹幕（XML 接口，主进程解析为结构化数组，渲染层按时间轴渲染） */
 ipcMain.handle('bili:danmaku', async (_e, cid: number) => {
   try {
-    const res = await fetch(`https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`, {
-      headers: {
-        'User-Agent': BILI_UA,
-        'Referer': BILI_REFERER,
-        'Accept': '*/*',
-        'Cookie': biliCookieHeader()
-      }
-    })
-    if (!res.ok) throw new Error(`bilibili HTTP ${res.status}`)
-    const xml = await res.text()
-    const list: { time: number; mode: number; color: string; text: string }[] = []
-    const re = /<d p="([^"]*)">([\s\S]*?)<\/d>/g
-    let m: RegExpExecArray | null
-    // 弹幕上限保护：单视频最多渲染 4000 条，避免 DOM/内存压力
-    while ((m = re.exec(xml)) !== null && list.length < 4000) {
-      const attrs = m[1].split(',')
-      const time = parseFloat(attrs[0])
-      if (!isFinite(time) || time < 0) continue
-      const mode = parseInt(attrs[1] || '1', 10) || 1
-      const colorNum = parseInt(attrs[3] || '16777215', 10)
-      list.push({
-        time,
-        mode,
-        color: colorNum === 16777215 ? '#ffffff' : `#${colorNum.toString(16).padStart(6, '0')}`,
-        text: decodeBiliXmlEntities(m[2].trim())
-      })
-    }
-    list.sort((a, b) => a.time - b.time)
+    let list = await fetchBiliDanmakuXml(`https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`)
+    // v3.5.8：主接口无结果时回退旧版 XML 域名（部分视频仅其一可用）
+    if (!list.length) list = await fetchBiliDanmakuXml(`https://comment.bilibili.com/${cid}.xml`)
     return { success: true, list }
   } catch (err) {
     return { success: false, list: [], message: String(err) }
+  }
+})
+
+/**
+ * v3.5.8：拉取并解析弹幕 XML。
+ * 部分节点返回 gzip/deflate 压缩体且自动解压不可靠，这里取字节流后
+ * 按 Content-Encoding 手动解压兜底，再用宽松正则提取 <d p="..."> 条目。
+ */
+async function fetchBiliDanmakuXml(url: string): Promise<{ time: number; mode: number; color: string; text: string }[]> {
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': BILI_UA,
+      'Referer': BILI_REFERER,
+      'Accept': '*/*',
+      'Cookie': biliCookieHeader()
+    }
+  })
+  if (!res.ok) throw new Error(`bilibili HTTP ${res.status}`)
+  let buf = Buffer.from(await res.arrayBuffer())
+  const enc = (res.headers.get('content-encoding') || '').toLowerCase()
+  try {
+    if (enc.includes('gzip')) buf = gunzipSync(buf)
+    else if (enc.includes('deflate')) {
+      try { buf = inflateSync(buf) } catch { buf = inflateRawSync(buf) }
+    }
+  } catch { /* 解压失败按原文解析 */ }
+  const xml = buf.toString('utf-8')
+  const list: { time: number; mode: number; color: string; text: string }[] = []
+  const re = /<d p=["']([^"']*)["'][^>]*>([\s\S]*?)<\/d>/g
+  let m: RegExpExecArray | null
+  // 弹幕上限保护：单视频最多渲染 4000 条，避免 DOM/内存压力
+  while ((m = re.exec(xml)) !== null && list.length < 4000) {
+    const attrs = m[1].split(',')
+    const time = parseFloat(attrs[0])
+    if (!isFinite(time) || time < 0) continue
+    const mode = parseInt(attrs[1] || '1', 10) || 1
+    const colorNum = parseInt(attrs[3] || '16777215', 10)
+    list.push({
+      time,
+      mode,
+      color: colorNum === 16777215 ? '#ffffff' : `#${colorNum.toString(16).padStart(6, '0')}`,
+      text: decodeBiliXmlEntities(m[2].trim())
+    })
+  }
+  list.sort((a, b) => a.time - b.time)
+  return list
+}
+
+/** v3.5.8：视频评论（热评优先，分页加载，供播放卡片右侧评论区展示） */
+ipcMain.handle('bili:reply', async (_e, oid: number, page = 1) => {
+  try {
+    const params = new URLSearchParams({
+      type: '1', oid: String(oid), sort: '2', nohot: '0', ps: '10', pn: String(page)
+    })
+    const json = await biliGet(`https://api.bilibili.com/x/v2/reply?${params.toString()}`)
+    if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+    const d = json.data || {}
+    const list = (d.replies || []).map((r: any) => ({
+      rpid: r.rpid || 0,
+      uname: r.member?.uname || '',
+      face: r.member?.avatar || '',
+      message: r.content?.message || '',
+      like: Number(r.like || 0),
+      ctime: Number(r.ctime || 0)
+    }))
+    const total = Number(d.page?.count || 0)
+    return { success: true, list, hasMore: page * 10 < total }
+  } catch (err) {
+    return { success: false, list: [], hasMore: false, message: String(err) }
   }
 })
 
@@ -2868,15 +2914,27 @@ ipcMain.handle('bili:coin', async (_e, aid: number, multiply: number) => {
   }
 })
 
-/** 收藏 / 取消收藏（目标收藏夹由渲染层传入；add=true 加入，false 移除） */
+/** 收藏 / 取消收藏。v3.5.8：取消时经 favinfo 查询视频实际所在收藏夹并全部移除，
+ *  避免目标收藏夹与命中收藏夹不一致导致操作无效。 */
 ipcMain.handle('bili:fav-toggle', async (_e, aid: number, mediaId: number, add: boolean) => {
   try {
     const csrf = biliCsrf()
     if (!csrf) return { success: false, message: '未登录，无法收藏' }
+    let addIds = add ? String(mediaId) : '0'
+    let delIds = add ? '0' : String(mediaId)
+    if (!add) {
+      try {
+        const info = await biliGet(`https://api.bilibili.com/x/v3/fav/resource/favinfo?rid=${aid}&type=2`)
+        const inFolders = ((info.data && info.data.media_list) || [])
+          .map((f: any) => Number(f.id))
+          .filter((id: number) => id > 0)
+        if (inFolders.length) delIds = inFolders.join(',')
+      } catch { /* 查询失败按传入收藏夹移除 */ }
+    }
     const params: Record<string, string> = {
       rid: String(aid), type: '2', platform: 'web', csrf,
-      add_media_ids: add ? String(mediaId) : '0',
-      del_media_ids: add ? '0' : String(mediaId)
+      add_media_ids: addIds,
+      del_media_ids: delIds
     }
     const json = await biliPost('https://api.bilibili.com/x/v3/fav/resource/deal', params)
     if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)

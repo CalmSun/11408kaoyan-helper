@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-3.5.7-blue">
+  <img alt="版本" src="https://img.shields.io/badge/version-3.5.8-blue">
   <img alt="平台" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
   <img alt="技术栈" src="https://img.shields.io/badge/stack-Vue3%20%2B%20Electron28-9cf">
   <img alt="协议" src="https://img.shields.io/badge/license-MIT-green">
@@ -46,7 +46,7 @@
 | 4 | **深度整合网易云音乐** | 云盘、歌单、心动模式、评论、三种登录方式，全局顶栏悬浮播放器 |
 | 5 | **多格式内置播放器** | 支持 MP4 / MKV / AVI 等主流视频，倍速、快捷键、音量增益、快进退；PDF 本地渲染、中文无乱码 |
 | 6 | **可视化学习数据** | ECharts 图表展示 7 天时长、科目占比、真题分数趋势，一键导出 PDF 报告 |
-| 7 | **B 站学习视频集成** | 学习资料页内置哔哩哔哩：扫码 / Cookie 登录、收藏夹浏览、视频搜索、热门推荐、分 P / 清晰度播放 |
+| 7 | **B 站学习视频集成** | 学习资料页内置哔哩哔哩：扫码 / Cookie 登录、收藏夹浏览、视频搜索、热门推荐、分 P / 清晰度播放、弹幕、点赞投币收藏、评论区；v3.5.8：播放卡片右侧集成视频简介 / 作者卡片 / 左图右文投稿与相关列表 / 热评区，DASH 配额多级自愈与 durl 回退，取消收藏经 favinfo 精准移除，弹幕拉取手动解压兜底 |
 
 ---
 

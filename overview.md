@@ -1,36 +1,49 @@
-# v3.5.7 更新：SourceBuffer 配额修复 + 弹幕渲染修复 + 热门自动首载 + 右侧栏紧凑化
+# 11408 考研助手 v3.5.8 更新概述
 
-## 修复：「SourceBuffer is full」播放中断
+本次迭代聚焦 B 站播放器的播放稳定性修复与播放卡片信息架构重构。
 
-- **根因**：MSE 缓冲配额有限，v3.5.6 流控只限制「超前缓冲 90s」，已播放的历史缓冲随时间持续累积，高码率长视频最终超出配额，`appendBuffer` 抛 QuotaExceededError 导致播放中断
-- **修复**：新增 `appendWithQuotaGuard()` 包裹每次 append —— 捕获 QuotaExceededError 后移除播放点之前 20s 以外的历史缓冲腾出配额并重试（保留 20s 便于回拖），仍失败才报错；普通错误行为不变
+## 1. SourceBuffer 配额中断修复（多级自愈）
 
-## 修复：弹幕看不到
+v3.5.7 的单缓冲区清理在部分高码率长视频上仍会触发「视频流加载失败：The SourceBuffer is full」。v3.5.8 改为多级自愈：
 
-- **根因**：弹幕条目为 JS 动态创建且位于 teleport 后的播放弹窗内，依赖组件 scoped 样式的 `:deep()` 选择器与 scoped keyframes 匹配不可靠，条目停留在起始位（可视区外）不可见
-- **修复**：
-  - keyframes 改为运行时全局注入（`ensureDmKeyframes` 一次性插入 `<style>`），条目样式全部行内设置，不再依赖组件作用域
-  - 弹幕加载晚于播放开始时二分跳针到当前进度，避免历史弹幕一次性补发刷屏
-  - 追加 setTimeout 兜底移除条目：系统禁用动画或 animationend 丢失时防止 DOM 泄漏
+- **收紧缓冲水位**：超前缓冲上限 90s → 60s、恢复阈值 45s → 30s，从源头降低配额压力；
+- **全缓冲区联合清理**：注册音视频全部 SourceBuffer，QuotaExceededError 时逐段移除所有缓冲区中播放点前 10s 以外的历史区间（含碎片区间），重试次数提升至 3 次；
+- **durl 直链回退**：多次清理仍失败时静默回退 durl 合并流（playurl 新增 `preferDurl` 参数，fnval=1），播放不中断、不向用户报错。
 
-## 热门视频推荐首次访问自动刷新
+## 2. 取消收藏无效果修复
 
-- 首次切到热门页签自动触发一次 `loadPopular(true)`（随机跳页拉取 24 条）；之后复用缓存，仅「换一批 / 加载更多」手动触发
-- 空态提示改为失败兜底文案
+- 根因：取消收藏只从渲染层传入的默认收藏夹移除，而视频实际可能收藏在其他收藏夹中，`resource/deal` 对未命中的收藏夹不产生效果；
+- 修复：主进程取消收藏前先经 `x/v3/fav/resource/favinfo` 查询视频实际所在的全部收藏夹，`del_media_ids` 传入全部命中 ID 一次性移除；
+- 渲染层补充：操作成功 1 秒后、以及失败时，重新查询 relation 实际状态，杜绝按钮与服务端状态脱节。
 
-## 右侧栏紧凑化
+## 3. 播放卡片信息架构重构
 
-- 右侧栏宽度 320px → 264px、最大高度 72vh → 58vh、间距收窄
-- UP 主卡片紧凑化（头像 42px、内边距与字号缩小）；投稿 / 相关卡片信息区收紧（标题 12px / 元信息 11px），减少宽高占用
+- **卡片增大**：弹窗宽度 min(1320px, 96vw) → min(1400px, 96vw)，视频区获得更大显示面积；
+- **视频简介**：右侧栏 UP 卡片下方新增简介区块（可滚动，保留换行格式）；
+- **作者卡片改造**：不再显示投稿数，改为「粉丝数 + 查看投稿/收起投稿按钮」；
+- **左图右文**：作者投稿与相关视频不再使用大封面网格，改为左缩略图（92×54）右标题/元信息的紧凑行卡；
+- **评论区**：新增主进程 `bili:reply`（`x/v2/reply` 热评优先、每页 10 条），播放卡片右侧展示评论头像/昵称/内容/点赞数，支持分页加载更多；
+- **侧栏再紧凑**：宽度 264 → 246px，最大高度 58vh → 54vh，行距与卡片内边距进一步收缩；窄窗口（≤1100px）自动降级为上下堆叠。
+
+## 4. 弹幕拉取健壮性加固
+
+- 根因排查：渲染层渲染链路（行内样式 + 全局 keyframes）已验证无异常，看不到弹幕的根因在主进程拉取环节——`list.so` 部分节点返回 gzip/deflate 压缩体且自动解压不可靠，导致解析结果为 0 条；
+- 修复：改用 `arrayBuffer` + 按 `Content-Encoding` 手动解压（gzip / deflate / raw-deflate 逐级兜底）后再解析；XML 标签正则放宽为兼容单双引号与额外属性；
+- 双源兜底：主接口 `list.so` 无结果时自动回退 `comment.bilibili.com/{cid}.xml`。
 
 ## 改动文件
-- `src/renderer/src/components/BiliBiliPanel.vue`（appendWithQuotaGuard / 弹幕行内样式与全局 keyframes / 热门 popularTouched 自动首载 / 右侧栏紧凑样式）
-- `package.json`（3.5.6 → 3.5.7，输出目录 release-v357）、`README.md`（版本徽章 / 功能说明）
+
+- `src/main/main.ts`：playurl preferDurl、fav-toggle favinfo 查询、弹幕手动解压 + 备用域名、新增 bili:reply；
+- `src/preload/preload.ts`：biliPlayurl 增加 preferDurl 参数、新增 biliReply；
+- `src/renderer/src/vite-env.d.ts`：BiliReply 类型、biliReply/biliPlayurl 签名更新；
+- `src/renderer/src/components/BiliBiliPanel.vue`：DASH 多级自愈与 durl 回退、收藏状态复查、右侧栏重构（简介/左图右文/评论区/作者卡片改造）、样式紧凑化；
+- `package.json` / `README.md` / `overview.md`：版本与文档。
 
 ## 验证
-- `npm run build` 构建通过（vite + tsc 主进程编译）
-- DASH 选轨 / 流代理 / 流控 / durl 回退 / 弹幕开关与持久化等既有链路零行为回归
-- 本地资料与其他功能零改动路径
+
+- `npm run build` 通过（仅剩 2 个与本次无关的遗留 TS 提示：main.ts ElMessage、stores/index.ts pomodoro settings）；
+- 已有功能（推荐 / 热门 / 收藏夹 / 搜索 / 分 P / 清晰度切换 / 点赞投币收藏 / 弹幕开关 / 登录）行为不变。
 
 ## 发布
-- 版本号 3.5.7，打 tag `v3.5.7` 推送触发 CI 自动构建 Windows 安装包
+
+- commit → tag `v3.5.8` → push origin main + tag，发布至 GitHub（CalmSun/11408kaoyan-helper）。
