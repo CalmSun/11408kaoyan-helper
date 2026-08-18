@@ -1206,16 +1206,19 @@ async function pumpTrack(urls: string[], sb: SourceBuffer, ctrl: AbortController
             const total = Number(head.headers.get('content-length') || 0)
             const dur = currentView.value?.pages[currentPageIdx.value]?.durationSec || videoEl.value?.duration || 0
             if (total > 0 && dur > 0) {
-              // 1) init segment：B 站 fMP4 头部 2MB 足够覆盖 moov/init
+              // 1) 目标偏移：时间比例 × 总大小，乘 0.95 保守前移（VBR 码率波动时宁可多拉）
+              const offset = Math.max(0, Math.min(total - 1, Math.floor((startSec / dur) * total * 0.95)))
+              // 2) init segment（fMP4 头部 2MB 覆盖 moov/init）与目标偏移流并行拉取——
+              //    两者都成功才追加 init 并采用该流，避免"init 已追加但流片段失败后
+              //    从头重拉"造成 init 重复追加（备用地址轮换场景下更易触发）
               const initResp = await fetch(url, { headers: { Range: 'bytes=0-2097151' }, signal: ctrl.signal })
-              if ((initResp.ok || initResp.status === 206) && initResp.body) {
+              const segResp = await fetch(url, { headers: { Range: `bytes=${offset}-` }, signal: ctrl.signal })
+              if ((initResp.ok || initResp.status === 206) && initResp.body &&
+                  (segResp.ok || segResp.status === 206)) {
                 const initBuf = await initResp.arrayBuffer()
                 if (initBuf.byteLength > 0) await appendWithQuotaGuard(sb, initBuf, ctrl)
+                resp = segResp
               }
-              // 2) 目标偏移：时间比例 × 总大小，乘 0.95 保守前移（VBR 码率波动时宁可多拉）
-              const offset = Math.max(0, Math.min(total - 1, Math.floor((startSec / dur) * total * 0.95)))
-              const segResp = await fetch(url, { headers: { Range: `bytes=${offset}-` }, signal: ctrl.signal })
-              if (segResp.ok || segResp.status === 206) resp = segResp
             }
           } catch { /* Range 不可用：走下方兜底从头拉取 */ }
         }

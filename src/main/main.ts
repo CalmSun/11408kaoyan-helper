@@ -2374,7 +2374,13 @@ function startBiliStreamProxy(): void {
               res.end()
               return
             }
-            Readable.fromWeb(upstream.body as any).pipe(res)
+            // v3.6.2：upstream 中途断流/出错时销毁响应，让渲染层感知流中断并触发自动恢复续播，
+            // 避免 res 静默挂起（浏览器端表现为缓冲卡住/播放停止）
+            const stream = Readable.fromWeb(upstream.body as any)
+            stream.on('error', () => {
+              try { res.destroy() } catch { /* ignore */ }
+            })
+            stream.pipe(res)
           })
           .catch(() => {
             try { res.writeHead(502); res.end('proxy error') } catch { /* ignore */ }
