@@ -262,10 +262,8 @@
             @ended="onVideoEnded"
             @error="onVideoError"
             @seeking="onVideoSeeking"
-            @timeupdate="onDanmakuTick"
+            @timeupdate="onVideoTick"
           ></video>
-          <!-- v3.5.5：弹幕覆盖层（跟随视频时间轴渲染，可开关） -->
-          <div ref="danmakuLayerEl" class="bili-danmaku-layer"></div>
           <div v-if="playerLoading" class="bili-player-loading">
             <el-icon class="is-loading" :size="32"><Loading /></el-icon>
             <span>正在获取播放地址...</span>
@@ -283,7 +281,6 @@
               <el-icon><User /></el-icon> {{ currentView.owner.name }}
             </span>
             <span class="bili-player-stat">{{ formatCount(currentView.stat.view) }} 播放</span>
-            <span class="bili-player-stat">{{ formatCount(currentView.stat.danmaku) }} 弹幕</span>
             <span class="bili-player-stat">{{ formatCount(currentView.stat.like) }} 点赞</span>
           </div>
           <div class="bili-player-bar-center">
@@ -312,14 +309,6 @@
             </button>
           </div>
           <div class="bili-player-bar-right">
-            <button
-              class="bili-dm-toggle"
-              :class="{ on: danmakuEnabled }"
-              :title="danmakuEnabled ? '关闭弹幕' : '开启弹幕'"
-              @click="toggleDanmaku"
-            >
-              <el-icon><ChatDotRound /></el-icon> {{ danmakuEnabled ? '弹幕开' : '弹幕关' }}
-            </button>
             <select
               v-if="currentView.pages.length > 1"
               class="bili-select"
@@ -500,7 +489,6 @@ import {
   VideoPlay, FolderOpened, Warning, MagicStick, SuccessFilled, Present,
   ChatDotRound, Film, Document
 } from '@element-plus/icons-vue'
-import { getGlobalStorage, setGlobalStorage } from '@/utils/storage'
 
 const api = window.electronAPI
 
@@ -808,14 +796,16 @@ async function playVideo(v: BiliVideo): Promise<void> {
     // v3.6.0：新视频始终请求最高可用清晰度，避免上个视频降清后残留 320p
     currentQn.value = 127
     acceptQualities.value = []
+    lastTickSaveTime = 0
     // v3.5.4：查询点赞/投币/收藏状态（异步，不阻塞播放）
     loadRelation(res.video.aid)
-    // v3.5.5：UP 主卡片与弹幕（异步加载，不阻塞起播）
+    // v3.5.5：UP 主卡片（异步加载，不阻塞起播）
     loadUpCard(res.video.owner.mid)
-    const firstPage = res.video.pages[0]
-    // v3.6.2：起播前即启动弹幕 rAF 循环（数据早到时不会漏发）
-    startDmLoop()
-    loadDanmaku(firstPage?.cid || 0, firstPage?.durationSec || 0)
+    // v3.6.2：读取上次观看进度（分 P + 时间），起播后自动续播
+    const savedProgress = loadBiliProgress(v.bvid)
+    if (savedProgress && savedProgress.pageIdx > 0 && savedProgress.pageIdx < (res.video.pages?.length || 1)) {
+      currentPageIdx.value = savedProgress.pageIdx
+    }
     // 相关视频推荐（异步加载，不阻塞播放）
     api.biliRelated(v.bvid).then(r => {
       if (r.success && currentView.value?.bvid === v.bvid) relatedList.value = r.list || []
@@ -824,6 +814,8 @@ async function playVideo(v: BiliVideo): Promise<void> {
     loadReplies(true)
     // v3.6.0：自动检测可播放的最高清晰度（部分长视频被限至 720p/480p）
     await loadStream()
+    // v3.6.2：播放地址就绪后恢复进度（seek 到上次位置）
+    restoreBiliProgress()
   } catch (err) {
     playerLoading.value = false
     playerError.value = (err as Error).message || String(err)
@@ -1138,9 +1130,7 @@ function retryPlay(): void {
 function switchPage(idx: number): void {
   if (!currentView.value || idx === currentPageIdx.value) return
   currentPageIdx.value = idx
-  // v3.5.5：分 P 的弹幕独立，切换后重载
-  const page = currentView.value.pages[idx]
-  loadDanmaku(page?.cid || 0, page?.durationSec || 0)
+  lastTickSaveTime = 0
   loadStream()
 }
 
@@ -1176,8 +1166,12 @@ function onVideoError(): void {
 function onPlayerClose(): void {
   // 弹窗关闭：停止播放并清理，释放带宽与内存
   stopDash()
-  // v3.6.2：停止弹幕 rAF 循环
-  stopDmLoop()
+  // v3.6.2：关闭前保存当前观看进度（续播用）
+  try {
+    if (currentView.value && videoEl.value && videoEl.value.currentTime > 0) {
+      saveBiliProgress(currentView.value.bvid, currentPageIdx.value, videoEl.value.currentTime)
+    }
+  } catch { /* ignore */ }
   try { videoEl.value?.pause() } catch { /* ignore */ }
   videoSrc.value = ''
   segments = []
@@ -1187,11 +1181,6 @@ function onPlayerClose(): void {
   relLiked.value = false
   relCoin.value = 0
   relFaved.value = false
-  // v3.5.5：清理弹幕与 UP 主卡片状态
-  clearDanmakuLayer()
-  danmakuAll.value = []
-  danmakuPtr.value = 0
-  danmakuLastTime = 0
   upCard.value = null
   authorSectionVisible.value = false
   rightTab.value = 'replies'
@@ -1317,197 +1306,91 @@ async function loadReplies(refresh: boolean): Promise<void> {
   finally { replyLoading.value = false }
 }
 
-// ── v3.5.5：弹幕（跟随视频时间轴渲染，支持开关与偏好持久化） ──
-const danmakuLayerEl = ref<HTMLDivElement | null>(null)
-const danmakuEnabled = ref(getGlobalStorage<boolean>('kaoyan_bili_danmaku', true))
-const danmakuAll = ref<BiliDanmaku[]>([])
-const danmakuPtr = ref(0)
-let danmakuLastTime = 0
-let dmTrackRot = 0
-const DM_MAX_VISIBLE = 200 // v3.5.9：放宽同屏弹幕上限至 200，避免误删真实弹幕
+// ── v3.6.2：观看进度保存/续播（video seek / timeupdate 驱动） ──
+const BILI_PROGRESS_KEY = 'kaoyan_bili_progress_v1'
 
-function toggleDanmaku(): void {
-  danmakuEnabled.value = !danmakuEnabled.value
-  setGlobalStorage('kaoyan_bili_danmaku', danmakuEnabled.value)
-  if (!danmakuEnabled.value) clearDanmakuLayer()
-}
+interface BiliProgress { pageIdx: number; time: number; updatedAt: number }
 
-async function loadDanmaku(cid: number, durationSec = 0): Promise<void> {
-  danmakuAll.value = []
-  danmakuPtr.value = 0
-  danmakuLastTime = 0
-  clearDanmakuLayer()
-  if (!api || !cid) return
+function loadBiliProgress(bvid: string): BiliProgress | null {
   try {
-    const res = await api.biliDanmaku(cid, durationSec)
-    if (res.success) {
-      danmakuAll.value = res.list || []
-      // v3.5.9：控制台输出解析到的弹幕条数便于排查
-      console.log(`[弹幕] CID ${cid}: 解析到 ${danmakuAll.value.length} 条弹幕`)
-      // v3.6.2：弹幕数据就绪后启动 rAF 轮询发射（不依赖 timeupdate）
-      startDmLoop()
-      // v3.5.7：弹幕晚于播放开始返回时，跳过已播过的部分，避免一次性补发刷屏
-      const el = videoEl.value
-      if (el && el.currentTime > 0) {
-        const t = el.currentTime
-        let i = 0
-        while (i < danmakuAll.value.length && danmakuAll.value[i].time <= t) i++
-        danmakuPtr.value = i
-        danmakuLastTime = t
-      }
-    } else {
-      // v3.6.2：拉取失败也给出明确日志，便于定位（不再静默）
-      console.warn(`[弹幕] CID ${cid}: 拉取失败 — ${res.message || '未知错误'}`)
+    const raw = localStorage.getItem(BILI_PROGRESS_KEY)
+    if (!raw) return null
+    const all = JSON.parse(raw) as Record<string, BiliProgress>
+    const p = all[bvid]
+    if (p && typeof p.pageIdx === 'number' && typeof p.time === 'number' && p.time > 10) return p
+    return null
+  } catch { return null }
+}
+
+function saveBiliProgress(bvid: string, pageIdx: number, time: number): void {
+  if (!bvid || !isFinite(time) || time <= 0) return
+  try {
+    const raw = localStorage.getItem(BILI_PROGRESS_KEY)
+    const all = raw ? JSON.parse(raw) as Record<string, BiliProgress> : {}
+    all[bvid] = { pageIdx, time, updatedAt: Date.now() }
+    // 上限保护：最多保留 200 条
+    const keys = Object.keys(all)
+    if (keys.length > 200) {
+      keys.sort((a, b) => (all[a].updatedAt || 0) - (all[b].updatedAt || 0))
+      for (const k of keys.slice(0, keys.length - 200)) delete all[k]
     }
-  } catch (err) { /* 弹幕加载失败不影响播放 */ console.warn('[弹幕] 加载异常', err) }
+    localStorage.setItem(BILI_PROGRESS_KEY, JSON.stringify(all))
+  } catch { /* 存储失败不影响播放 */ }
 }
 
-/** v3.6.2：弹幕渲染由 rAF 手动驱动（见 spawnDanmaku / onDanmakuTick） */
-function clearDanmakuLayer(): void {
-  const layer = danmakuLayerEl.value
-  if (layer) layer.innerHTML = ''
-}
-
-/** 由 rAF 轮询驱动：补发 (lastTime, currentTime] 区间内的弹幕。
- *  v3.6.2：不再依赖 video timeupdate 事件（DASH 模式下该事件可能不触发/频率低），
- *  改为播放循环内每帧主动检查 currentTime，保证弹幕准时发射。 */
-function onDanmakuTick(): void {
+/** 由 video timeupdate 驱动：节流保存当前进度（每 5 秒），并记录 seek 位置 */
+function onVideoTick(): void {
   const el = videoEl.value
-  if (!el || !danmakuEnabled.value || !danmakuAll.value.length) return
+  if (!el || !currentView.value || el.paused) return
   const t = el.currentTime
-  if (t < danmakuLastTime) danmakuLastTime = t
-  while (danmakuPtr.value < danmakuAll.value.length && danmakuAll.value[danmakuPtr.value].time <= t) {
-    const dm = danmakuAll.value[danmakuPtr.value++]
-    if (dm.time > danmakuLastTime) spawnDanmaku(dm)
+  if (t - lastTickSaveTime >= 5) {
+    lastTickSaveTime = t
+    saveBiliProgress(currentView.value.bvid, currentPageIdx.value, t)
   }
-  danmakuLastTime = t
 }
 
-// v3.6.2：rAF 播放循环——驱动弹幕发射（不再依赖 @timeupdate）
-let dmLoopRaf = 0
-let dmLoopActive = false
-function startDmLoop(): void {
-  if (dmLoopActive) return
-  dmLoopActive = true
-  const loop = () => {
-    if (!dmLoopActive) return
-    // v3.6.2：弹窗打开初期（dialog 异步渲染）ref 可能尚未绑定——
-    // 此时跳过本帧继续等待，而非停止循环；组件卸载后 ref 置空且
-    // onBeforeUnmount 已 stopDmLoop，不会长期空转。
-    if (!danmakuLayerEl.value) {
-      dmLoopRaf = requestAnimationFrame(loop)
-      return
-    }
-    if (danmakuEnabled.value) onDanmakuTick()
-    dmLoopRaf = requestAnimationFrame(loop)
-  }
-  dmLoopRaf = requestAnimationFrame(loop)
-}
-function stopDmLoop(): void {
-  dmLoopActive = false
-  cancelAnimationFrame(dmLoopRaf)
-}
+let lastTickSaveTime = 0
 
-/** 拖动进度条：清空屏幕弹幕并将指针二分定位到新时间点 */
+/** 拖动进度条：立即保存最新位置（续播以最新 seek 为准） */
 function onVideoSeeking(): void {
-  clearDanmakuLayer()
   const el = videoEl.value
-  if (!el || !danmakuAll.value.length) return
-  const t = el.currentTime
-  let lo = 0
-  let hi = danmakuAll.value.length
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1
-    if (danmakuAll.value[mid].time < t) lo = mid + 1
-    else hi = mid
-  }
-  danmakuPtr.value = lo
-  danmakuLastTime = t
+  if (!el || !currentView.value) return
+  saveBiliProgress(currentView.value.bvid, currentPageIdx.value, el.currentTime)
 }
 
-/** v3.6.2：弹幕渲染彻底改为 requestAnimationFrame 手动驱动——
- *  不依赖 element.animate / CSS animation（Electron 28 的 WAAPI 对
- *  calc() 关键帧解析不可靠，动画失败则元素停在屏幕外被移除 = 看不到弹幕）。
- *  滚动弹幕每帧用像素 transform 平移，固定弹幕每帧控制 opacity，绝对可见。 */
-function spawnDanmaku(dm: BiliDanmaku): void {
-  const layer = danmakuLayerEl.value
-  if (!layer || !dm.text) return
-  if (layer.childElementCount >= DM_MAX_VISIBLE) return
-  const el = document.createElement('div')
-  const s = el.style
-  s.position = 'absolute'
-  s.whiteSpace = 'nowrap'
-  s.fontSize = '17px'
-  s.lineHeight = '26px'
-  s.fontWeight = '600'
-  s.color = dm.color
-  s.textShadow = '0 1px 2px rgba(0, 0, 0, 0.7)'
-  s.willChange = 'transform'
-  s.pointerEvents = 'none'
-  el.textContent = dm.text
-  layer.appendChild(el)  // 先挂载，后驱动（宽度测量依赖挂载）
-
-  let raf = 0
-  let removed = false
-  const removeEl = () => {
-    if (removed) return
-    removed = true
-    cancelAnimationFrame(raf)
-    el.remove()
+/** 打开视频时尝试恢复到上次进度（仅当上次 > 10s，且未播放到末尾） */
+function restoreBiliProgress(): void {
+  if (!currentView.value) return
+  const saved = loadBiliProgress(currentView.value.bvid)
+  if (!saved) return
+  const pages = currentView.value.pages
+  // v3.6.2：恢复分 P —— 若上次停留在非第一 P，需重新加载对应分 P 的流
+  if (saved.pageIdx > 0 && saved.pageIdx < pages.length) {
+    currentPageIdx.value = saved.pageIdx
+    loadStream().catch(() => { /* 续播分 P 加载失败不影响主流程 */ })
   }
-  const timer = dm.mode === 4 || dm.mode === 5
-    ? 4000
-    : Math.min(12, Math.max(6, 6 + dm.text.length * 0.15)) * 1000
-  // 兜底移除：rAF 异常中断时防止 DOM 泄漏
-  setTimeout(removeEl, timer + 500)
-
-  if (dm.mode === 4 || dm.mode === 5) {
-    // 顶部/底部固定弹幕：rAF 控制 opacity 淡入→停留→淡出
-    s.left = '50%'
-    s.transform = 'translateX(-50%)'
-    if (dm.mode === 4) s.bottom = `${(dm.text.length % 3) * 32 + 6}px`
-    else s.top = `${(dm.text.length % 3) * 32 + 6}px`
-    s.opacity = '0'
-    const start = performance.now()
-    const tick = (now: number) => {
-      if (removed) return
-      const p = (now - start) / 4000
-      if (p >= 1) { removeEl(); return }
-      if (p < 0.08) s.opacity = String(p / 0.08)
-      else if (p < 0.8) s.opacity = '1'
-      else s.opacity = String(Math.max(0, (1 - p) / 0.2))
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-  } else {
-    // 滚动弹幕：rAF 每帧平移 transform（从层右缘滚到左缘完全滚出）
-    dmTrackRot = (dmTrackRot + 3) % 10
-    s.left = '0'
-    s.top = `${dmTrackRot * 8 + 2}%`
-    const dur = timer
-    const start = performance.now()
-    let warnedZero = false
-    const tick = (now: number) => {
-      if (removed) return
-      // v3.6.2：弹窗过渡动画期间 layer.clientWidth 可能为 0——
-      // 若 total<=0 会无限空转 rAF，弹幕永不移动（"看不到弹幕"的真实场景）。
-      // 兜底：宽度为 0 时用父容器（stage）宽度，仍为 0 则用 800px 默认值，
-      // 保证弹幕立即进入可视区并正常滚动。
-      let layerW = layer.clientWidth
-      if (!layerW || layerW <= 0) {
-        layerW = layer.parentElement ? layer.parentElement.clientWidth : 0
-        if (!warnedZero) { warnedZero = true; console.warn('[弹幕] 层宽为0，使用兜底宽度', layerW) }
+  const el = videoEl.value
+  if (!el) return
+  // 等待元数据/可 seek 后再跳转（DASH 模式 MediaSource 就绪后 seek）
+  let attempts = 0
+  const trySeek = () => {
+    try {
+      const dur = el.duration
+      if (isFinite(dur) && dur > 0 && saved.time < dur - 5) {
+        el.currentTime = saved.time
+        console.log(`[进度] 已续播 ${currentView.value?.bvid} P${saved.pageIdx + 1} @${saved.time.toFixed(1)}s`)
       }
-      const elW = el.offsetWidth
-      const total = (layerW || 800) + elW
-      const p = (now - start) / dur
-      if (p >= 1) { removeEl(); return }
-      const x = (layerW || 800) - total * p
-      el.style.transform = `translateX(${x}px)`
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
+    } catch { /* seek 时机未到，重试 */ }
   }
+  const loop = () => {
+    attempts++
+    if (el.readyState >= 1 && isFinite(el.duration) && el.duration > 0) {
+      trySeek()
+    } else if (attempts < 60) {  // 最多等待 12s（DASH 冷启动较慢）
+      setTimeout(loop, 200)
+    }
+  }
+  setTimeout(loop, 150)
 }
 
 // ── v3.5.5：UP 主卡片与投稿 ──
@@ -1582,7 +1465,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopQrPolling()
-  stopDmLoop()  // v3.6.2：组件卸载前必须停止弹幕 rAF 循环，避免销毁后访问已释放 DOM
   stopDash()
   try { videoEl.value?.pause() } catch { /* ignore */ }
 })
@@ -2028,8 +1910,8 @@ html.dark .bili-search-input {
   flex-direction: column;
   gap: 9px;
   min-height: 0;
-  /* v3.6.2：缩短列表高度——固定 42vh，超长内容内部滚动，避免撑满整个弹窗 */
-  max-height: 42vh;
+  /* v3.6.2：列表高度 42vh → 63vh（1.5 倍），超长内容内部滚动 */
+  max-height: 63vh;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -2421,41 +2303,6 @@ html.dark .bili-action-btn {
     width: 100%;
     max-height: 200px;
   }
-}
-
-/* ── v3.5.5：弹幕层（条目样式与 keyframes 见 spawnDanmaku 行内注入） ── */
-.bili-danmaku-layer {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-  z-index: 5;
-}
-
-/* 弹幕开关按钮（播放信息栏右侧） */
-.bili-dm-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-border);
-  background: var(--glass-bg);
-  color: var(--mo-text-2);
-  font-size: 12px;
-  cursor: pointer;
-  transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
-}
-
-.bili-dm-toggle:hover {
-  border-color: var(--mo-accent);
-  color: var(--mo-accent);
-}
-
-.bili-dm-toggle.on {
-  color: var(--mo-accent);
-  border-color: var(--mo-accent);
-  background: rgba(59, 130, 246, 0.12);
 }
 
 /* ── v3.5.5：UP 主卡片与投稿 ── */

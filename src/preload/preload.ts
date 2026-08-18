@@ -86,9 +86,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   biliLike: (aid: number, like: number) => ipcRenderer.invoke('bili:like', aid, like),
   biliCoin: (aid: number, multiply: number) => ipcRenderer.invoke('bili:coin', aid, multiply),
   biliFavToggle: (aid: number, mediaId: number, add: boolean) => ipcRenderer.invoke('bili:fav-toggle', aid, mediaId, add),
-  // v3.5.5：哔哩哔哩 DASH 高清晰度播放（流代理）、弹幕、UP 主卡片与投稿
+  // v3.5.5：哔哩哔哩 DASH 高清晰度播放（流代理）、UP 主卡片与投稿
   biliStreamToken: (url: string) => ipcRenderer.invoke('bili:stream-token', url),
-  biliDanmaku: (cid: number, durationSec?: number) => ipcRenderer.invoke('bili:danmaku', cid, durationSec),
   biliCard: (mid: number) => ipcRenderer.invoke('bili:card', mid),
   biliSpaceVideos: (mid: number, page?: number) => ipcRenderer.invoke('bili:space-videos', mid, page),
   biliReply: (oid: number, page?: number) => ipcRenderer.invoke('bili:reply', oid, page),

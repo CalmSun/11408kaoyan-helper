@@ -43,9 +43,6 @@ interface BiliDashTrack {
   width: number; height: number; baseUrl: string; backupUrl: string[]
 }
 
-// v3.5.5：弹幕条目（主进程解析 XML 后的结构化数据）
-interface BiliDanmaku { time: number; mode: number; color: string; text: string }
-
 // v3.5.5：UP 主卡片
 interface BiliUpCard { mid: number; name: string; face: string; sign: string; fans: number; archives: number }
 
@@ -253,9 +250,8 @@ interface ElectronAPI {
   biliLike: (aid: number, like: number) => Promise<{ success: boolean; message?: string }>
   biliCoin: (aid: number, multiply: number) => Promise<{ success: boolean; message?: string }>
   biliFavToggle: (aid: number, mediaId: number, add: boolean) => Promise<{ success: boolean; message?: string }>
-  // v3.5.5：DASH 流代理 token、弹幕、UP 主卡片与投稿
+  // v3.5.5：DASH 流代理 token、UP 主卡片与投稿
   biliStreamToken: (url: string) => Promise<{ success: boolean; token?: string; baseUrl?: string; message?: string }>
-  biliDanmaku: (cid: number, durationSec?: number) => Promise<{ success: boolean; list?: BiliDanmaku[]; message?: string }>
   biliCard: (mid: number) => Promise<{ success: boolean; card?: BiliUpCard | null; message?: string }>
   biliSpaceVideos: (mid: number, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
   // v3.5.8：视频评论
