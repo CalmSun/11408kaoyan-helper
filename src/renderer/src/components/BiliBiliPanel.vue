@@ -1323,7 +1323,10 @@ function loadBiliProgress(bvid: string): BiliProgress | null {
 }
 
 function saveBiliProgress(bvid: string, pageIdx: number, time: number): void {
-  if (!bvid || !isFinite(time) || time <= 0) return
+  // v3.6.2：与 loadBiliProgress 的 >10s 阈值保持一致——seek 失败被浏览器 clamp/回退时
+  // currentTime 会回到 0~10s 的小值，若写入会覆盖正常进度，导致"下次打开又跳开头"的恶性循环。
+  // 仅当时间有效且超过 10s 才落盘（<10s 的进度恢复时本就会被忽略，保存无意义）。
+  if (!bvid || !isFinite(time) || time <= 10) return
   try {
     const raw = localStorage.getItem(BILI_PROGRESS_KEY)
     const all = raw ? JSON.parse(raw) as Record<string, BiliProgress> : {}
@@ -1338,20 +1341,24 @@ function saveBiliProgress(bvid: string, pageIdx: number, time: number): void {
   } catch { /* 存储失败不影响播放 */ }
 }
 
-/** 由 video timeupdate 驱动：节流保存当前进度（每 5 秒），并记录 seek 位置 */
+/** 由 video timeupdate 驱动：节流保存当前进度（每 5 秒） */
 function onVideoTick(): void {
   const el = videoEl.value
   if (!el || !currentView.value || el.paused) return
   const t = el.currentTime
   if (t - lastTickSaveTime >= 5) {
     lastTickSaveTime = t
+    // v3.6.2：进度只前进不后退——视频因缓冲/seek 失败异常回退时 currentTime 大幅变小，
+    // 此时绝不覆盖已保存的正常进度（防止"一直跳开头"）。用户手动拖动进度条走 onVideoSeeking 保存。
+    const prev = loadBiliProgress(currentView.value.bvid)
+    if (prev && t < prev.time - 5) return
     saveBiliProgress(currentView.value.bvid, currentPageIdx.value, t)
   }
 }
 
 let lastTickSaveTime = 0
 
-/** 拖动进度条：立即保存最新位置（续播以最新 seek 为准） */
+/** 拖动进度条：立即保存最新位置（续播以最新 seek 为准；<10s 由阈值过滤） */
 function onVideoSeeking(): void {
   const el = videoEl.value
   if (!el || !currentView.value) return
@@ -1363,22 +1370,30 @@ function restoreBiliProgress(): void {
   if (!currentView.value) return
   const saved = loadBiliProgress(currentView.value.bvid)
   if (!saved) return
-  const pages = currentView.value.pages
-  // v3.6.2：恢复分 P —— 若上次停留在非第一 P，需重新加载对应分 P 的流
-  if (saved.pageIdx > 0 && saved.pageIdx < pages.length) {
-    currentPageIdx.value = saved.pageIdx
-    loadStream().catch(() => { /* 续播分 P 加载失败不影响主流程 */ })
-  }
+  // 注：目标分 P 已在 playVideo 中恢复（currentPageIdx + loadStream），这里只负责 seek 时间，
+  // 不再重复 loadStream，避免二次加载流引发竞态。
   const el = videoEl.value
   if (!el) return
   // 等待元数据/可 seek 后再跳转（DASH 模式 MediaSource 就绪后 seek）
   let attempts = 0
+  let seekDone = false
   const trySeek = () => {
+    if (seekDone) return
     try {
       const dur = el.duration
       if (isFinite(dur) && dur > 0 && saved.time < dur - 5) {
         el.currentTime = saved.time
+        seekDone = true
         console.log(`[进度] 已续播 ${currentView.value?.bvid} P${saved.pageIdx + 1} @${saved.time.toFixed(1)}s`)
+        // v3.6.2：seek 后校验是否真正到达目标——MSE 缓冲不足时浏览器可能 clamp/回退，
+        // 此时只记录日志并放弃续播（保持自然播放），绝不再次 seek，防止"一直跳开头"循环。
+        // 原进度仍保留在 localStorage（保存端已加前进保护），下次打开可再次尝试。
+        setTimeout(() => {
+          const t = el.currentTime
+          if (Math.abs(t - saved.time) > 5) {
+            console.warn(`[进度] 续播 seek 未达目标（期望 ${saved.time.toFixed(1)}s，实际 ${t.toFixed(1)}s），放弃续播`)
+          }
+        }, 5000)
       }
     } catch { /* seek 时机未到，重试 */ }
   }
@@ -1910,9 +1925,10 @@ html.dark .bili-search-input {
   flex-direction: column;
   gap: 9px;
   min-height: 0;
-  /* v3.6.2：列表高度 42vh → 63vh（1.5 倍），超长内容内部滚动 */
-  max-height: 63vh;
-  overflow-y: auto;
+  /* v3.6.2：列表高度 63vh → 51vh；滚动下沉到内容区 .bili-side-content 内部滚动，
+     UP 主卡片 sticky 固定顶部不随列表滚动 */
+  max-height: 51vh;
+  overflow: hidden;
   padding-right: 2px;
 }
 /* v3.6.0：作者卡片固定顶部，不参与滚动 */
@@ -1975,9 +1991,9 @@ html.dark .bili-search-input {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* v3.6.2：滚动由 .bili-player-side 统一负责（固定高度 42vh），
-     内容区不再独立滚动，避免双重滚动条 */
-  overflow: hidden;
+  /* v3.6.2：列表内容内部滚动——侧栏固定 51vh 不滚，滚动只发生在内容区，
+     避免 UP 主卡片与 Tab 栏随列表滚走 */
+  overflow-y: auto;
 }
 .bili-section {
   flex: 1;
