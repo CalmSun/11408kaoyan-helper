@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-3.5.9-blue">
+  <img alt="版本" src="https://img.shields.io/badge/version-3.6.0-blue">
   <img alt="平台" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
   <img alt="技术栈" src="https://img.shields.io/badge/stack-Vue3%20%2B%20Electron28-9cf">
   <img alt="协议" src="https://img.shields.io/badge/license-MIT-green">
@@ -46,7 +46,8 @@
 | 4 | **深度整合网易云音乐** | 云盘、歌单、心动模式、评论、三种登录方式，全局顶栏悬浮播放器 |
 | 5 | **多格式内置播放器** | 支持 MP4 / MKV / AVI 等主流视频，倍速、快捷键、音量增益、快进退；PDF 本地渲染、中文无乱码 |
 | 6 | **可视化学习数据** | ECharts 图表展示 7 天时长、科目占比、真题分数趋势，一键导出 PDF 报告 |
-| 7 | **B 站学习视频集成** | 学习资料页内置哔哩哔哩：扫码 / Cookie 登录、收藏夹浏览、视频搜索、热门推荐、分 P / 清晰度播放、弹幕、点赞投币收藏、评论区；v3.5.9：长视频 720p 限制解除（始终走 DASH fnval=4048），预清理历史缓冲降低配额压力，配额错误时自动降清晰度重试；取消收藏兼容 media_list/collection_list 双结构；弹幕拉取支持 compress/identity 解压，空列表时备用接口兜底，渲染层控制台输出条数便于排查 |
+| 7 | **B 站学习视频集成** | 学习资料页内置哔哩哔哩：扫码 / Cookie 登录、收藏夹浏览、视频搜索、热门推荐、分 P / 清晰度播放、弹幕、点赞投币收藏、评论区；v3.6.0：长视频自动降清修复（强制最高带宽 DASH 轨道选择）、取消收藏双结构兼容、弹幕压缩体解压重试；右侧栏重构（作者卡片固定顶部 + Tab 切换投稿/相关/评论） |
+| 8 | **网易云音乐画质增强** | v3.5.9: MSE+ 回环代理突破音频限制，动效波形动画 |
 
 ---
 
