@@ -787,6 +787,8 @@ async function playVideo(v: BiliVideo): Promise<void> {
   playerError.value = ''
   videoSrc.value = ''
   relatedList.value = []
+  // v3.6.2：启动播放停滞检测（高清卡顿透明降清）
+  startStallCheck()
   // v3.6.0：已废弃 durl fallback，dashFallbackTried 不再使用
   try {
     // v3.6.2：视频信息走 5 分钟缓存，二次起播免请求
@@ -1482,7 +1484,58 @@ function switchPage(idx: number): void {
 function switchQuality(qn: number): void {
   if (qn === currentQn.value) return
   currentQn.value = qn
+  // v3.6.2：用户手动切换后重置自动降清防抖（30s 内不自动降清）
+  lastAutoDowngradeAt = Date.now()
   loadStream()
+}
+
+// ── v3.6.2：高清卡顿检测与透明降清（durl/DASH 通用） ──
+// 轮询检测"播放停滞"：播放中（未暂停/未结束）currentTime 500ms 间隔不推进，
+// 累计 ≥6s 视为缓冲不足（高清高码率网络带宽不够）→ 透明降一档清晰度：
+// ① 明确提示（可手动切回，绝不静默降清）② 30s 防抖 ③ 最低可用档停止。
+// 不用 waiting 事件：Chromium 的 waiting 在进入缓冲等待时只触发一次，
+// 无法据此累计停滞时长，轮询 currentTime 推进最可靠。
+let stallCheckTimer: ReturnType<typeof setInterval> | null = null
+let stallLastTime = -1
+let stallSeconds = 0
+let lastAutoDowngradeAt = 0   // 上次自动降清时间戳（30s 防抖）
+function startStallCheck(): void {
+  if (stallCheckTimer) return
+  stallLastTime = -1
+  stallSeconds = 0
+  stallCheckTimer = setInterval(() => {
+    const el = videoEl.value
+    if (!el || !currentView.value || el.paused || el.ended || el.readyState < 2) {
+      stallSeconds = 0
+      return
+    }
+    const t = el.currentTime
+    if (stallLastTime >= 0 && Math.abs(t - stallLastTime) < 0.05) {
+      stallSeconds += 0.5
+      if (stallSeconds >= 6) {
+        stallSeconds = 0
+        autoDowngradeQuality()
+      }
+    } else {
+      stallSeconds = 0
+    }
+    stallLastTime = t
+  }, 500)
+}
+function stopStallCheck(): void {
+  if (stallCheckTimer) { clearInterval(stallCheckTimer); stallCheckTimer = null }
+}
+function autoDowngradeQuality(): void {
+  if (!currentView.value || acceptQualities.value.length < 2) return
+  if (Date.now() - lastAutoDowngradeAt < 30000) return  // 30s 防抖
+  const sorted = [...acceptQualities.value].map(q => q.qn).sort((a, b) => b - a)
+  const lower = sorted.find(q => q < currentQn.value)
+  if (!lower) return  // 已是最低可用档
+  lastAutoDowngradeAt = Date.now()
+  console.warn(`[播放] 播放停滞，自动降清 ${currentQn.value} → ${lower}`)
+  ElMessage.warning('网络缓冲不足，已自动切换清晰度（可在清晰度菜单手动切回）')
+  currentQn.value = lower
+  void loadStream()
 }
 
 /** 多分段（长视频 FLV 分段）自动连播 */
@@ -1511,6 +1564,7 @@ function onVideoError(): void {
 function onPlayerClose(): void {
   // 弹窗关闭：停止播放并清理，释放带宽与内存
   stopDash()
+  stopStallCheck()  // v3.6.2：停止播放停滞检测
   pendingSeekSec = 0  // v3.6.2：清理待定位 seek 目标，防止残留影响下次播放
   // v3.6.2：关闭前保存当前观看进度（续播用）
   try {
@@ -1830,6 +1884,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopQrPolling()
+  stopStallCheck()  // v3.6.2：组件卸载前停止播放停滞检测
   stopDash()
   try { videoEl.value?.pause() } catch { /* ignore */ }
 })
