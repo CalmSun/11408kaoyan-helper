@@ -850,6 +850,8 @@ async function loadStream(preferDurl = false): Promise<void> {
         currentQn.value = maxQn
       }
     }
+    // v3.6.2：按清晰度调整缓冲水位（高清晰度低水位防配额打满卡顿）
+    applyBufferWatermark(currentQn.value)
     if (!preferDurl && res.mode === 'dash' && res.dash && res.dash.video.length) {
       // v3.5.5：DASH 音视频分离流，经 MSE + 回环代理播放（支持高清晰度）
       await startDash(res.dash.video, res.dash.audio || [])
@@ -878,8 +880,16 @@ const CLEAR_PREVIOUS_CONTEXT = false  // 占位符，v3.5.9 已移除 durl fallb
 // v3.6.1：进一步收紧（45/20 → 30/12）——高码率长视频缓冲 45s 会快速打满 MSE 配额，
 //  触发 QuotaExceededError 后被旧逻辑逐级降清（长视频"自动降清晰度"的根源）。
 //  低水位 + 激进清理 + 降清前置重试，保证长视频维持高清晰度稳定播放。
-const DASH_BUFFER_AHEAD = 30   // 缓冲超前秒数上限：达到即暂停拉流
-const DASH_BUFFER_RESUME = 12  // 消耗至该秒数后恢复拉流
+// v3.6.2：缓冲水位按清晰度自适应（高清晰度高码率下 30s 缓冲会快速打满 MSE 配额，
+//  频繁 Quota 清理/重拉是高清卡顿主因之一）——qn≥80（1080P+）用低水位 18/8，
+//  低清晰度保持 30/12 保证流畅；loadStream 拿到可播放清晰度后更新
+let DASH_BUFFER_AHEAD = 30   // 缓冲超前秒数上限：达到即暂停拉流
+let DASH_BUFFER_RESUME = 12  // 消耗至该秒数后恢复拉流
+function applyBufferWatermark(qn: number): void {
+  const high = qn >= 80
+  DASH_BUFFER_AHEAD = high ? 18 : 30
+  DASH_BUFFER_RESUME = high ? 8 : 12
+}
 let dashBuffers: SourceBuffer[] = []  // 所有注册的 SourceBuffer，用于配额清理
 
 // ── v3.6.2：播放优化与拖动进度条修复 ──
@@ -972,12 +982,24 @@ function scheduleSeekAfterReady(target: number, sb: SourceBuffer | null, ms: Med
 /** v3.6.0：选择目标清晰度轨道（优先最高带宽）：指定 qn 不存在时按 bandwidth 倒序选择，避免高 qn 低带宽轨道干扰 */
 function pickDashTrack(tracks: BiliDashTrack[], qn: number): BiliDashTrack | null {
   if (!tracks.length) return null
-  // v3.6.0：优先匹配指定 qn
+  // v3.6.2：高清晰度卡顿优化——
+  // ① 优先 H.264（avc1）：Electron Chromium 对 avc1 有硬件解码，hev/av1 多走软解，
+  //    高清（1080P+）软解是卡顿主因之一；
+  // ② 同编码取带宽最低的轨道：降低缓冲/网络压力，卡顿更少（仍是该清晰度，仅码率略低）。
+  const preferAvc = (t: BiliDashTrack): number => (t.codecs || '').toLowerCase().startsWith('avc1') ? 1 : 0
   const exact = tracks.filter(t => t.qn === qn && t.bandwidth > 0)
-  if (exact.length) return exact.sort((a, b) => b.bandwidth - a.bandwidth)[0]
-  // v3.6.0：无指定 qn 时选最高 bandwidth（非最高 qn），保证实际可用的高清流
+  if (exact.length) {
+    // 同 qn：先按是否 avc 分组，组内取带宽最低
+    const avc = exact.filter(t => preferAvc(t) === 1)
+    const pool = avc.length ? avc : exact
+    return [...pool].sort((a, b) => a.bandwidth - b.bandwidth)[0]
+  }
+  // 无指定 qn 时：同样优先 avc，组内带宽最低
   const pool = tracks.filter(t => t.bandwidth > 0)
-  return pool.length ? [...pool].sort((a, b) => b.bandwidth - a.bandwidth)[0] : tracks[0]
+  if (!pool.length) return tracks[0]
+  const avc = pool.filter(t => preferAvc(t) === 1)
+  const final = avc.length ? avc : pool
+  return [...final].sort((a, b) => a.bandwidth - b.bandwidth)[0]
 }
 
 /**
@@ -1214,8 +1236,11 @@ async function appendWithQuotaGuard(sb: SourceBuffer, chunk: BufferSource, ctrl:
     if (sb.updating) await waitEvent(sb, 'updateend', ctrl)
     if (ctrl.signal.aborted) return
     try {
+      // v3.6.2：append 后不再等待 updateend——SourceBuffer 内部队列自动串行，
+      // 下次 append 前的 `sb.updating` 检查已处理排队；QuotaExceededError 由
+      // appendBuffer 同步抛出（Chrome 内存不足时同步抛），不影响配额保护。
+      // 流水线化后大 chunk 连续追加吞吐显著提升（高清晰度高清流卡顿优化）。
       sb.appendBuffer(chunk)
-      await waitEvent(sb, 'updateend', ctrl)
       return
     } catch (err) {
       // v3.6.2：管道已替换（拖动进度条 seek 重启 MediaSource）时，append 到已移除的

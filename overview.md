@@ -1,6 +1,6 @@
 # 11408 考研助手 v3.6.2 更新概述
 
-本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**。
+本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**、**优化高清晰度视频播放卡顿**。
 
 ## 1. 修复拖动进度条报错 `SourceBuffer has been removed` 与仍重置到开头
 
@@ -29,11 +29,21 @@
 - "本地资料 / 哔哩哔哩"切换按钮从独立一行（原 `.materials-mode-bar`）**上移并入 `.materials-header`**，与"学习资料"标题、选择资料文件夹按钮、刷新按钮**同一行**（header 为 `flex + space-between`：标题左、切换按钮中、操作按钮右）；
 - 移除 `.materials-mode-bar` 模板与 CSS；`.materials-mode-switch` 加 `flex-shrink: 0` 防压缩；`.materials-body` 高度由 `calc(100% - 70px)` 收紧为 `calc(100% - 56px)`（让出原 mode-bar 行的高度）。
 
-## 4. 验证与发布
+## 4. 优化高清晰度视频播放卡顿
+
+高清晰度（1080P+）卡顿的三个主要来源与优化（仅改 BiliBiliPanel.vue）：
+
+| 优化项 | 内容 |
+|---|---|
+| **轨道选择优先 H.264 + 低码率** | `pickDashTrack`：同清晰度下**优先 avc1（H.264，Electron Chromium 硬件解码）**轨道，规避 hev/av1 软解卡顿；组内取**带宽最低**的轨道，降低缓冲/网络压力（仍是该清晰度） |
+| **缓冲水位按清晰度自适应** | 新增 `applyBufferWatermark(qn)`：qn≥80（1080P+）用**低水位 18s/8s**（高码率下 30s 缓冲会快速打满 MSE 配额，频繁 Quota 清理/重拉是高清卡顿主因）；低清晰度保持 30s/12s 保证流畅；`loadStream` 获取可播放清晰度后调用 |
+| **append 流水线化** | `appendWithQuotaGuard`：`appendBuffer` 后**不再等待 updateend**——SourceBuffer 内部队列自动串行，下次 append 前的 `sb.updating` 检查处理排队；QuotaExceededError 由 appendBuffer 同步抛出不影响配额保护；大 chunk 连续追加吞吐显著提升 |
+
+## 5. 验证与发布
 
 - `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误（ElMessage / pomodoro），零新增；
-- 行为模拟 16 项断言全 PASS：并发重启序列（慢旧丢弃/快新应用/串行应用）、append 竞态静默分类（abort/InvalidState/Quota/网络错误）、read 后 abort 提前返回、Range 失败回退、就绪轮询管道绑定；
-- 产物核查：面板右移特征（`padding-left:160px`）**已消失**、悬浮窗右移（`margin-left:160px`）已编入、`InvalidStateError` 静默防护已编入、`materials-mode-bar` 已移除、`calc(100% - 56px)` 已生效；
+- 行为模拟 24 项断言全 PASS：并发重启序列（慢旧丢弃/快新应用/串行应用）、append 竞态静默分类（abort/InvalidState/Quota/网络错误）、read 后 abort 提前返回、Range 失败回退、就绪轮询管道绑定、轨道选择（同 qn 优先 avc 低带宽/无 avc 选 hev 低带宽/无匹配 qn 选 avc）、水位自适应（1080P+ 低水位 18/8、低清 30/12）；
+- 产物核查：面板右移特征（`padding-left:160px`）**已消失**、悬浮窗右移（`margin-left:160px`）已编入、`InvalidStateError` 静默防护已编入、`materials-mode-bar` 已移除、`calc(100% - 56px)` 已生效、`avc1` 轨道选择特征已编入；
 - 版本号 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
 
 ---
