@@ -873,8 +873,11 @@ let dashTrackTotal = 0
 // v3.5.9：已废弃 durl 回退链（会导致长视频限 720p），改为降清重试
 const CLEAR_PREVIOUS_CONTEXT = false  // 占位符，v3.5.9 已移除 durl fallback
 // v3.5.9：收紧缓冲水位（60/30 → 45/20），增加预清理历史缓冲机制
-const DASH_BUFFER_AHEAD = 45   // 缓冲超前秒数上限：达到即暂停拉流
-const DASH_BUFFER_RESUME = 20  // 消耗至该秒数后恢复拉流
+// v3.6.1：进一步收紧（45/20 → 30/12）——高码率长视频缓冲 45s 会快速打满 MSE 配额，
+//  触发 QuotaExceededError 后被旧逻辑逐级降清（长视频"自动降清晰度"的根源）。
+//  低水位 + 激进清理 + 降清前置重试，保证长视频维持高清晰度稳定播放。
+const DASH_BUFFER_AHEAD = 30   // 缓冲超前秒数上限：达到即暂停拉流
+const DASH_BUFFER_RESUME = 12  // 消耗至该秒数后恢复拉流
 let dashBuffers: SourceBuffer[] = []  // 所有注册的 SourceBuffer，用于配额清理
 
 /** v3.6.0：选择目标清晰度轨道（优先最高带宽）：指定 qn 不存在时按 bandwidth 倒序选择，避免高 qn 低带宽轨道干扰 */
@@ -991,6 +994,7 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
 }
 
 // ── v3.5.9：取消 durl 回退链，改为降清重试 ──
+let dashQuotaStrikes = 0  // v3.6.1：连续配额失败计数（同清晰度重试前置）
 async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, qn?: number): Promise<void> {
   try {
     const resp = await fetch(url, { signal: ctrl.signal })
@@ -1015,7 +1019,49 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
     if (ctrl.signal.aborted) return
     const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
     if (isQuota && qn) {
-      // v3.6.0：配额不足时逐级降清，最低 480P（qn=48），避免 320P 影响观看
+      // v3.6.1：长视频降清根治——配额不足时**不再立即降清**。
+      // 先做全量缓冲激进清理 + 短暂等待缓冲消耗，随后重试同清晰度拉流；
+      // 仅当同清晰度连续失败 3 次（已充分清理仍不足，如低配设备/极高码率）
+      // 才降一档清晰度（80→64→48），且降清后重置计数。
+      dashQuotaStrikes++
+      if (dashQuotaStrikes <= 3) {
+        console.warn(`[DASH] 配额不足，清理缓冲后重试同清晰度 (qn=${qn}, #${dashQuotaStrikes})`)
+        // 激进清理：保留播放点前 2s，其余已播区间全部移除（含音视频双缓冲）
+        const el = videoEl.value
+        const keepBefore = el ? Math.max(0, el.currentTime - 2) : 0
+        for (const b of dashBuffers.length ? dashBuffers : [sb]) {
+          try {
+            if (b.updating) continue
+            for (let i = b.buffered.length - 1; i >= 0; i--) {
+              const start = b.buffered.start(i)
+              const end = Math.min(b.buffered.end(i), keepBefore)
+              if (end > start + 1) b.remove(start, end)
+            }
+          } catch { /* 单个缓冲区清理失败不阻断 */ }
+        }
+        // 等待清理完成 + 缓冲消耗（最多 1.5s），然后重试同清晰度
+        try { await new Promise(r => setTimeout(r, 300)) } catch { /* ignore */ }
+        if (ctrl.signal.aborted) return
+        const qnNow = currentQn.value
+        if (qnNow === qn) {
+          // 若当前清晰度未变，重启同清晰度拉流（stopDash + startDash 全量重置缓冲）
+          try {
+            const page = currentView.value?.pages[currentPageIdx.value]
+            if (page) {
+              const res = await api!.biliPlayurl(currentView.value!.bvid, page.cid, currentQn.value, false)
+              if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
+                stopDash()
+                dashFinished = 0
+                await startDash(res.dash.video, res.dash.audio || [])
+                return
+              }
+            }
+          } catch { /* 重启失败继续走降清 */ }
+        }
+        if (ctrl.signal.aborted) return
+      }
+      // 连续 3 次同清晰度仍配额不足 → 降一档清晰度（逐级，最低 480P）
+      dashQuotaStrikes = 0
       if (qn > 80) {
         switchQuality(80)
         return
@@ -1307,17 +1353,8 @@ async function loadDanmaku(cid: number, durationSec = 0): Promise<void> {
   } catch { /* 弹幕加载失败不影响播放 */ }
 }
 
-/** v3.5.7：全局注入弹幕 keyframes（动态元素不受组件 scoped 样式约束） */
-function ensureDmKeyframes(): void {
-  if (document.getElementById('bili-dm-kf')) return
-  const st = document.createElement('style')
-  st.id = 'bili-dm-kf'
-  st.textContent =
-    '@keyframes bili-dm-scroll{from{transform:translateX(0)}to{transform:translateX(calc(-100% - 100vw))}}' +
-    '@keyframes bili-dm-stay{0%{opacity:0}8%{opacity:1}80%{opacity:1}100%{opacity:0}}'
-  document.head.appendChild(st)
-}
-
+/** v3.6.1：弹幕动画已改用 Web Animations API（element.animate）驱动，
+ *  不再依赖全局 CSS keyframes（ensureDmKeyframes 已移除，见 spawnDanmaku）。 */
 function clearDanmakuLayer(): void {
   const layer = danmakuLayerEl.value
   if (layer) layer.innerHTML = ''
@@ -1357,10 +1394,10 @@ function spawnDanmaku(dm: BiliDanmaku): void {
   const layer = danmakuLayerEl.value
   if (!layer || !dm.text) return
   if (layer.childElementCount >= DM_MAX_VISIBLE) return
-  ensureDmKeyframes()
   const el = document.createElement('div')
-  // v3.5.7：样式全部行内设置——动态创建元素拿不到 scoped 属性，
-  // 且弹窗 teleport 后 :deep 选择器与 scoped keyframes 匹配不可靠
+  // v3.6.1：样式全部行内设置，动画改用 Web Animations API（element.animate）驱动——
+  // 不依赖 CSS keyframes 注入，规避 scoped 样式、teleport、prefers-reduced-motion
+  // 导致 animation 不执行/不可见的问题（历史弹幕"看不到"的根源之一）。
   const s = el.style
   s.position = 'absolute'
   s.whiteSpace = 'nowrap'
@@ -1373,13 +1410,24 @@ function spawnDanmaku(dm: BiliDanmaku): void {
   s.pointerEvents = 'none'
   el.textContent = dm.text
   let lifeMs = 4000
+  let anim: Animation | null = null
   if (dm.mode === 4 || dm.mode === 5) {
     // 顶部 / 底部固定弹幕：原位停留数秒后淡出
     s.left = '50%'
     s.transform = 'translateX(-50%)'
     if (dm.mode === 4) s.bottom = `${(dm.text.length % 3) * 32 + 6}px`
     else s.top = `${(dm.text.length % 3) * 32 + 6}px`
-    s.animation = 'bili-dm-stay 4s ease forwards'
+    try {
+      anim = el.animate(
+        [
+          { opacity: 0 },
+          { opacity: 1, offset: 0.08 },
+          { opacity: 1, offset: 0.8 },
+          { opacity: 0, offset: 1 }
+        ],
+        { duration: 4000, easing: 'ease', fill: 'forwards' }
+      )
+    } catch { /* 动画 API 不可用时退化为静态展示 */ }
   } else {
     // 滚动弹幕（mode 1/2/3/6 统一按滚动处理），时长随长度微调
     dmTrackRot = (dmTrackRot + 3) % 10
@@ -1387,14 +1435,23 @@ function spawnDanmaku(dm: BiliDanmaku): void {
     s.top = `${dmTrackRot * 8 + 2}%`
     const dur = Math.min(12, Math.max(6, 6 + dm.text.length * 0.15))
     lifeMs = dur * 1000
-    s.animation = `bili-dm-scroll ${dur}s linear forwards`
+    try {
+      // 从右缘向左滚出视口：translateX(0 → -(100% + 100vw))
+      anim = el.animate(
+        [
+          { transform: 'translateX(0)' },
+          { transform: 'translateX(calc(-100% - 100vw))' }
+        ],
+        { duration: lifeMs, easing: 'linear', fill: 'forwards' }
+      )
+    } catch { /* 动画 API 不可用时静态展示（元素自带 transform） */ }
   }
-  // v3.5.9：控制台输出当前可见弹幕数便于调试
-  console.log(`[弹幕] 渲染 ${dm.mode} 号模式条弹幕，当前可见数：${layer.childElementCount + 1}`)
   let removed = false
   const removeEl = () => { if (!removed) { removed = true; el.remove() } }
-  el.addEventListener('animationend', removeEl, { once: true })
-  // 兜底移除：动画被系统偏好禁用或事件丢失时防止 DOM 泄漏
+  if (anim) {
+    try { anim.onfinish = removeEl } catch { /* ignore */ }
+  }
+  // 兜底移除：动画事件丢失或动画被禁用时防止 DOM 泄漏
   setTimeout(removeEl, lifeMs + 500)
   layer.appendChild(el)
 }
@@ -1484,6 +1541,11 @@ onBeforeUnmount(() => {
   gap: 14px;
   flex: 1;
   min-height: 0;
+  /* v3.6.1：面板整体在"学习资料"板块中水平居中（播放卡片不再贴左，
+     超宽窗口下内容也不过度拉伸，视觉重心落在板块中心） */
+  width: 100%;
+  max-width: 1560px;
+  margin: 0 auto;
 }
 
 .glass-card {
@@ -1903,7 +1965,7 @@ html.dark .bili-search-input {
 }
 
 .bili-player-side {
-  width: 246px;
+  width: 280px;  /* v3.6.1：246 → 280，评论/投稿/相关列表卡片适度增长 */
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -2462,13 +2524,13 @@ html.dark .bili-action-btn {
 .bili-side-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;  /* v3.6.1：6 → 8 适度增大卡片间距 */
 }
 
 .bili-row-card {
   display: flex;
-  gap: 8px;
-  padding: 5px;
+  gap: 10px;  /* v3.6.1：8 → 10 */
+  padding: 7px;  /* v3.6.1：5 → 7 */
   border-radius: var(--mo-radius-sm);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
@@ -2483,8 +2545,8 @@ html.dark .bili-action-btn {
 
 .bili-row-thumb {
   position: relative;
-  width: 92px;
-  height: 54px;
+  width: 112px;   /* v3.6.1：92 → 112，适配加宽后的右侧栏 */
+  height: 63px;   /* v3.6.1：54 → 63（16:9） */
   flex-shrink: 0;
   border-radius: 5px;
   overflow: hidden;
@@ -2512,12 +2574,12 @@ html.dark .bili-action-btn {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
+  gap: 5px;  /* v3.6.1：4 → 5 */
 }
 
 .bili-row-title {
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 13px;  /* v3.6.1：12 → 13 */
+  line-height: 1.4;
   color: var(--mo-text-1);
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -2529,7 +2591,7 @@ html.dark .bili-action-btn {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 10px;
+  font-size: 11px;  /* v3.6.1：10 → 11 */
   color: var(--mo-text-2);
   overflow: hidden;
   white-space: nowrap;
@@ -2546,21 +2608,21 @@ html.dark .bili-action-btn {
 .bili-reply-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;  /* v3.6.1：6 → 8 */
 }
 
 .bili-reply-item {
   display: flex;
-  gap: 8px;
-  padding: 7px 8px;
+  gap: 10px;  /* v3.6.1：8 → 10 */
+  padding: 9px 10px;  /* v3.6.1：7 8 → 9 10 */
   border-radius: var(--mo-radius-sm);
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
 }
 
 .bili-reply-face {
-  width: 28px;
-  height: 28px;
+  width: 34px;  /* v3.6.1：28 → 34 */
+  height: 34px;
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
@@ -2572,7 +2634,7 @@ html.dark .bili-action-btn {
   align-items: center;
   justify-content: center;
   color: var(--mo-text-2);
-  font-size: 14px;
+  font-size: 17px;  /* v3.6.1：14 → 17 */
   background: rgba(0, 0, 0, 0.05);
 }
 
@@ -2589,12 +2651,12 @@ html.dark .bili-action-btn {
 }
 
 .bili-reply-uname {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--mo-text-2);
+  color: var(--mo-text-1);
   overflow: hidden;
-  white-space: nowrap;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bili-reply-like {

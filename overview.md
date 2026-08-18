@@ -1,59 +1,53 @@
-# 11408 考研助手 v3.6.0 更新概述
+# 11408 考研助手 v3.6.1 更新概述
 
-本次迭代聚焦四大核心问题：**长视频自动降清至 320p**、**取消收藏无效**、**弹幕不显示**、**右侧栏布局优化**。
+本次迭代聚焦 B 站板块五项遗留问题：**投币点击 404**、**取消收藏未真正移除**、**弹幕仍无法显示**、**长视频自动降清**、**播放卡片居中与侧栏卡片尺寸**。
 
-## 1. 长视频自动降清修复（v3.6.0：最高带宽轨道选择）
+## 1. 投币按钮点击提示 404（URL 路径错误，根治）
 
-**根因**：B 站部分长视频被限至 720p/480p，原有 `pickDashTrack` 按 qn 降序 fallback 导致选择高 qn 低带宽的不可用轨道，播放器最终退至 320p。
+**根因**：主进程投币接口 URL 写成了 `https://api.bilibili.com/x/web-interface/web/coin/add`，比官方路径 `x/web-interface/coin/add` **多了一个 `web/` 段**，B 站返回 HTTP 404，前端提示"投币失败: bilibili HTTP 404"。
 
-**修复**：
-- `pickDashTrack` 优先选**带宽最大**的 DASH 轨道而非 Qn，避免“高 Qn 低带宽”坑；
-- `loadStream` 起播时检测 `accept_quality` 中最高可用 Qn，若当前 Qn 高于此值则自动切换至最高可用；
-- 控制台输出 `[自动降清] 当前 X → 最高可用 Y`，便于实时定位限制原因。
+**修复**（src/main/main.ts）：URL 修正为 `https://api.bilibili.com/x/web-interface/coin/add`，参数（aid/multiply/select_like/csrf）不变。
 
-## 2. 取消收藏仍无效（双结构兼容 + 实际收藏夹查询）
+## 2. 取消收藏后未从默认收藏夹移除（favinfo 参数错误 + deal 空值占位）
 
-**根因**：`favinfo` 返回可能为 `media_list` / `collection_list`，字段为 `id` 或 `vid`，原有单字段映射无法覆盖全量场景。
+**根因**（两点叠加）：
+1. `favinfo` 查询接口参数名写错：官方为 **`rid`**（稿件 avid），旧代码用了 `oid`，导致查询始终拿不到视频实际所在收藏夹列表，删除目标不可靠；
+2. `deal` 接口不操作的一侧传 `'0'` 占位，部分账号下被 B 站误判为"操作 id=0 的收藏夹"而静默失败（code=0 但实际未移除）。
 
-**修复**：
-- 主进程依次查询 `collection_list` → `media_list`，支持 `f.id || f.vid` 双字段；
-- 过滤非法 ID（isNaN/id≤0），确保删除列表有效；
-- 控制台输出解析到的收藏夹数量便于排查。
+**修复**（src/main/main.ts）：
+- `favinfo?oid=` → `favinfo?rid=`（官方参数名）；
+- 取消收藏时**合并去重**：`Set` 合并 favinfo 返回的真实收藏夹 ID 与传入的默认收藏夹 mediaId，确保目标收藏夹一定被移除；
+- `add_media_ids`/`del_media_ids` 不操作的一侧改为**空字符串**（官方抓包行为），不再用 `'0'` 占位。
 
-## 3. 弹幕仍不显示（compress/identity 解压 + 空列表重试 + 控制台输出）
+## 3. 弹幕仍无法显示（seg.so 优先策略不合理 + CSS 动画不可靠）
 
-**根因**：CDN 节点返回 gzip/deflate/compress/identity 等压缩体且自动解压不可靠，`list.so` 与 XML 备份均可能出现假阴性。
-
-**修复**：
-- 主进程扩展 `fetchBiliDanmakuXml` 支持 `compress`/`identity` 头识别，gzip 用 `gunzipSync`，deflate/compress 兜底 `inflateRawSync`；
-- `bili:danmaku` 逻辑调整：先 `list.so`，再 `comment.bilibili.com/{cid}.xml`，两次均为空也返回 `success=true+ 空列表`；
-- 渲染层 `loadDanmaku` 统一响应式 `ref<BiliDanmaku[]>`，并在控制台输出"CID xx: 解析到 xx 条弹幕”；
-- `DM_MAX_VISIBLE` 由 80 放宽至 200，避免高负载下误删真实弹幕；
-- `spawnDanmaku` 控制台输出"渲染 X 号模式条弹幕，当前可见数：N”，便于实时定位渲染层是否收到条目；
-- keyframes 全局注入 + 行内样式组合，确保弹窗 teleport 后动画生效。
-
-## 4. 右侧栏布局重构（作者卡片固定顶部 + Tab 切换）
-
-**根因**：原右侧栏所有内容独立滚动，UP 主信息易丢失；简介/投稿/相关/评论同时展示，占用大量空间。
+**根因**（实测验证）：
+- 实测 `list.so` XML 接口一次返回**全量**弹幕（样例视频 2322 条），而 seg.so 每段仅约 50 条、长视频需 WBI 拉取最多 40 段，慢且易被风控/超时——v3.6.0 把 seg.so 设为优先导致弹幕迟迟不返回；
+- 渲染层弹幕动画依赖 CSS keyframes 全局注入，在弹窗 teleport + scoped 样式 + 系统"减少动态效果"（prefers-reduced-motion）下 animation 可能不执行，弹幕元素停留在屏幕外被兜底移除 → "看不到弹幕"。
 
 **修复**：
-- **作者卡片固定顶部**：`position: sticky` 固定，背景磨砂玻璃，不参与滚动；
-- **Tab 切换三视图**：简介 / 投稿 / 相关视频 / 评论通过按钮切换，同一时间只显示其一；
-- **作者按钮直接打开主页**：不再在侧栏展开投稿列表，改为新标签页跳转 `space.bilibili.com`；
-- CSS 新增 `.bili-tabs`（四按钮横排）+ `.bili-section`（内容区独立滚动 + max-height）。
+- **主进程**（src/main/main.ts）：弹幕改为 **XML 优先、seg.so 补充**——先 `list.so`（全量单次、无 WBI），空则 `comment.bilibili.com/{cid}.xml`，仍空才走 seg.so 分段兜底；
+- **渲染层**（BiliBiliPanel.vue）：`spawnDanmaku` 改用 **Web Animations API（element.animate）** 驱动滚动/淡出动画，不依赖 CSS keyframes，规避 scoped/teleport/reduced-motion 导致的动画不执行；保留 setTimeout 兜底移除防 DOM 泄漏；移除已无引用的 `ensureDmKeyframes`。
 
-## 改动文件
+## 4. 长视频自动降低清晰度（配额不足即降清 + 缓冲水位过高）
 
-- `src/main/main.ts`：取消收藏双结构兼容、弹幕 compress/identity 解压与空列表重试；
-- `src/renderer/src/components/BiliBiliPanel.vue`：`pickDashTrack` 改带宽优先、`loadStream` 自动降清检测、右侧栏 Tab 切换 + 作者卡片固定、控制台输出调试信息；
-- `package.json` / `README.md` / `overview.md`：版本升级至 3.6.0，补充发布说明。
+**根因**：`pumpTrack` 拉流遇 MSE `QuotaExceededError` 时**立即** `switchQuality(80→64→48)` 逐级降清；长视频缓冲大、码率高，配额频繁打满，表现为"看一会清晰度就掉"。
+
+**修复**（BiliBiliPanel.vue）：
+- 缓冲水位收紧：`DASH_BUFFER_AHEAD` 45→30、`DASH_BUFFER_RESUME` 20→12，降低配额压力；
+- 配额不足时**不再立即降清**：先激进清理全部已播缓冲（保留播放点前 2s），等待 300ms 后**重试同清晰度**（重启 DASH 拉流），仅当同清晰度连续失败 3 次（低配设备/极高码率）才降一档（80→64→48，最低 480P），降清后重置计数。
+
+## 5. 播放卡片居中 + 评论/投稿/相关卡片适度增长（布局）
+
+- `.bili-panel` 增加 `max-width: 1560px; margin: 0 auto`——面板整体在"学习资料"板块中水平居中，播放卡片不再贴左；
+- `.bili-player-side` 宽度 246→280px，评论/投稿/相关列表获得更宽展示区；
+- `.bili-row-card`：缩略图 92×54 → **112×63**（16:9）、内边距/间距/字号整体放大（标题 12→13px、meta 10→11px）；
+- `.bili-reply-item`：头像 28→34px、内边距 7 8 → 9 10、间距 6→8。
 
 ## 验证
 
-- `npm run build` 通过（遗留 TS 错误无新增）；
-- 已有功能（推荐/热门/收藏夹/搜索/分 P/清晰度切换/点赞投币收藏/弹幕开关/登录/评论区）行为不变；
-- 控制台已开放更多日志：`[自动降清]`、`[弹幕]`、解析条数、可见数、收藏解析列表。
+- `npm run build`（vite build + tsc）退出码 0；`vue-tsc --noEmit` 仅 2 个预存无关错误（main.ts ElMessage、stores pomodoro 类型），零新增；
+- 产物核查：`dist/main/main.js` 含修正后的 `x/web-interface/coin/add`（错误 URL 已不存在）、`favinfo?rid=`；Materials chunk 含降清重试逻辑；pdfjs 资源 169 cmaps + 16 字体完整；
+- 行为实测：B 站弹幕 XML 接口解析 2322 条 ✓、seg.so protobuf 解析 52 条/段 ✓（接口链路验证）。
 
-## 发布
-
-- commit → tag `v3.5.9` → push origin main + tag，发布至 GitHub（CalmSun/11408kaoyan-helper）。
+> 说明：投币/收藏为登录态接口，无法在无 Cookie 环境端到端实测；修复依据 bilibili-API-collect 官方文档（fav/list.md favinfo 参数 rid、coin/add 路径）与抓包行为（deal 空值占位）。

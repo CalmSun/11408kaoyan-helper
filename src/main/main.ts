@@ -2705,10 +2705,19 @@ ipcMain.handle('bili:stream-token', async (_e, url: string) => {
 })
 
 /** v3.6.0：弹幕 —— 优先 Protobuf seg.so 分段接口（长视频/新版弹幕系统），失败回退 XML。
- *  seg.so 每 6 分钟（360s）一段，根据视频时长并行拉取全部分段后合并排序。 */
+ *  seg.so 每 6 分钟（360s）一段，根据视频时长并行拉取全部分段后合并排序。
+ *  v3.6.1：调整为 **XML 优先、seg.so 补充**——
+ *  实测 list.so 一次返回全量弹幕（样例视频 2322 条），而 seg.so 每段仅约 50 条，
+ *  长视频分段多达 40 段，串行 WBI 拉取慢且易被风控/超时，导致弹幕迟迟不显示。
+ *  先取 XML（两个候选源），非空即返回；为空时再用 seg.so 分段兜底。 */
 ipcMain.handle('bili:danmaku', async (_e, cid: number, durationSec = 0) => {
   try {
-    let list: { time: number; mode: number; color: string; text: string }[] = []
+    // v3.6.1：XML 优先（全量、单次请求、无 WBI 依赖，最稳）
+    let list = await fetchBiliDanmakuXml(`https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`)
+    if (!list.length) list = await fetchBiliDanmakuXml(`https://comment.bilibili.com/${cid}.xml`)
+    if (list.length) return { success: true, list }
+
+    // 兜底：seg.so 分段 Protobuf（新版弹幕系统 / XML 被限流时）
     const segCount = durationSec > 0 ? Math.min(40, Math.ceil(durationSec / 360)) : 1
     try {
       for (let batch = 0; batch < segCount; batch += 10) {
@@ -2725,11 +2734,8 @@ ipcMain.handle('bili:danmaku', async (_e, cid: number, durationSec = 0) => {
         list.sort((a, b) => a.time - b.time)
         return { success: true, list }
       }
-    } catch { /* seg.so 失败，回退 XML */ }
-    // 回退 XML 接口（老版弹幕/兼容）
-    list = await fetchBiliDanmakuXml(`https://api.bilibili.com/x/v1/dm/list.so?oid=${cid}`)
-    if (!list.length) list = await fetchBiliDanmakuXml(`https://comment.bilibili.com/${cid}.xml`)
-    return { success: true, list }
+    } catch { /* seg.so 失败，返回空列表（不抛错，渲染层降级） */ }
+    return { success: true, list: [] }
   } catch (err) {
     return { success: false, list: [], message: String(err) }
   }
@@ -3035,12 +3041,13 @@ ipcMain.handle('bili:like', async (_e, aid: number, like: number) => {
   }
 })
 
-/** 投币（multiply=1 或 2） */
+/** 投币（multiply=1 或 2）。v3.6.1：修复 404——官方路径是 /x/web-interface/coin/add，
+ *  旧代码多写了一个 web/ 段（/web-interface/web/coin/add）导致 HTTP 404。 */
 ipcMain.handle('bili:coin', async (_e, aid: number, multiply: number) => {
   try {
     const csrf = biliCsrf()
     if (!csrf) return { success: false, message: '未登录，无法投币' }
-    const json = await biliPost('https://api.bilibili.com/x/web-interface/web/coin/add', {
+    const json = await biliPost('https://api.bilibili.com/x/web-interface/coin/add', {
       aid: String(aid), multiply: String(multiply), select_like: '0', csrf
     })
     if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
@@ -3051,23 +3058,36 @@ ipcMain.handle('bili:coin', async (_e, aid: number, multiply: number) => {
 })
 
 /** 收藏 / 取消收藏。v3.5.9：取消时经 favinfo 查询视频实际所在收藏夹并全部移除，
- *  兼容 media_list / collection_list 两种返回结构，避免操作无效。 */
+ *  兼容 media_list / collection_list 两种返回结构，避免操作无效。
+ *  v3.6.1：favinfo 查询参数由 oid 修正为 rid（官方参数名，bilibili-API-collect fav/list.md），
+ *  旧代码用 oid 导致查询始终失败 → 取消收藏时无法拿到真实收藏夹列表，仅回退传入 mediaId，
+ *  若视频同时存在于多个收藏夹（或传入 id 非默认收藏夹）则删除不彻底。 */
 ipcMain.handle('bili:fav-toggle', async (_e, aid: number, mediaId: number, add: boolean) => {
   try {
     const csrf = biliCsrf()
     if (!csrf) return { success: false, message: '未登录，无法收藏' }
-    let addIds = add ? String(mediaId) : '0'
-    let delIds = add ? '0' : String(mediaId)
+    // v3.6.1：不操作的一侧传空字符串（官方抓包行为），不再用 '0' 占位——
+    // 部分账号下 add_media_ids/del_media_ids 传 '0' 会被 B 站误判为"操作 id=0 的收藏夹"
+    // 导致取消收藏静默失败（code=0 但实际未移除）。
+    let addIds = add ? String(mediaId) : ''
+    let delIds = add ? '' : String(mediaId)
     if (!add) {
       try {
-        const info = await biliGet(`https://api.bilibili.com/x/v3/fav/resource/favinfo?oid=${aid}&type=2&platform=web`)
+        // v3.6.1：参数名修正为 rid；并补充 platform=web
+        const info = await biliGet(`https://api.bilibili.com/x/v3/fav/resource/favinfo?rid=${aid}&type=2&platform=web`)
         // v3.5.9：兼容 media_list / collection_list 两种结构
         let inFolders: any[] = []
         if ((info.data?.media_list || []).length > 0) inFolders = info.data.media_list
         else if ((info.data?.collection_list || []).length > 0) inFolders = info.data.collection_list
         const folderIds = inFolders.map((f: any) => Number(f.id || f.vid))
           .filter((id: number) => !isNaN(id) && id > 0)
-        if (folderIds.length) delIds = folderIds.join(',')
+        // v3.6.1：合并传入的收藏夹 id，确保目标收藏夹（默认收藏夹）一定被移除，
+        // 并去重（Set）避免 del_media_ids 重复导致接口拒绝
+        if (folderIds.length || mediaId > 0) {
+          const merged = new Set<number>(folderIds)
+          if (mediaId > 0) merged.add(mediaId)
+          delIds = Array.from(merged).join(',')
+        }
       } catch { /* 查询失败按传入收藏夹移除 */ }
     }
     const params: Record<string, string> = {
