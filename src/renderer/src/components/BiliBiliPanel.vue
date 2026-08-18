@@ -1635,15 +1635,20 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  /* v3.6.2：flex: 0 1 auto——消除 flex-basis:0% 对 width 的覆盖，确保
-     max-width + margin auto 的水平居中在 .bili-host 中真正生效 */
-  flex: 0 1 auto;
+  flex: 1;
   min-height: 0;
   /* v3.6.1：面板整体在"学习资料"板块中水平居中（播放卡片不再贴左，
      超宽窗口下内容也不过度拉伸，视觉重心落在板块中心） */
   width: 100%;
   max-width: 1560px;
   margin: 0 auto;
+}
+
+/* v3.6.2：播放悬浮窗口卡片右移——el-dialog（align-center + append-to-body）
+   默认视口居中，margin-left:160px 使悬浮窗中心相对视口中心右移约 80px；
+   用 margin 而非 transform，避免与 el-dialog 打开动画（zoom-in）的 transform 冲突 */
+.bili-player-dialog {
+  margin-left: 160px;
 }
 
 .glass-card {
