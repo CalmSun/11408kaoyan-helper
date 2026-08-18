@@ -5,15 +5,6 @@
         <el-icon><Folder /></el-icon>
         学习资料
       </h2>
-      <!-- v3.5.3：本地资料 / 哔哩哔哩模式切换（B 站面板懒挂载，v-show 保持实例不中断播放） -->
-      <div class="materials-mode-switch">
-        <button class="mode-btn" :class="{ active: materialsMode === 'local' }" @click="materialsMode = 'local'">
-          <el-icon><FolderOpened /></el-icon> 本地资料
-        </button>
-        <button class="mode-btn" :class="{ active: materialsMode === 'bili' }" @click="enterBili">
-          <el-icon><VideoCamera /></el-icon> 哔哩哔哩
-        </button>
-      </div>
       <div class="materials-actions" v-show="materialsMode === 'local'">
         <el-button size="small" type="primary" @click="pickFolder">
           <el-icon><FolderOpened /></el-icon> 选择资料文件夹
@@ -22,6 +13,18 @@
           <el-icon><Refresh /></el-icon> 刷新
         </el-button>
         <span v-if="materialsFolder" class="folder-path">{{ materialsFolder }}</span>
+      </div>
+    </div>
+
+    <!-- v3.5.4：模式切换独立成行并水平居中，两种模式下位置统一（B 站面板懒挂载，v-show 保活不中断播放） -->
+    <div class="materials-mode-bar">
+      <div class="materials-mode-switch">
+        <button class="mode-btn" :class="{ active: materialsMode === 'local' }" @click="materialsMode = 'local'">
+          <el-icon><FolderOpened /></el-icon> 本地资料
+        </button>
+        <button class="mode-btn" :class="{ active: materialsMode === 'bili' }" @click="enterBili">
+          <el-icon><VideoCamera /></el-icon> 哔哩哔哩
+        </button>
       </div>
     </div>
 
@@ -1745,6 +1748,13 @@ function downloadFile() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* v3.5.4：模式切换独立成行并水平居中，两种模式下位置统一 */
+.materials-mode-bar {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
 }
 
 /* v3.5.3：本地资料 / 哔哩哔哩模式切换（胶囊分段控件，玻璃拟态） */

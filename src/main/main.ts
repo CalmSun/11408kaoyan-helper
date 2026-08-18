@@ -3,6 +3,7 @@ import { autoUpdater } from 'electron-updater'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as http from 'http'
+import { createHash } from 'crypto'
 import { pathToFileURL } from 'url'
 
 // v3.1.2：全局未捕获异常处理，防止主进程崩溃弹窗
@@ -2182,6 +2183,69 @@ async function biliGet(url: string): Promise<any> {
   return res.json()
 }
 
+/** v3.5.4：B 站通用 POST 请求（表单编码，交互类接口需 csrf=bili_jct） */
+async function biliPost(url: string, params: Record<string, string>): Promise<any> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'User-Agent': BILI_UA,
+      'Referer': BILI_REFERER,
+      'Origin': 'https://www.bilibili.com',
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+      'Cookie': biliCookieHeader()
+    },
+    body: new URLSearchParams(params).toString()
+  })
+  parseBiliSetCookies(res)
+  if (!res.ok) throw new Error(`bilibili HTTP ${res.status}`)
+  return res.json()
+}
+
+/** 交互类接口（点赞/投币/收藏）统一校验登录凭证（csrf = Cookie 中的 bili_jct） */
+function biliCsrf(): string {
+  return biliCookies.get('bili_jct') || ''
+}
+
+// ── v3.5.4：WBI 签名（个性化推荐接口使用；img_key/sub_key 来自 nav，混排后 md5） ──
+const BILI_WBI_MIXIN_TAB = [
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49,
+  33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40,
+  61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+  36, 20, 34, 44, 52
+]
+let biliWbiKeys: { imgKey: string; subKey: string; ts: number } | null = null
+
+function biliWbiKeyFromUrl(u: string): string {
+  const name = u.split('/').pop() || ''
+  return name.split('.')[0]
+}
+
+/** 获取并缓存 WBI 密钥（30 分钟有效，过期或失败时从 nav 重新获取） */
+async function biliEnsureWbiKeys(): Promise<void> {
+  if (biliWbiKeys && Date.now() - biliWbiKeys.ts < 30 * 60 * 1000) return
+  const json = await biliGet('https://api.bilibili.com/x/web-interface/nav')
+  const img = json.data?.wbi_img?.img_url
+  const sub = json.data?.wbi_img?.sub_url
+  if (!img || !sub) throw new Error('获取 WBI 密钥失败')
+  biliWbiKeys = { imgKey: biliWbiKeyFromUrl(img), subKey: biliWbiKeyFromUrl(sub), ts: Date.now() }
+}
+
+/** 为查询参数追加 wts/w_rid 签名（键按字典序排序后拼接，md5(query + mixinKey)） */
+async function biliWbiSign(params: Record<string, string>): Promise<Record<string, string>> {
+  await biliEnsureWbiKeys()
+  const raw = `${biliWbiKeys!.imgKey}${biliWbiKeys!.subKey}`
+  const mixinKey = BILI_WBI_MIXIN_TAB.map(i => raw[i] || '').join('').slice(0, 32)
+  const signed: Record<string, string> = { ...params, wts: String(Math.floor(Date.now() / 1000)) }
+  const query = Object.keys(signed)
+    .sort()
+    .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(signed[k].replace(/[!'()*]/g, ''))}`)
+    .join('&')
+  const wRid = createHash('md5').update(query + mixinKey).digest('hex')
+  return { ...signed, w_rid: wRid }
+}
+
 /** 统一视频卡片字段映射（兼容热门/相关/搜索/收藏夹四种来源的字段差异） */
 function mapBiliVideo(v: any): any {
   const pic = (v.pic || v.cover || '') as string
@@ -2495,6 +2559,89 @@ ipcMain.handle('bili:playurl', async (_e, bvid: string, cid: number, qn = 64) =>
     }
   } catch (err) {
     return { success: false, quality: 0, qualityLabel: '', acceptQuality: [], durl: [], message: String(err) }
+  }
+})
+
+// ── v3.5.4：个性化推荐 + 视频交互（点赞 / 投币 / 收藏） ──
+
+/** 个性化推荐（首页 feed/rcmd，WBI 签名；show_info=1 为普通视频，过滤直播/广告） */
+ipcMain.handle('bili:rcmd', async (_e, pageSize = 12) => {
+  try {
+    await biliEnsureBuvid()
+    const signed = await biliWbiSign({
+      ps: String(pageSize), fresh_type: '4', fresh_idx: '1', fetch_row: '1',
+      fresh_idx_1h: '1', brush: '1', web_location: '1430650', y_num: '4'
+    })
+    const json = await biliGet(`https://api.bilibili.com/x/web-interface/wbi/index/top/feed/rcmd?${new URLSearchParams(signed).toString()}`)
+    if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+    const list = (json.data?.item || [])
+      .filter((v: any) => v && v.bvid && v.show_info === 1 && !v.business_info)
+      .map(mapBiliVideo)
+    return { success: true, list }
+  } catch (err) {
+    // WBI 密钥异常（密钥轮换）时清缓存，下次重试重新获取
+    if (String(err).includes('WBI')) biliWbiKeys = null
+    return { success: false, list: [], message: String(err) }
+  }
+})
+
+/** 当前用户对视频的交互状态（like: 0/1, coin: 0/n, favorite: 0/1） */
+ipcMain.handle('bili:relation', async (_e, aid: number) => {
+  try {
+    const json = await biliGet(`https://api.bilibili.com/x/web-interface/archive/relation?aid=${aid}`)
+    if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+    const d = json.data || {}
+    return { success: true, like: !!d.like, coin: Number(d.coin || 0), favorite: !!d.favorite }
+  } catch (err) {
+    return { success: false, like: false, coin: 0, favorite: false, message: String(err) }
+  }
+})
+
+/** 点赞 / 取消点赞（like=1 点赞，like=2 取消） */
+ipcMain.handle('bili:like', async (_e, aid: number, like: number) => {
+  try {
+    const csrf = biliCsrf()
+    if (!csrf) return { success: false, message: '未登录，无法点赞' }
+    const json = await biliPost('https://api.bilibili.com/x/web-interface/archive/like', {
+      aid: String(aid), like: String(like), csrf
+    })
+    if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+    return { success: true }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
+/** 投币（multiply=1 或 2） */
+ipcMain.handle('bili:coin', async (_e, aid: number, multiply: number) => {
+  try {
+    const csrf = biliCsrf()
+    if (!csrf) return { success: false, message: '未登录，无法投币' }
+    const json = await biliPost('https://api.bilibili.com/x/web-interface/web/coin/add', {
+      aid: String(aid), multiply: String(multiply), select_like: '0', csrf
+    })
+    if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+    return { success: true }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
+/** 收藏 / 取消收藏（目标收藏夹由渲染层传入；add=true 加入，false 移除） */
+ipcMain.handle('bili:fav-toggle', async (_e, aid: number, mediaId: number, add: boolean) => {
+  try {
+    const csrf = biliCsrf()
+    if (!csrf) return { success: false, message: '未登录，无法收藏' }
+    const params: Record<string, string> = {
+      rid: String(aid), type: '2', platform: 'web', csrf,
+      add_media_ids: add ? String(mediaId) : '0',
+      del_media_ids: add ? '0' : String(mediaId)
+    }
+    const json = await biliPost('https://api.bilibili.com/x/v3/fav/resource/deal', params)
+    if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+    return { success: true }
+  } catch (err) {
+    return { success: false, message: String(err) }
   }
 })
 

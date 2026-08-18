@@ -3,6 +3,9 @@
     <!-- 工具栏：页签切换 + 搜索 + 登录状态 -->
     <div class="bili-toolbar glass-card">
       <div class="bili-tabs">
+        <button class="bili-tab" :class="{ active: tab === 'rcmd' }" @click="switchTab('rcmd')">
+          <el-icon><MagicStick /></el-icon> 个性推荐
+        </button>
         <button class="bili-tab" :class="{ active: tab === 'popular' }" @click="switchTab('popular')">
           <el-icon><Promotion /></el-icon> 热门推荐
         </button>
@@ -34,6 +37,42 @@
         <el-button v-else size="small" type="primary" plain @click="openLogin">
           <el-icon><User /></el-icon> 登录 B 站
         </el-button>
+      </div>
+    </div>
+
+    <!-- 个性推荐（首页 feed/rcmd，登录后按兴趣个性化） -->
+    <div v-if="tab === 'rcmd'" class="bili-content">
+      <div class="bili-content-head">
+        <span class="bili-content-title"><el-icon><MagicStick /></el-icon> 个性推荐</span>
+        <el-button size="small" :loading="rcmdLoading" @click="loadRcmd">
+          <el-icon><Refresh /></el-icon> 换一批
+        </el-button>
+      </div>
+      <div v-if="rcmdLoading && !rcmdList.length" class="bili-loading">
+        <el-icon class="is-loading" :size="28"><Loading /></el-icon>
+        <span>加载中...</span>
+      </div>
+      <div v-else-if="!rcmdList.length" class="bili-empty glass-card">
+        <el-icon :size="48"><MagicStick /></el-icon>
+        <p>暂无推荐内容，点击「换一批」重试</p>
+      </div>
+      <div v-else class="bili-grid">
+        <div v-for="v in rcmdList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
+          <div class="bili-cover-wrap">
+            <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
+            <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
+            <div class="bili-cover-mask">
+              <el-icon class="bili-play-icon"><VideoPlay /></el-icon>
+            </div>
+          </div>
+          <div class="bili-card-info">
+            <div class="bili-card-title" :title="v.title">{{ v.title }}</div>
+            <div class="bili-card-meta">
+              <span class="bili-meta-author">{{ v.author }}</span>
+              <span class="bili-meta-stat">{{ formatCount(v.play) }} 播放</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -193,13 +232,13 @@
       </div>
     </div>
 
-    <!-- 播放器弹窗 -->
+    <!-- 播放器弹窗（v3.5.4：加大宽度并屏幕水平垂直居中） -->
     <el-dialog
       v-model="playerVisible"
       :title="currentView?.title || '视频播放'"
-      width="920px"
-      top="5vh"
+      width="1080px"
       class="bili-player-dialog"
+      align-center
       append-to-body
       destroy-on-close
       @close="onPlayerClose"
@@ -272,13 +311,39 @@
             @click="switchPage(idx)"
           >P{{ p.page }}</button>
         </div>
-        <!-- 相关视频推荐 -->
+        <!-- v3.5.4：视频交互（点赞 / 投币 / 收藏，需登录） -->
+        <div class="bili-player-actions" v-if="currentView">
+          <button class="bili-action-btn" :class="{ liked: relLiked }" :disabled="relBusy" @click="toggleLike">
+            <el-icon><SuccessFilled /></el-icon>
+            <span>{{ relLiked ? '已点赞' : '点赞' }}</span>
+            <em>{{ formatCount(currentView.stat.like + (relLiked ? 1 : 0)) }}</em>
+          </button>
+          <el-dropdown trigger="click" :disabled="relBusy" @command="giveCoin">
+            <button class="bili-action-btn" :class="{ coined: relCoin > 0 }" :disabled="relBusy">
+              <el-icon><Present /></el-icon>
+              <span>{{ relCoin > 0 ? `已投 ${relCoin} 币` : '投币' }}</span>
+              <em>{{ formatCount(currentView.stat.coin) }}</em>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item :command="1">投 1 个币</el-dropdown-item>
+                <el-dropdown-item :command="2">投 2 个币</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <button class="bili-action-btn" :class="{ faved: relFaved }" :disabled="relBusy" @click="toggleFav">
+            <el-icon><StarFilled /></el-icon>
+            <span>{{ relFaved ? '已收藏' : '收藏' }}</span>
+            <em>{{ formatCount(currentView.stat.favorite + (relFaved ? 1 : 0)) }}</em>
+          </button>
+        </div>
+        <!-- 相关视频推荐（v3.5.4：最多展示 8 条，避免弹窗被过度拉长） -->
         <div class="bili-related" v-if="relatedList.length">
           <div class="bili-content-head">
             <span class="bili-content-title small"><el-icon><VideoPlay /></el-icon> 相关视频</span>
           </div>
           <div class="bili-grid related">
-            <div v-for="v in relatedList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
+            <div v-for="v in relatedList.slice(0, 8)" :key="v.bvid" class="bili-card" @click="playVideo(v)">
               <div class="bili-cover-wrap">
                 <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
                 <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
@@ -342,14 +407,14 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
-  Search, Star, Promotion, User, UserFilled, Refresh, Loading,
-  VideoPlay, FolderOpened, Warning
+  Search, Star, StarFilled, Promotion, User, UserFilled, Refresh, Loading,
+  VideoPlay, FolderOpened, Warning, MagicStick, SuccessFilled, Present
 } from '@element-plus/icons-vue'
 
 const api = window.electronAPI
 
-type BiliTab = 'popular' | 'fav' | 'search'
-const tab = ref<BiliTab>('popular')
+type BiliTab = 'rcmd' | 'popular' | 'fav' | 'search'
+const tab = ref<BiliTab>('rcmd')
 
 // ── 登录状态 ──
 const user = ref<BiliUser | null>(null)
@@ -464,6 +529,24 @@ async function loginByCookie(): Promise<void> {
     ElMessage.error(String(err))
   } finally {
     cookieLoading.value = false
+  }
+}
+
+// ── 个性推荐（v3.5.4：首页 feed/rcmd，WBI 签名） ──
+const rcmdList = ref<BiliVideo[]>([])
+const rcmdLoading = ref(false)
+
+async function loadRcmd(): Promise<void> {
+  if (!api || rcmdLoading.value) return
+  rcmdLoading.value = true
+  try {
+    const res = await api.biliRcmd(12)
+    if (!res.success) throw new Error(res.message || '加载失败')
+    rcmdList.value = res.list || []
+  } catch (err) {
+    ElMessage.error(`推荐加载失败: ${(err as Error).message || err}`)
+  } finally {
+    rcmdLoading.value = false
   }
 }
 
@@ -619,6 +702,8 @@ async function playVideo(v: BiliVideo): Promise<void> {
     if (!res.success || !res.video) throw new Error(res.message || '视频信息获取失败')
     currentView.value = res.video
     currentPageIdx.value = 0
+    // v3.5.4：查询点赞/投币/收藏状态（异步，不阻塞播放）
+    loadRelation(res.video.aid)
     // 相关视频推荐（异步加载，不阻塞播放）
     api.biliRelated(v.bvid).then(r => {
       if (r.success && currentView.value?.bvid === v.bvid) relatedList.value = r.list || []
@@ -700,6 +785,97 @@ function onPlayerClose(): void {
   segIdx = 0
   playerLoading.value = false
   playerError.value = ''
+  relLiked.value = false
+  relCoin.value = 0
+  relFaved.value = false
+}
+
+// ── v3.5.4：视频交互（点赞 / 投币 / 收藏） ──
+const relLiked = ref(false)
+const relCoin = ref(0)
+const relFaved = ref(false)
+const relBusy = ref(false)
+
+/** 登录后查询当前用户对该视频的交互状态（失败静默，不影响播放） */
+async function loadRelation(aid: number): Promise<void> {
+  relLiked.value = false
+  relCoin.value = 0
+  relFaved.value = false
+  if (!api || !aid) return
+  try {
+    const r = await api.biliRelation(aid)
+    if (r.success) {
+      relLiked.value = !!r.like
+      relCoin.value = r.coin || 0
+      relFaved.value = !!r.favorite
+    }
+  } catch { /* 未登录或接口异常时按钮保持默认态 */ }
+}
+
+function requireBiliLogin(): boolean {
+  if (user.value) return true
+  ElMessage.info('请先登录 B 站')
+  openLogin()
+  return false
+}
+
+async function toggleLike(): Promise<void> {
+  if (!api || !currentView.value || relBusy.value) return
+  if (!requireBiliLogin()) return
+  relBusy.value = true
+  try {
+    const next = !relLiked.value
+    const res = await api.biliLike(currentView.value.aid, next ? 1 : 2)
+    if (!res.success) throw new Error(res.message || '操作失败')
+    relLiked.value = next
+    ElMessage.success(next ? '已点赞' : '已取消点赞')
+  } catch (err) {
+    ElMessage.error((err as Error).message || String(err))
+  } finally {
+    relBusy.value = false
+  }
+}
+
+async function giveCoin(multiply: number | string): Promise<void> {
+  if (!api || !currentView.value || relBusy.value) return
+  if (!requireBiliLogin()) return
+  const n = Number(multiply) || 1
+  if (relCoin.value >= 2) {
+    ElMessage.info('该视频已投满 2 个币')
+    return
+  }
+  relBusy.value = true
+  try {
+    const res = await api.biliCoin(currentView.value.aid, n)
+    if (!res.success) throw new Error(res.message || '投币失败')
+    relCoin.value = Math.min(relCoin.value + n, 2)
+    ElMessage.success(`成功投出 ${n} 个币`)
+  } catch (err) {
+    ElMessage.error((err as Error).message || String(err))
+  } finally {
+    relBusy.value = false
+  }
+}
+
+async function toggleFav(): Promise<void> {
+  if (!api || !currentView.value || relBusy.value) return
+  if (!requireBiliLogin()) return
+  relBusy.value = true
+  try {
+    // 目标收藏夹：默认收藏夹（用户收藏夹列表的首项）
+    if (!favFolders.value.length) await loadFavFolders()
+    const target = favFolders.value[0]
+    if (!target) throw new Error('未找到可用的收藏夹')
+    const next = !relFaved.value
+    const res = await api.biliFavToggle(currentView.value.aid, target.id, next)
+    if (!res.success) throw new Error(res.message || '操作失败')
+    relFaved.value = next
+    ElMessage.success(next ? `已收藏到「${target.title}」` : '已取消收藏')
+  } catch (err) {
+    ElMessage.error((err as Error).message || String(err))
+  } finally {
+    relBusy.value = false
+  }
 }
 
 // ── 工具函数 ──
@@ -712,7 +888,7 @@ function formatCount(n: number | string): string {
 
 onMounted(() => {
   refreshLoginStatus()
-  loadPopular(true)
+  loadRcmd()
 })
 
 onBeforeUnmount(() => {
@@ -895,8 +1071,8 @@ html.dark .bili-search-input {
 }
 
 .bili-grid.related {
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px;
 }
 
 .bili-card {
@@ -1260,6 +1436,77 @@ html.dark .bili-select {
   gap: 10px;
   border-top: 1px dashed var(--glass-border);
   padding-top: 12px;
+}
+
+/* v3.5.4：相关视频卡片紧凑化，控制播放弹窗整体高度 */
+.bili-grid.related .bili-card-title {
+  font-size: 12px;
+}
+
+.bili-grid.related .bili-card-meta {
+  font-size: 11px;
+}
+
+/* ── v3.5.4：点赞 / 投币 / 收藏交互栏 ── */
+.bili-player-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.bili-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.35);
+  color: var(--mo-text-2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+html.dark .bili-action-btn {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.bili-action-btn:hover:not(:disabled) {
+  color: var(--mo-accent);
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.bili-action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.bili-action-btn em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--mo-text-3);
+}
+
+.bili-action-btn.liked {
+  color: var(--mo-accent);
+  border-color: rgba(59, 130, 246, 0.45);
+  background: rgba(59, 130, 246, 0.14);
+}
+
+.bili-action-btn.coined {
+  color: var(--mo-warning);
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.bili-action-btn.faved {
+  color: var(--mo-danger);
+  border-color: rgba(239, 68, 68, 0.4);
+  background: rgba(239, 68, 68, 0.1);
 }
 
 /* ── 登录弹窗 ── */

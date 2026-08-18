@@ -80,6 +80,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   biliFavList: (mediaId: number, page?: number) => ipcRenderer.invoke('bili:fav-list', mediaId, page),
   biliView: (bvid: string) => ipcRenderer.invoke('bili:view', bvid),
   biliPlayurl: (bvid: string, cid: number, qn?: number) => ipcRenderer.invoke('bili:playurl', bvid, cid, qn),
+  // v3.5.4：哔哩哔哩个性化推荐与视频交互（点赞/投币/收藏）
+  biliRcmd: (pageSize?: number) => ipcRenderer.invoke('bili:rcmd', pageSize),
+  biliRelation: (aid: number) => ipcRenderer.invoke('bili:relation', aid),
+  biliLike: (aid: number, like: number) => ipcRenderer.invoke('bili:like', aid, like),
+  biliCoin: (aid: number, multiply: number) => ipcRenderer.invoke('bili:coin', aid, multiply),
+  biliFavToggle: (aid: number, mediaId: number, add: boolean) => ipcRenderer.invoke('bili:fav-toggle', aid, mediaId, add),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

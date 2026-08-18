@@ -229,6 +229,12 @@ interface ElectronAPI {
     durl?: { url: string; backupUrl: string[]; size: number; length: number }[]
     message?: string
   }>
+  // v3.5.4：哔哩哔哩个性化推荐与视频交互（点赞/投币/收藏）
+  biliRcmd: (pageSize?: number) => Promise<{ success: boolean; list?: BiliVideo[]; message?: string }>
+  biliRelation: (aid: number) => Promise<{ success: boolean; like?: boolean; coin?: number; favorite?: boolean; message?: string }>
+  biliLike: (aid: number, like: number) => Promise<{ success: boolean; message?: string }>
+  biliCoin: (aid: number, multiply: number) => Promise<{ success: boolean; message?: string }>
+  biliFavToggle: (aid: number, mediaId: number, add: boolean) => Promise<{ success: boolean; message?: string }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>
