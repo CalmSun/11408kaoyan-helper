@@ -59,7 +59,7 @@
       <div v-else class="bili-grid cols-6">
         <div v-for="v in rcmdList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
           <div class="bili-cover-wrap">
-            <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
+            <img class="bili-cover" :src="v.pic" loading="lazy" decoding="async" alt="" />
             <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
             <div class="bili-cover-mask">
               <el-icon class="bili-play-icon"><VideoPlay /></el-icon>
@@ -96,7 +96,7 @@
       <div v-else class="bili-grid cols-6">
         <div v-for="v in popularList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
           <div class="bili-cover-wrap">
-            <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
+            <img class="bili-cover" :src="v.pic" loading="lazy" decoding="async" alt="" />
             <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
             <div class="bili-cover-mask">
               <el-icon class="bili-play-icon"><VideoPlay /></el-icon>
@@ -171,7 +171,7 @@
             <div v-else class="bili-grid">
               <div v-for="v in favList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
                 <div class="bili-cover-wrap">
-                  <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
+                  <img class="bili-cover" :src="v.pic" loading="lazy" decoding="async" alt="" />
                   <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
                   <div class="bili-cover-mask">
                     <el-icon class="bili-play-icon"><VideoPlay /></el-icon>
@@ -220,7 +220,7 @@
       <div v-else class="bili-grid">
         <div v-for="v in searchList" :key="v.bvid" class="bili-card" @click="playVideo(v)">
           <div class="bili-cover-wrap">
-            <img class="bili-cover" :src="v.pic" loading="lazy" alt="" />
+            <img class="bili-cover" :src="v.pic" loading="lazy" decoding="async" alt="" />
             <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
             <div class="bili-cover-mask">
               <el-icon class="bili-play-icon"><VideoPlay /></el-icon>
@@ -394,7 +394,7 @@
             <div v-else class="bili-side-list">
               <div v-for="v in spaceList" :key="v.bvid" class="bili-row-card" @click="playVideo(v)">
                 <div class="bili-row-thumb">
-                  <img :src="v.pic" loading="lazy" alt="" />
+                  <img :src="v.pic" loading="lazy" decoding="async" alt="" />
                   <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
                 </div>
                 <div class="bili-row-info">
@@ -412,7 +412,7 @@
             <div class="bili-side-list">
               <div v-for="v in relatedList.slice(0, 20)" :key="v.bvid" class="bili-row-card" @click="playVideo(v)">
                 <div class="bili-row-thumb">
-                  <img :src="v.pic" loading="lazy" alt="" />
+                  <img :src="v.pic" loading="lazy" decoding="async" alt="" />
                   <span v-if="v.duration" class="bili-duration">{{ v.duration }}</span>
                 </div>
                 <div class="bili-row-info">
@@ -789,7 +789,8 @@ async function playVideo(v: BiliVideo): Promise<void> {
   relatedList.value = []
   // v3.6.0：已废弃 durl fallback，dashFallbackTried 不再使用
   try {
-    const res = await api.biliView(v.bvid)
+    // v3.6.2：视频信息走 5 分钟缓存，二次起播免请求
+    const res = await getViewCached(v.bvid)
     if (!res.success || !res.video) throw new Error(res.message || '视频信息获取失败')
     currentView.value = res.video
     currentPageIdx.value = 0
@@ -912,6 +913,27 @@ async function getPlayurlCached(bvid: string, cid: number, qn: number, preferDur
     if (playurlCache.size > 40) {
       const first = playurlCache.keys().next().value
       if (first) playurlCache.delete(first)
+    }
+  }
+  return res
+}
+
+// v3.6.2：视频信息缓存（bvid → view 结果，5 分钟 TTL）——
+// 重开同一视频免重复请求，配合 playurl 缓存显著缩短二次起播的等待时间。
+// 仅缓存只读展示数据（标题/简介/分P/UP主/统计），点赞投币收藏状态由
+// loadRelation 另行实时查询，不受缓存影响。
+type BiliViewResult = ReturnType<NonNullable<ElectronAPI['biliView']>> extends Promise<infer R> ? R : never
+const viewCache = new Map<string, { data: BiliViewResult; exp: number }>()
+const VIEW_TTL = 5 * 60 * 1000
+async function getViewCached(bvid: string): Promise<BiliViewResult> {
+  const hit = viewCache.get(bvid)
+  if (hit && hit.exp > Date.now()) return hit.data
+  const res = await api!.biliView(bvid)
+  if (res.success && res.video) {
+    viewCache.set(bvid, { data: res, exp: Date.now() + VIEW_TTL })
+    if (viewCache.size > 40) {
+      const first = viewCache.keys().next().value
+      if (first) viewCache.delete(first)
     }
   }
   return res
@@ -1921,7 +1943,8 @@ html.dark .bili-search-input {
 }
 
 .bili-card-info {
-  padding: 8px 10px 10px;
+  /* v3.6.2：收紧上下 padding，缩短卡片整体高度（个性推荐/热门推荐卡片更紧凑） */
+  padding: 6px 10px 8px;
 }
 
 .bili-card-title {
@@ -1932,7 +1955,8 @@ html.dark .bili-search-input {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 36px;
+  /* v3.6.2：36px → 34px，单行标题卡片更矮（两行标题仍完整显示，不受影响） */
+  min-height: 34px;
 }
 
 .bili-card-meta {
@@ -1940,7 +1964,8 @@ html.dark .bili-search-input {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-top: 6px;
+  /* v3.6.2：6px → 4px，进一步压缩卡片高度 */
+  margin-top: 4px;
   font-size: 11px;
   color: var(--mo-text-2);
 }

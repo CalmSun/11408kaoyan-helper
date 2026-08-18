@@ -14,7 +14,7 @@
           <el-icon><VideoCamera /></el-icon> 哔哩哔哩
         </button>
       </div>
-      <div class="materials-actions" v-show="materialsMode === 'local'">
+      <div class="materials-actions" :class="{ 'is-hidden': materialsMode === 'bili' }">
         <el-button size="small" type="primary" @click="pickFolder">
           <el-icon><FolderOpened /></el-icon> 选择资料文件夹
         </el-button>
@@ -1727,10 +1727,27 @@ function downloadFile() {
 }
 
 .materials-header {
-  display: flex;
-  justify-content: space-between;
+  /* v3.6.2：三列网格布局——标题居左、切换按钮居中、文件夹/刷新按钮居右。
+     切换按钮列固定居中，右列（actions）在 bili 模式下用 visibility 隐藏但保留占位，
+     从而切换本地/哔哩时按钮位置与整体布局保持不动（旧 flex space-between + v-show
+     会在 actions display:none 后把切换按钮挤到最右，造成位置漂移）。 */
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
+  gap: 12px;
   margin-bottom: 20px;
+}
+
+.materials-header .page-title {
+  justify-self: start;
+}
+
+.materials-header .materials-mode-switch {
+  justify-self: center;
+}
+
+.materials-header .materials-actions {
+  justify-self: end;
 }
 
 .page-title {
@@ -1747,6 +1764,13 @@ function downloadFile() {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* v3.6.2：bili 模式下隐藏文件夹/刷新按钮，但用 visibility 保留布局占位，
+   确保切换按钮（居中列）位置不随模式切换而变化 */
+.materials-actions.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* v3.5.4：模式切换独立成行并水平居中，两种模式下位置统一 */
