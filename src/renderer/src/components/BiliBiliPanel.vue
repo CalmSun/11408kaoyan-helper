@@ -826,7 +826,12 @@ async function playVideo(v: BiliVideo): Promise<void> {
   }
 }
 
-async function loadStream(preferDurl = false): Promise<void> {
+/** v3.6.2：播放机制重构——默认 durl 合并流直连，由浏览器原生播放器接管
+ *  （缓冲/seek/进度条/分片续播全部交给浏览器，起播快、拖动秒跳、无手动 MSE 泵的
+ *  各类问题）；仅当 durl 不可用（版权受限/接口异常）时回退 DASH（保留高清能力）。
+ *  durl 实测：fnval=4048 响应同时含 durl，URL 直连可播（206 + video/mp4 + Range）。
+ */
+async function loadStream(preferDurl = true): Promise<void> {
   if (!api || !currentView.value) return
   playerLoading.value = true
   playerError.value = ''
@@ -835,15 +840,12 @@ async function loadStream(preferDurl = false): Promise<void> {
   try {
     const page = currentView.value.pages[currentPageIdx.value]
     if (!page) throw new Error('视频分 P 信息缺失')
-    // v3.6.2：播放地址走缓存（10 分钟 TTL），重开/seek 重启管道免重复请求
+    // v3.6.2：播放地址走缓存（10 分钟 TTL），重开/切换清晰度免重复请求
     const res = await getPlayurlCached(currentView.value.bvid, page.cid, currentQn.value, preferDurl)
     if (!res.success) throw new Error(res.message || '播放地址获取失败')
     acceptQualities.value = res.acceptQuality || []
     qualityLabel.value = res.qualityLabel || ''
-    // v3.6.2：不再用 res.quality 无条件覆盖用户选择——服务端可能因风控/临时限制
-    //  返回更低清晰度，旧逻辑会把用户选的 1080P 悄悄改成 720P（"自动降清"观感来源）。
-    //  仅当用户选择的清晰度高于服务端最高可用时才降到最高可用，且直接用本次
-    //  响应中的轨道播放（DASH 响应包含全部 acceptQuality 对应轨道，无需二次请求）。
+    // v3.6.2：仅当用户选择的清晰度高于服务端最高可用时才降到最高可用（不覆盖用户选择）
     if (acceptQualities.value.length > 0) {
       const maxQn = Math.max(...acceptQualities.value.map(q => q.qn))
       if (currentQn.value > maxQn) {
@@ -851,10 +853,26 @@ async function loadStream(preferDurl = false): Promise<void> {
         currentQn.value = maxQn
       }
     }
-    // v3.6.2：按清晰度调整缓冲水位（高清晰度低水位防配额打满卡顿）
+    // v3.6.2：按清晰度调整缓冲水位（DASH 兜底路径用）
     applyBufferWatermark(currentQn.value)
-    if (!preferDurl && res.mode === 'dash' && res.dash && res.dash.video.length) {
-      // v3.5.5：DASH 音视频分离流，经 MSE + 回环代理播放（支持高清晰度）
+
+    if (preferDurl) {
+      // ① 首选：durl 合并流原生播放（浏览器接管，体验最稳）
+      if (res.mode === 'durl' && res.durl && res.durl.length && res.durl[0].url) {
+        stopDash()
+        segments = res.durl
+        videoSrc.value = segments[0].url
+        playerLoading.value = false
+        return
+      }
+      // ② durl 不可用 → 回退 DASH（重新请求，不递归）
+      console.warn('[播放] durl 不可用，回退 DASH 播放')
+      await loadStream(false)
+      return
+    }
+
+    // ③ DASH 音视频分离流（高清晰度兜底，MSE + 回环代理）
+    if (res.mode === 'dash' && res.dash && res.dash.video.length) {
       await startDash(res.dash.video, res.dash.audio || [])
     } else {
       stopDash()
@@ -908,7 +926,10 @@ async function getPlayurlCached(bvid: string, cid: number, qn: number, preferDur
   const hit = playurlCache.get(key)
   if (hit && hit.exp > Date.now()) return hit.data
   const res = await api!.biliPlayurl(bvid, cid, qn, preferDurl)
-  if (res.success && res.mode === 'dash' && res.dash?.video?.length) {
+  // v3.6.2：durl 结果同样缓存（原生播放优先路径），只要拿到有效地址即可缓存
+  const usable = res.success &&
+    ((res.mode === 'dash' && res.dash?.video?.length) || (res.mode === 'durl' && res.durl?.length))
+  if (usable) {
     playurlCache.set(key, { data: res, exp: Date.now() + PLAYURL_TTL })
     if (playurlCache.size > 40) {
       const first = playurlCache.keys().next().value
