@@ -2666,8 +2666,11 @@ ipcMain.handle('bili:playurl', async (_e, bvid: string, cid: number, qn = 64, pr
     if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
     const d = json.data
     const acceptQuality = (d.accept_quality || []).map((q: number) => ({ qn: q, label: BILI_QN_LABELS[q] || `${q}` }))
-    // DASH 模式：音视频分离的 fMP4 流，渲染层 MSE 播放
-    if (!preferDurl && d.dash && Array.isArray(d.dash.video) && d.dash.video.length) {
+    const quality = d.quality || 0
+    const qualityLabel = BILI_QN_LABELS[d.quality] || `${d.quality}`
+    // 组装 DASH 结果（音视频分离 fMP4，渲染层 MSE 播放）
+    const buildDash = () => {
+      if (!d.dash || !Array.isArray(d.dash.video) || !d.dash.video.length) return null
       const mapTrack = (t: any) => ({
         qn: t.id || 0,
         label: BILI_QN_LABELS[t.id] || `${t.id || 0}`,
@@ -2682,31 +2685,34 @@ ipcMain.handle('bili:playurl', async (_e, bvid: string, cid: number, qn = 64, pr
       return {
         success: true,
         mode: 'dash',
-        quality: d.quality || 0,
-        qualityLabel: BILI_QN_LABELS[d.quality] || `${d.quality}`,
-        acceptQuality,
-        dash: {
-          video: d.dash.video.map(mapTrack),
-          audio: (d.dash.audio || []).map(mapTrack)
-        }
+        quality, qualityLabel, acceptQuality,
+        dash: { video: d.dash.video.map(mapTrack), audio: (d.dash.audio || []).map(mapTrack) }
       }
     }
-    // 回退：durl 合并流（<video> 直连 CDN，主进程已注入 Referer）
-    const durl = (d.durl || []).map((u: any) => ({
-      url: u.url || '',
-      backupUrl: Array.isArray(u.backup_url) ? u.backup_url : [],
-      size: u.size || 0,
-      length: u.length || 0
-    }))
-    if (!durl.length || !durl[0].url) throw new Error('未获取到播放地址（版权受限或清晰度不足）')
-    return {
-      success: true,
-      mode: 'durl',
-      quality: d.quality || 0,
-      qualityLabel: BILI_QN_LABELS[d.quality] || `${d.quality}`,
-      acceptQuality,
-      durl
+    // 组装 durl 合并流结果（<video> 直连 CDN 原生播放）
+    const buildDurl = () => {
+      const durl = (d.durl || []).map((u: any) => ({
+        url: u.url || '',
+        backupUrl: Array.isArray(u.backup_url) ? u.backup_url : [],
+        size: u.size || 0,
+        length: u.length || 0
+      }))
+      if (!durl.length || !durl[0].url) return null
+      return { success: true, mode: 'durl', quality, qualityLabel, acceptQuality, durl }
     }
+    // v3.6.2：双模式双兜底——durl 与 dash 互相回退，任何模式不可用都不会直接抛错
+    if (preferDurl) {
+      const durlRes = buildDurl()
+      if (durlRes) return durlRes
+      const dashRes = buildDash()
+      if (dashRes) return dashRes
+    } else {
+      const dashRes = buildDash()
+      if (dashRes) return dashRes
+      const durlRes = buildDurl()
+      if (durlRes) return durlRes
+    }
+    throw new Error('未获取到播放地址（版权受限或清晰度不足）')
   } catch (err) {
     return { success: false, mode: '', quality: 0, qualityLabel: '', acceptQuality: [], message: String(err) }
   }

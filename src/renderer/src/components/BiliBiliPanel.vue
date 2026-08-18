@@ -842,7 +842,16 @@ async function loadStream(preferDurl = true): Promise<void> {
     if (!page) throw new Error('视频分 P 信息缺失')
     // v3.6.2：播放地址走缓存（10 分钟 TTL），重开/切换清晰度免重复请求
     const res = await getPlayurlCached(currentView.value.bvid, page.cid, currentQn.value, preferDurl)
-    if (!res.success) throw new Error(res.message || '播放地址获取失败')
+    // v3.6.2：请求失败（durl 模式 durl 为空被主进程 throw）→ 回退 DASH 重试，
+    // 不再直接报"未获取到播放地址"（主进程已做 durl↔dash 互兜，此处双保险）
+    if (!res.success) {
+      if (preferDurl) {
+        console.warn(`[播放] durl 请求失败（${res.message}），回退 DASH`)
+        await loadStream(false)
+        return
+      }
+      throw new Error(res.message || '播放地址获取失败')
+    }
     acceptQualities.value = res.acceptQuality || []
     qualityLabel.value = res.qualityLabel || ''
     // v3.6.2：仅当用户选择的清晰度高于服务端最高可用时才降到最高可用（不覆盖用户选择）
@@ -865,8 +874,15 @@ async function loadStream(preferDurl = true): Promise<void> {
         playerLoading.value = false
         return
       }
-      // ② durl 不可用 → 回退 DASH（重新请求，不递归）
-      console.warn('[播放] durl 不可用，回退 DASH 播放')
+      // ② 主进程已兜底返回 dash（durl 空但 dash 可用）→ 直接用，不再二次请求
+      if (res.mode === 'dash' && res.dash && res.dash.video.length) {
+        console.warn('[播放] durl 不可用，主进程已兜底 DASH，直接 MSE 播放')
+        await startDash(res.dash.video, res.dash.audio || [])
+        playerLoading.value = false
+        return
+      }
+      // ③ 都没有 → 回退 DASH 重新请求（防缓存异常结果）
+      console.warn('[播放] durl/dash 均不可用，重试 DASH')
       await loadStream(false)
       return
     }

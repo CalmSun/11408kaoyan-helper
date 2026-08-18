@@ -123,3 +123,24 @@
 - `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误，零新增；
 - 产物核查：`durl 不可用，回退 DASH` 特征已编入；
 - 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
+
+---
+
+## 修复"未获取到播放地址（版权受限或清晰度不足）"（durl/dash 互兜底）
+
+### 根因（重构回归）
+上一轮播放机制重构默认 `preferDurl=true` 后，主进程 playurl 逻辑仍是旧的：
+`if (!preferDurl && dash) return dash; else 走 durl`——当 `preferDurl=true` 且该视频/清晰度 **durl 为空（只有 dash）** 时，直接 throw `未获取到播放地址`，渲染层 `!res.success` 也直接报错、**没有回退 DASH**。
+
+### 修复（双保险）
+1. **主进程**（main.ts）：重构为 `buildDurl()`/`buildDash()` 双组装 + **互兜底**——`preferDurl` 时 durl 不可用自动返回 dash（不 throw）；非 preferDurl 时 dash 不可用自动返回 durl；两者都空才抛错。
+2. **渲染层**（BiliBiliPanel.vue `loadStream`）：
+   - `!res.success` 且 preferDurl → 回退 `loadStream(false)` 重试 DASH，不再直接报错；
+   - preferDurl 但主进程兜底返回 `mode='dash'` → 直接用该结果 MSE 播放（省二次请求）；
+   - durl/dash 都没有 → 重试 DASH 兜底。
+
+### 验证
+- 行为模拟 6 项断言全 PASS：durl 空+dash 有 → 主进程兜底 dash / durl 有 → 原生 / 都空 → 回退重试 / DASH 模式互兜 / 都空且非 preferDurl → 才报错；
+- `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误；主进程 `tsc` exit 0；
+- 产物核查：渲染层含 `durl 请求失败`/`主进程已兜底 DASH` 回退日志，主进程含 buildDurl/buildDash；
+- 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
