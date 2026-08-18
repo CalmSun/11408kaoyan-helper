@@ -2287,6 +2287,8 @@ const BILI_QN_LABELS: Record<number, string> = {
 
 // 启动时恢复上次登录凭证
 loadBiliCookies()
+// v3.6.2：预获取 buvid3/buvid4 设备标识（降低风控，避免首次播放时额外等待）
+void biliEnsureBuvid()
 
 /** v3.5.3：B 站视频 CDN 请求头注入 —— 播放流校验 Referer/UA，渲染层 <video> 无法自带
  *  bilibili Referer，这里对 CDN 域请求统一改写（仅匹配媒体域，不影响其他请求）。 */
@@ -2644,10 +2646,23 @@ ipcMain.handle('bili:view', async (_e, bvid: string) => {
 ipcMain.handle('bili:playurl', async (_e, bvid: string, cid: number, qn = 64, preferDurl = false) => {
   try {
     // v3.5.9：preferDurl 参数已废弃，始终走 fnval=4048 确保最高清晰度
-    const params = new URLSearchParams({
-      bvid, cid: String(cid), qn: String(qn), fnval: '4048', fnver: '0', fourk: '1', otype: 'json'
-    })
-    const json = await biliGet(`https://api.bilibili.com/x/player/playurl?${params.toString()}`)
+    // v3.6.2：确保 buvid3/buvid4 设备标识（降低风控），并优先用 Wbi 签名接口
+    // /x/player/wbi/playurl 拉取——未签名的老接口易被风控限流（表现为 502/低清晰度），
+    // 签名后地址更完整稳定；签名失败/接口异常时回退老接口保证兼容。
+    await biliEnsureBuvid()
+    const base = {
+      bvid, cid: String(cid), qn: String(qn), fnval: '4048', fnver: '0', fourk: '1',
+      otype: 'json', platform: 'html5', high_quality: '1'
+    }
+    let json: any = null
+    try {
+      const signed = await biliWbiSign(base)
+      json = await biliGet(`https://api.bilibili.com/x/player/wbi/playurl?${new URLSearchParams(signed).toString()}`)
+      if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
+    } catch (err) {
+      console.warn('[bili] Wbi 播放地址获取失败，回退老接口：', (err as Error).message)
+      json = await biliGet(`https://api.bilibili.com/x/player/playurl?${new URLSearchParams(base).toString()}`)
+    }
     if (json.code !== 0) throw new Error(json.message || `code=${json.code}`)
     const d = json.data
     const acceptQuality = (d.accept_quality || []).map((q: number) => ({ qn: q, label: BILI_QN_LABELS[q] || `${q}` }))
