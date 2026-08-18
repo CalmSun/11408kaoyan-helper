@@ -1248,6 +1248,12 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
   const aMime = aTrack ? mseMime(aTrack) : ''
   const audioUsable = !!(aTrack && aTrack.baseUrl && MediaSource.isTypeSupported(aMime))
   
+  // ✅ 修复：获取流代理 token
+  const vTok = await api.biliStreamToken(vTrack.baseUrl)
+  if (!vTok.success || !vTok.token || !vTok.baseUrl) throw new Error(vTok.message || '流代理获取失败')
+  
+  const aTok = audioUsable && aTrack ? await api.biliStreamToken(aTrack.baseUrl) : null
+  
   stopDash()
   dashCtrl = new AbortController()
   const ctrl = dashCtrl
