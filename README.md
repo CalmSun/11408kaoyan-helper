@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-3.5.2-blue">
+  <img alt="版本" src="https://img.shields.io/badge/version-3.5.3-blue">
   <img alt="平台" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
   <img alt="技术栈" src="https://img.shields.io/badge/stack-Vue3%20%2B%20Electron28-9cf">
   <img alt="协议" src="https://img.shields.io/badge/license-MIT-green">
@@ -46,6 +46,7 @@
 | 4 | **深度整合网易云音乐** | 云盘、歌单、心动模式、评论、三种登录方式，全局顶栏悬浮播放器 |
 | 5 | **多格式内置播放器** | 支持 MP4 / MKV / AVI 等主流视频，倍速、快捷键、音量增益、快进退；PDF 本地渲染、中文无乱码 |
 | 6 | **可视化学习数据** | ECharts 图表展示 7 天时长、科目占比、真题分数趋势，一键导出 PDF 报告 |
+| 7 | **B 站学习视频集成** | 学习资料页内置哔哩哔哩：扫码 / Cookie 登录、收藏夹浏览、视频搜索、热门推荐、分 P / 清晰度播放 |
 
 ---
 
@@ -81,6 +82,7 @@
 | 📝 公式大纲 | 分章节汇总考研高数 / 线代 / 概率全部公式、政治核心考点；目录快速跳转、关键词检索 |
 | 🧮 数据结构速查 | 计算机考研常考算法可视化讲解；排序、搜索、DP、图论通用模板速查 |
 | 📁 学习资料播放器 | 树状文件夹本地资源管理；PDF ，离线可用、中文无乱码，支持翻页、缩放、旋转、文本选择、搜索、打印，切换或离开时卸载释放资源；视频倍速、Web Audio 音量增益（1×/1.5×/1.8×/2.5×/4×）、±10s 快退快进、完整键盘快捷键、自动连播、当前文件夹播放列表；学习进度自动记忆：PDF 页码 / 视频进度自动续播续读 |
+| 📺 哔哩哔哩在线学习视频（v3.5.3） | 学习资料页「哔哩哔哩」模式：扫码 / Cookie 两种登录方式（凭证本地持久化）；我的收藏夹浏览与分页加载；关键词视频搜索（自动领取 buvid 防风控）；热门视频推荐换一批 / 加载更多；原生播放器弹窗支持分 P 切换、清晰度选择、备用 CDN 自动切换、相关视频推荐；播放流经主进程代理并注入 Referer 绕过防盗链，与本地资料功能互不影响 |
 
 ### 网易云音乐深度集成
 
@@ -181,7 +183,7 @@ kaoyan-helper/
 ├── resources/                    # Electron 托盘图标等静态资源
 ├── src/
 │   ├── main/                     # Electron 主进程
-│   │   └── main.ts               # 窗口管理、IPC 通信、回环资源服务、网易云/天气 API 代理、更新逻辑
+│   │   └── main.ts               # 窗口管理、IPC 通信、回环资源服务、网易云/哔哩哔哩/天气 API 代理、更新逻辑
 │   ├── preload/                  # Preload 隔离脚本，contextBridge 暴露 electronAPI
 │   │   └── preload.ts
 │   └── renderer/                 # Vue 渲染进程

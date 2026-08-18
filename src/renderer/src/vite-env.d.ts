@@ -17,6 +17,26 @@ interface MaterialNode {
   size?: number
 }
 
+// v3.5.3：哔哩哔哩视频卡片（热门/相关/搜索/收藏夹统一结构）
+interface BiliVideo {
+  bvid: string
+  title: string
+  pic: string
+  author: string
+  duration: string
+  play: number
+  danmaku: number
+  pubdate: number
+}
+
+// v3.5.3：B 站登录用户信息
+interface BiliUser {
+  mid: number
+  uname: string
+  face: string
+  vipStatus: number
+}
+
 interface ElectronAPI {
   exportData: (data: string) => Promise<{ success: boolean; path?: string }>
   importData: () => Promise<{ success: boolean; data?: string }>
@@ -178,6 +198,35 @@ interface ElectronAPI {
       fileName?: string; fileSize?: number; addTime?: number; level?: string
     }[]
     count?: number
+    message?: string
+  }>
+  // v3.5.3：哔哩哔哩 API
+  biliQrKey: () => Promise<{ success: boolean; key?: string; qrimg?: string; qrurl?: string; message?: string }>
+  biliQrCheck: (key: string) => Promise<{ success: boolean; code?: number; message?: string }>
+  biliLoginStatus: () => Promise<{ success: boolean; loggedIn?: boolean; user?: BiliUser | null; message?: string }>
+  biliLogout: () => Promise<{ success: boolean }>
+  biliSetCookie: (cookie: string) => Promise<{ success: boolean; loggedIn?: boolean; user?: BiliUser | null; message?: string }>
+  biliPopular: (page?: number, pageSize?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
+  biliRelated: (bvid: string) => Promise<{ success: boolean; list?: BiliVideo[]; message?: string }>
+  biliSearch: (keyword: string, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; total?: number; numPages?: number; message?: string }>
+  biliFavFolders: () => Promise<{ success: boolean; folders?: { id: number; title: string; count: number; cover: string }[]; message?: string }>
+  biliFavList: (mediaId: number, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
+  biliView: (bvid: string) => Promise<{
+    success: boolean
+    video?: {
+      bvid: string; aid: number; title: string; pic: string; desc: string; duration: string; pubdate: number
+      owner: { mid: number; name: string; face: string }
+      stat: { view: number; danmaku: number; like: number; coin: number; favorite: number; reply: number }
+      pages: { cid: number; page: number; part: string; duration: string }[]
+    } | null
+    message?: string
+  }>
+  biliPlayurl: (bvid: string, cid: number, qn?: number) => Promise<{
+    success: boolean
+    quality?: number
+    qualityLabel?: string
+    acceptQuality?: { qn: number; label: string }[]
+    durl?: { url: string; backupUrl: string[]; size: number; length: number }[]
     message?: string
   }>
   // 国内天气服务（v2.8.0）
