@@ -2873,12 +2873,13 @@ function parseDanmakuElemProto(buf: Buffer): { time: number; mode: number; color
   }
 }
 
-/** v3.6.0：拉取分段弹幕（seg.so Protobuf 接口，WBI 签名） */
+/** v3.6.0：拉取分段弹幕（seg.so Protobuf 接口）。
+ *  v3.6.2：改用**无 WBI 签名**的 /x/v2/dm/web/seg.so 直连——
+ *  实测无需 w_rid/wts 即可正常返回（每段 50+ 条），
+ *  原 WBI 签名链路需先调 nav 拿密钥再签名，任一环失败即整体不可用，
+ *  是用户环境"弹幕始终不显示"的高嫌疑点。 */
 async function fetchBiliDanmakuSeg(cid: number, segIdx: number): Promise<{ time: number; mode: number; color: string; text: string }[]> {
-  const signed = await biliWbiSign({
-    type: '1', oid: String(cid), segment_index: String(segIdx), web_location: '333.999'
-  })
-  const url = `https://api.bilibili.com/x/v2/dm/wbi/web/seg.so?${new URLSearchParams(signed).toString()}`
+  const url = `https://api.bilibili.com/x/v2/dm/web/seg.so?type=1&oid=${cid}&segment_index=${segIdx}&web_location=333.999`
   const res = await fetch(url, {
     headers: { 'User-Agent': BILI_UA, 'Referer': BILI_REFERER, 'Accept': '*/*', 'Cookie': biliCookieHeader() }
   })

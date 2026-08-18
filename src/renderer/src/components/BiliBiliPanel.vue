@@ -838,14 +838,15 @@ async function loadStream(preferDurl = false): Promise<void> {
     if (!res.success) throw new Error(res.message || '播放地址获取失败')
     acceptQualities.value = res.acceptQuality || []
     qualityLabel.value = res.qualityLabel || ''
-    if (res.quality) currentQn.value = res.quality
-    // v3.6.0：若当前清晰度高于可播放的最高清晰度，自动降级到最高
+    // v3.6.2：不再用 res.quality 无条件覆盖用户选择——服务端可能因风控/临时限制
+    //  返回更低清晰度，旧逻辑会把用户选的 1080P 悄悄改成 720P（"自动降清"观感来源）。
+    //  仅当用户选择的清晰度高于服务端最高可用时才降到最高可用，且直接用本次
+    //  响应中的轨道播放（DASH 响应包含全部 acceptQuality 对应轨道，无需二次请求）。
     if (acceptQualities.value.length > 0) {
       const maxQn = Math.max(...acceptQualities.value.map(q => q.qn))
       if (currentQn.value > maxQn) {
-        console.log(`[自动降清] 当前 ${currentQn.value} → 最高可用 ${maxQn}`)
-        switchQuality(maxQn)
-        return
+        console.log(`[清晰度] 当前 ${currentQn.value} → 最高可用 ${maxQn}`)
+        currentQn.value = maxQn
       }
     }
     if (!preferDurl && res.mode === 'dash' && res.dash && res.dash.video.length) {
@@ -994,7 +995,10 @@ async function startDash(videoTracks: BiliDashTrack[], audioTracks: BiliDashTrac
 }
 
 // ── v3.5.9：取消 durl 回退链，改为降清重试 ──
-let dashQuotaStrikes = 0  // v3.6.1：连续配额失败计数（同清晰度重试前置）
+// v3.6.2：彻底移除自动降清——MSE 配额（Chrome 桌面约 150MB）不足的正解是
+//  **主动定期清理播放点前的历史缓冲**（MSE 实践：updateend 后 evict 旧区间），
+//  而非降清晰度。降清只应由用户手动选择（清晰度下拉框）。
+//  播放中遇到 QuotaExceededError：清理 → 等待缓冲消耗 → 重试同清晰度，绝不自动降清。
 async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, qn?: number): Promise<void> {
   try {
     const resp = await fetch(url, { signal: ctrl.signal })
@@ -1008,6 +1012,8 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
       if (ctrl.signal.aborted) return
       const { done, value } = await reader.read()
       if (done) break
+      // v3.6.2：append 前主动清理播放点前 10s 之外的历史缓冲，从源头防止配额打满
+      evictOldBuffers(videoEl.value)
       await appendWithQuotaGuard(sb, value, ctrl)
       if (ctrl.signal.aborted) return
     }
@@ -1018,62 +1024,53 @@ async function pumpTrack(url: string, sb: SourceBuffer, ctrl: AbortController, q
   } catch (err) {
     if (ctrl.signal.aborted) return
     const isQuota = err instanceof DOMException && err.name === 'QuotaExceededError'
-    if (isQuota && qn) {
-      // v3.6.1：长视频降清根治——配额不足时**不再立即降清**。
-      // 先做全量缓冲激进清理 + 短暂等待缓冲消耗，随后重试同清晰度拉流；
-      // 仅当同清晰度连续失败 3 次（已充分清理仍不足，如低配设备/极高码率）
-      // 才降一档清晰度（80→64→48），且降清后重置计数。
-      dashQuotaStrikes++
-      if (dashQuotaStrikes <= 3) {
-        console.warn(`[DASH] 配额不足，清理缓冲后重试同清晰度 (qn=${qn}, #${dashQuotaStrikes})`)
-        // 激进清理：保留播放点前 2s，其余已播区间全部移除（含音视频双缓冲）
-        const el = videoEl.value
-        const keepBefore = el ? Math.max(0, el.currentTime - 2) : 0
-        for (const b of dashBuffers.length ? dashBuffers : [sb]) {
-          try {
-            if (b.updating) continue
-            for (let i = b.buffered.length - 1; i >= 0; i--) {
-              const start = b.buffered.start(i)
-              const end = Math.min(b.buffered.end(i), keepBefore)
-              if (end > start + 1) b.remove(start, end)
-            }
-          } catch { /* 单个缓冲区清理失败不阻断 */ }
+    if (isQuota) {
+      // v3.6.2：配额不足 → 激进清理 + 等待缓冲消耗 + 重试同清晰度（不降清）
+      console.warn('[DASH] 配额不足，清理历史缓冲后等待消耗（保持当前清晰度）')
+      evictOldBuffers(videoEl.value, 2)  // 保留播放点前 2s，其余全清
+      // 等待缓冲消耗到 resume 水位以下，然后恢复拉流
+      try {
+        await new Promise(r => setTimeout(r, 500))
+        while (!ctrl.signal.aborted && videoEl.value && bufferedAhead() > DASH_BUFFER_RESUME) {
+          await waitEvent(videoEl.value, 'timeupdate', ctrl, 500)
         }
-        // 等待清理完成 + 缓冲消耗（最多 1.5s），然后重试同清晰度
-        try { await new Promise(r => setTimeout(r, 300)) } catch { /* ignore */ }
-        if (ctrl.signal.aborted) return
-        const qnNow = currentQn.value
-        if (qnNow === qn) {
-          // 若当前清晰度未变，重启同清晰度拉流（stopDash + startDash 全量重置缓冲）
-          try {
-            const page = currentView.value?.pages[currentPageIdx.value]
-            if (page) {
-              const res = await api!.biliPlayurl(currentView.value!.bvid, page.cid, currentQn.value, false)
-              if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
-                stopDash()
-                dashFinished = 0
-                await startDash(res.dash.video, res.dash.audio || [])
-                return
-              }
-            }
-          } catch { /* 重启失败继续走降清 */ }
+      } catch { /* ignore */ }
+      if (ctrl.signal.aborted) return
+      // 同清晰度重启拉流（全量重置缓冲），绝不自动降清
+      try {
+        const page = currentView.value?.pages[currentPageIdx.value]
+        if (page) {
+          const res = await api!.biliPlayurl(currentView.value!.bvid, page.cid, currentQn.value, false)
+          if (res.success && res.mode === 'dash' && res.dash && res.dash.video.length) {
+            stopDash()
+            dashFinished = 0
+            await startDash(res.dash.video, res.dash.audio || [])
+            return
+          }
         }
-        if (ctrl.signal.aborted) return
-      }
-      // 连续 3 次同清晰度仍配额不足 → 降一档清晰度（逐级，最低 480P）
-      dashQuotaStrikes = 0
-      if (qn > 80) {
-        switchQuality(80)
-        return
-      } else if (qn > 64) {
-        switchQuality(64)
-        return
-      } else if (qn > 48) {
-        switchQuality(48)
-        return
-      }
+      } catch { /* 重启失败：保持当前缓冲继续播放 */ }
+      if (ctrl.signal.aborted) return
+      // 无法重启：保留已缓冲内容继续播放，不设置错误页（避免中断观看）
+      return
     }
     playerError.value = `视频流加载失败：${(err as Error).message || err}，可尝试切换清晰度或重试`
+  }
+}
+
+/** v3.6.2：主动清理播放点前的历史缓冲区间（MSE 配额管理正解）。
+ *  保留 keepSeconds 秒（默认 10s）便于回拖，其余已播区间逐段移除（含碎片）。 */
+function evictOldBuffers(el: HTMLVideoElement | null, keepSeconds = 10): void {
+  if (!el || !dashBuffers.length) return
+  const keepBefore = Math.max(0, el.currentTime - keepSeconds)
+  for (const b of dashBuffers) {
+    try {
+      if (b.updating || !b.buffered.length) continue
+      for (let i = b.buffered.length - 1; i >= 0; i--) {
+        const start = b.buffered.start(i)
+        const end = Math.min(b.buffered.end(i), keepBefore)
+        if (end > start + 1) b.remove(start, end)
+      }
+    } catch { /* 单个缓冲区清理失败不阻断 */ }
   }
 }
 
@@ -1395,9 +1392,9 @@ function spawnDanmaku(dm: BiliDanmaku): void {
   if (!layer || !dm.text) return
   if (layer.childElementCount >= DM_MAX_VISIBLE) return
   const el = document.createElement('div')
-  // v3.6.1：样式全部行内设置，动画改用 Web Animations API（element.animate）驱动——
-  // 不依赖 CSS keyframes 注入，规避 scoped 样式、teleport、prefers-reduced-motion
-  // 导致 animation 不执行/不可见的问题（历史弹幕"看不到"的根源之一）。
+  // v3.6.2：**必须先 append 再 animate**——对未挂载文档的元素调用 element.animate()，
+  // 动画从创建时刻就开始计时，元素插入 DOM 时动画往往已结束（onfinish 已触发移除），
+  // 弹幕因此"完全看不到"。先挂载、后启动动画，保证动画在元素可见时正常播放。
   const s = el.style
   s.position = 'absolute'
   s.whiteSpace = 'nowrap'
@@ -1410,14 +1407,22 @@ function spawnDanmaku(dm: BiliDanmaku): void {
   s.pointerEvents = 'none'
   el.textContent = dm.text
   let lifeMs = 4000
+  // 滚动弹幕轨道分配（mode 1/2/3/6 统一按滚动处理）
+  if (dm.mode !== 4 && dm.mode !== 5) {
+    dmTrackRot = (dmTrackRot + 3) % 10
+    s.left = '100%'
+    s.top = `${dmTrackRot * 8 + 2}%`
+    lifeMs = Math.min(12, Math.max(6, 6 + dm.text.length * 0.15)) * 1000
+  }
+  layer.appendChild(el)
   let anim: Animation | null = null
-  if (dm.mode === 4 || dm.mode === 5) {
-    // 顶部 / 底部固定弹幕：原位停留数秒后淡出
-    s.left = '50%'
-    s.transform = 'translateX(-50%)'
-    if (dm.mode === 4) s.bottom = `${(dm.text.length % 3) * 32 + 6}px`
-    else s.top = `${(dm.text.length % 3) * 32 + 6}px`
-    try {
+  try {
+    if (dm.mode === 4 || dm.mode === 5) {
+      // 顶部 / 底部固定弹幕：原位停留数秒后淡出
+      s.left = '50%'
+      s.transform = 'translateX(-50%)'
+      if (dm.mode === 4) s.bottom = `${(dm.text.length % 3) * 32 + 6}px`
+      else s.top = `${(dm.text.length % 3) * 32 + 6}px`
       anim = el.animate(
         [
           { opacity: 0 },
@@ -1427,16 +1432,8 @@ function spawnDanmaku(dm: BiliDanmaku): void {
         ],
         { duration: 4000, easing: 'ease', fill: 'forwards' }
       )
-    } catch { /* 动画 API 不可用时退化为静态展示 */ }
-  } else {
-    // 滚动弹幕（mode 1/2/3/6 统一按滚动处理），时长随长度微调
-    dmTrackRot = (dmTrackRot + 3) % 10
-    s.left = '100%'
-    s.top = `${dmTrackRot * 8 + 2}%`
-    const dur = Math.min(12, Math.max(6, 6 + dm.text.length * 0.15))
-    lifeMs = dur * 1000
-    try {
-      // 从右缘向左滚出视口：translateX(0 → -(100% + 100vw))
+    } else {
+      // 滚动弹幕：从右缘向左滚出视口（挂载后启动动画，可见）
       anim = el.animate(
         [
           { transform: 'translateX(0)' },
@@ -1444,8 +1441,8 @@ function spawnDanmaku(dm: BiliDanmaku): void {
         ],
         { duration: lifeMs, easing: 'linear', fill: 'forwards' }
       )
-    } catch { /* 动画 API 不可用时静态展示（元素自带 transform） */ }
-  }
+    }
+  } catch { /* 动画 API 不可用：静态展示，兜底移除 */ }
   let removed = false
   const removeEl = () => { if (!removed) { removed = true; el.remove() } }
   if (anim) {
@@ -1453,7 +1450,6 @@ function spawnDanmaku(dm: BiliDanmaku): void {
   }
   // 兜底移除：动画事件丢失或动画被禁用时防止 DOM 泄漏
   setTimeout(removeEl, lifeMs + 500)
-  layer.appendChild(el)
 }
 
 // ── v3.5.5：UP 主卡片与投稿 ──
@@ -1952,7 +1948,9 @@ html.dark .bili-search-input {
 /* ── 播放器弹窗（v3.5.6：左右分栏，右侧栏承载 UP 主卡片/投稿/相关视频） ── */
 .bili-player-body {
   display: flex;
-  align-items: flex-start;
+  /* v3.6.2：stretch 等高——评论/投稿/相关列表卡片底部与左侧视频信息底部齐平，
+     不再固定 max-height 独立滚动造成左右底部错位 */
+  align-items: stretch;
   gap: 14px;
 }
 
@@ -1970,8 +1968,10 @@ html.dark .bili-search-input {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  max-height: 54vh;
-  overflow-y: auto;
+  min-height: 0;
+  /* v3.6.2：移除 max-height + 自身滚动——高度由 stretch 撑满与左侧齐平，
+     滚动下沉到内容区 .bili-side-content */
+  overflow: hidden;
   padding-right: 2px;
 }
 /* v3.6.0：作者卡片固定顶部，不参与滚动 */
@@ -2034,6 +2034,8 @@ html.dark .bili-search-input {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* v3.6.2：滚动下沉到内容区——列表底部与左侧视频信息底部齐平 */
+  overflow-y: auto;
 }
 .bili-section {
   flex: 1;
@@ -2042,11 +2044,12 @@ html.dark .bili-search-input {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: var(--mo-radius-sm);
-  overflow-y: auto;
-  max-height: calc(45vh - 180px);
+  /* v3.6.2：移除独立 max-height/滚动，由 .bili-side-content 统一滚动，
+     保证卡片列表高度随左侧伸展、底部齐平 */
+  overflow: hidden;
 }
 .bili-section.replies-only {
-  max-height: calc(45vh - 150px);
+  /* 保持 flex:1，无需独立高度限制 */
 }
 @media (max-width: 1100px) {
   .bili-section {
