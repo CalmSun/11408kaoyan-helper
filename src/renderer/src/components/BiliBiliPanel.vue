@@ -343,17 +343,8 @@
             <span v-if="qualityLabel" class="bili-quality-tag">{{ qualityLabel }}</span>
           </div>
         </div>
-        <!-- 分 P 横向列表（超过 1 P 时） -->
-        <div v-if="currentView && currentView.pages.length > 1" class="bili-pages-strip">
-          <button
-            v-for="(p, idx) in currentView.pages"
-            :key="p.cid"
-            class="bili-page-chip"
-            :class="{ active: idx === currentPageIdx }"
-            :title="p.part"
-            @click="switchPage(idx)"
-          >P{{ p.page }}</button>
-        </div>
+        <!-- v3.6.2：分 P 横向列表移出 main——main 仅含「视频 + 信息栏」，
+             侧栏 stretch 等高后底部恰与信息栏底部齐平（不再被分 P 条撑高） -->
         </div>
         <!-- v3.6.0：右侧栏 —— UP 主卡片 + 作品简介固定顶部，下方评论/投稿/相关切换 -->
         <div class="bili-player-side" v-if="currentView">
@@ -447,6 +438,18 @@
           </div>
         </div>
         </div>
+      </div>
+      <!-- v3.6.2：分 P 横向列表移至弹窗底部全宽（超过 1 P 时显示），
+           不再参与左侧 main 高度计算，保证侧栏底部与信息栏齐平 -->
+      <div v-if="currentView && currentView.pages.length > 1" class="bili-pages-strip">
+        <button
+          v-for="(p, idx) in currentView.pages"
+          :key="p.cid"
+          class="bili-page-chip"
+          :class="{ active: idx === currentPageIdx }"
+          :title="p.part"
+          @click="switchPage(idx)"
+        >P{{ p.page }}</button>
       </div>
     </el-dialog>
 
@@ -810,6 +813,8 @@ async function playVideo(v: BiliVideo): Promise<void> {
     // v3.5.5：UP 主卡片与弹幕（异步加载，不阻塞起播）
     loadUpCard(res.video.owner.mid)
     const firstPage = res.video.pages[0]
+    // v3.6.2：起播前即启动弹幕 rAF 循环（数据早到时不会漏发）
+    startDmLoop()
     loadDanmaku(firstPage?.cid || 0, firstPage?.durationSec || 0)
     // 相关视频推荐（异步加载，不阻塞播放）
     api.biliRelated(v.bvid).then(r => {
@@ -1171,6 +1176,8 @@ function onVideoError(): void {
 function onPlayerClose(): void {
   // 弹窗关闭：停止播放并清理，释放带宽与内存
   stopDash()
+  // v3.6.2：停止弹幕 rAF 循环
+  stopDmLoop()
   try { videoEl.value?.pause() } catch { /* ignore */ }
   videoSrc.value = ''
   segments = []
@@ -1337,6 +1344,8 @@ async function loadDanmaku(cid: number, durationSec = 0): Promise<void> {
       danmakuAll.value = res.list || []
       // v3.5.9：控制台输出解析到的弹幕条数便于排查
       console.log(`[弹幕] CID ${cid}: 解析到 ${danmakuAll.value.length} 条弹幕`)
+      // v3.6.2：弹幕数据就绪后启动 rAF 轮询发射（不依赖 timeupdate）
+      startDmLoop()
       // v3.5.7：弹幕晚于播放开始返回时，跳过已播过的部分，避免一次性补发刷屏
       const el = videoEl.value
       if (el && el.currentTime > 0) {
@@ -1346,18 +1355,22 @@ async function loadDanmaku(cid: number, durationSec = 0): Promise<void> {
         danmakuPtr.value = i
         danmakuLastTime = t
       }
+    } else {
+      // v3.6.2：拉取失败也给出明确日志，便于定位（不再静默）
+      console.warn(`[弹幕] CID ${cid}: 拉取失败 — ${res.message || '未知错误'}`)
     }
-  } catch { /* 弹幕加载失败不影响播放 */ }
+  } catch (err) { /* 弹幕加载失败不影响播放 */ console.warn('[弹幕] 加载异常', err) }
 }
 
-/** v3.6.1：弹幕动画已改用 Web Animations API（element.animate）驱动，
- *  不再依赖全局 CSS keyframes（ensureDmKeyframes 已移除，见 spawnDanmaku）。 */
+/** v3.6.2：弹幕渲染由 rAF 手动驱动（见 spawnDanmaku / onDanmakuTick） */
 function clearDanmakuLayer(): void {
   const layer = danmakuLayerEl.value
   if (layer) layer.innerHTML = ''
 }
 
-/** 由 video timeupdate 驱动：补发 (lastTime, currentTime] 区间内的弹幕 */
+/** 由 rAF 轮询驱动：补发 (lastTime, currentTime] 区间内的弹幕。
+ *  v3.6.2：不再依赖 video timeupdate 事件（DASH 模式下该事件可能不触发/频率低），
+ *  改为播放循环内每帧主动检查 currentTime，保证弹幕准时发射。 */
 function onDanmakuTick(): void {
   const el = videoEl.value
   if (!el || !danmakuEnabled.value || !danmakuAll.value.length) return
@@ -1368,6 +1381,24 @@ function onDanmakuTick(): void {
     if (dm.time > danmakuLastTime) spawnDanmaku(dm)
   }
   danmakuLastTime = t
+}
+
+// v3.6.2：rAF 播放循环——驱动弹幕发射（不再依赖 @timeupdate）
+let dmLoopRaf = 0
+let dmLoopActive = false
+function startDmLoop(): void {
+  if (dmLoopActive) return
+  dmLoopActive = true
+  const loop = () => {
+    if (!dmLoopActive) return
+    if (danmakuEnabled.value) onDanmakuTick()
+    dmLoopRaf = requestAnimationFrame(loop)
+  }
+  dmLoopRaf = requestAnimationFrame(loop)
+}
+function stopDmLoop(): void {
+  dmLoopActive = false
+  cancelAnimationFrame(dmLoopRaf)
 }
 
 /** 拖动进度条：清空屏幕弹幕并将指针二分定位到新时间点 */
@@ -1387,14 +1418,15 @@ function onVideoSeeking(): void {
   danmakuLastTime = t
 }
 
+/** v3.6.2：弹幕渲染彻底改为 requestAnimationFrame 手动驱动——
+ *  不依赖 element.animate / CSS animation（Electron 28 的 WAAPI 对
+ *  calc() 关键帧解析不可靠，动画失败则元素停在屏幕外被移除 = 看不到弹幕）。
+ *  滚动弹幕每帧用像素 transform 平移，固定弹幕每帧控制 opacity，绝对可见。 */
 function spawnDanmaku(dm: BiliDanmaku): void {
   const layer = danmakuLayerEl.value
   if (!layer || !dm.text) return
   if (layer.childElementCount >= DM_MAX_VISIBLE) return
   const el = document.createElement('div')
-  // v3.6.2：**必须先 append 再 animate**——对未挂载文档的元素调用 element.animate()，
-  // 动画从创建时刻就开始计时，元素插入 DOM 时动画往往已结束（onfinish 已触发移除），
-  // 弹幕因此"完全看不到"。先挂载、后启动动画，保证动画在元素可见时正常播放。
   const s = el.style
   s.position = 'absolute'
   s.whiteSpace = 'nowrap'
@@ -1406,50 +1438,61 @@ function spawnDanmaku(dm: BiliDanmaku): void {
   s.willChange = 'transform'
   s.pointerEvents = 'none'
   el.textContent = dm.text
-  let lifeMs = 4000
-  // 滚动弹幕轨道分配（mode 1/2/3/6 统一按滚动处理）
-  if (dm.mode !== 4 && dm.mode !== 5) {
-    dmTrackRot = (dmTrackRot + 3) % 10
-    s.left = '100%'
-    s.top = `${dmTrackRot * 8 + 2}%`
-    lifeMs = Math.min(12, Math.max(6, 6 + dm.text.length * 0.15)) * 1000
-  }
-  layer.appendChild(el)
-  let anim: Animation | null = null
-  try {
-    if (dm.mode === 4 || dm.mode === 5) {
-      // 顶部 / 底部固定弹幕：原位停留数秒后淡出
-      s.left = '50%'
-      s.transform = 'translateX(-50%)'
-      if (dm.mode === 4) s.bottom = `${(dm.text.length % 3) * 32 + 6}px`
-      else s.top = `${(dm.text.length % 3) * 32 + 6}px`
-      anim = el.animate(
-        [
-          { opacity: 0 },
-          { opacity: 1, offset: 0.08 },
-          { opacity: 1, offset: 0.8 },
-          { opacity: 0, offset: 1 }
-        ],
-        { duration: 4000, easing: 'ease', fill: 'forwards' }
-      )
-    } else {
-      // 滚动弹幕：从右缘向左滚出视口（挂载后启动动画，可见）
-      anim = el.animate(
-        [
-          { transform: 'translateX(0)' },
-          { transform: 'translateX(calc(-100% - 100vw))' }
-        ],
-        { duration: lifeMs, easing: 'linear', fill: 'forwards' }
-      )
-    }
-  } catch { /* 动画 API 不可用：静态展示，兜底移除 */ }
+  layer.appendChild(el)  // 先挂载，后驱动（宽度测量依赖挂载）
+
+  let raf = 0
   let removed = false
-  const removeEl = () => { if (!removed) { removed = true; el.remove() } }
-  if (anim) {
-    try { anim.onfinish = removeEl } catch { /* ignore */ }
+  const removeEl = () => {
+    if (removed) return
+    removed = true
+    cancelAnimationFrame(raf)
+    el.remove()
   }
-  // 兜底移除：动画事件丢失或动画被禁用时防止 DOM 泄漏
-  setTimeout(removeEl, lifeMs + 500)
+  const timer = dm.mode === 4 || dm.mode === 5
+    ? 4000
+    : Math.min(12, Math.max(6, 6 + dm.text.length * 0.15)) * 1000
+  // 兜底移除：rAF 异常中断时防止 DOM 泄漏
+  setTimeout(removeEl, timer + 500)
+
+  if (dm.mode === 4 || dm.mode === 5) {
+    // 顶部/底部固定弹幕：rAF 控制 opacity 淡入→停留→淡出
+    s.left = '50%'
+    s.transform = 'translateX(-50%)'
+    if (dm.mode === 4) s.bottom = `${(dm.text.length % 3) * 32 + 6}px`
+    else s.top = `${(dm.text.length % 3) * 32 + 6}px`
+    s.opacity = '0'
+    const start = performance.now()
+    const tick = (now: number) => {
+      if (removed) return
+      const p = (now - start) / 4000
+      if (p >= 1) { removeEl(); return }
+      if (p < 0.08) s.opacity = String(p / 0.08)
+      else if (p < 0.8) s.opacity = '1'
+      else s.opacity = String(Math.max(0, (1 - p) / 0.2))
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+  } else {
+    // 滚动弹幕：rAF 每帧平移 transform（从层右缘滚到左缘完全滚出）
+    dmTrackRot = (dmTrackRot + 3) % 10
+    s.left = '0'
+    s.top = `${dmTrackRot * 8 + 2}%`
+    const dur = timer
+    const start = performance.now()
+    const tick = (now: number) => {
+      if (removed) return
+      const layerW = layer.clientWidth
+      const elW = el.offsetWidth
+      const total = layerW + elW
+      if (total <= 0) { raf = requestAnimationFrame(tick); return }
+      const p = (now - start) / dur
+      if (p >= 1) { removeEl(); return }
+      const x = layerW - total * p
+      el.style.transform = `translateX(${x}px)`
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+  }
 }
 
 // ── v3.5.5：UP 主卡片与投稿 ──
@@ -2165,6 +2208,8 @@ html.dark .bili-select {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  /* v3.6.2：移至弹窗底部全宽后补充间距 */
+  margin-top: 14px;
 }
 
 .bili-page-chip {
