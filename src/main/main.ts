@@ -1636,36 +1636,51 @@ ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
       playlist?: {
         id: number; name: string; coverImgUrl?: string; playCount?: number
         trackCount?: number; description?: string
+        tracks?: Array<{
+          id: number; name: string; ar?: Array<{ name: string }>
+          al?: { name: string; picUrl?: string }; dt?: number
+        }>
       }
       code?: number
     }
     const pl = data.playlist
     if (!pl) return { success: false, playlist: null, tracks: [], message: '歌单不存在' }
 
-    // v3.6.4：改用 /v1/playlist/track/all 分页拉取全部歌曲。
-    // /v6/playlist/detail 的 tracks 只返回歌单前约 1000 首，超过则缺失。
-    const allTracks: Array<{ id: number; name: string; ar?: Array<{ name: string }>; al?: { name: string; picUrl?: string }; dt?: number }> = []
-    const LIMIT = 500
-    for (let offset = 0; offset < 100000; offset += LIMIT) {
-      const page = await neteaseSmartRequest('/v1/playlist/track/all', {
-        id,
-        limit: LIMIT,
-        offset
-      }) as { code?: number; songs?: Array<{ id: number; name: string; ar?: Array<{ name: string }>; al?: { name: string; picUrl?: string }; dt?: number }> }
-      const songs = page.songs || []
-      if (songs.length === 0) break
-      allTracks.push(...songs)
-      if (songs.length < LIMIT) break
-    }
-
-    const tracks = allTracks.map(t => ({
+    const mapTrack = (t: any) => ({
       id: t.id,
       name: t.name,
-      artist: (t.ar || []).map(a => a.name).join(' / '),
+      artist: (t.ar || []).map((a: any) => a.name).join(' / '),
       album: t.al?.name || '',
       cover: t.al?.picUrl || '',
       duration: t.dt || 0
-    }))
+    })
+    // 兜底：/v6/playlist/detail 返回的 tracks（前约1000首），保证即使全量接口失败也有内容
+    let tracks = (pl.tracks || []).map(mapTrack)
+
+    // 尝试：用 /v1/playlist/track/all 分页拉取全部歌曲（/v6 只返回前约1000首）。
+    // 任一分页失败都回退到上面的兜底 tracks，绝不让歌单内容为空。
+    try {
+      const allTracks: any[] = []
+      const LIMIT = 500
+      for (let offset = 0; offset < 100000; offset += LIMIT) {
+        const page = await neteaseSmartRequest('/v1/playlist/track/all', {
+          id,
+          limit: LIMIT,
+          offset
+        }) as { code?: number; songs?: any[] }
+        const songs = page.songs || []
+        if (songs.length === 0) break
+        allTracks.push(...songs)
+        if (songs.length < LIMIT) break
+      }
+      if (allTracks.length > 0) {
+        tracks = allTracks.map(mapTrack)
+      }
+    } catch (e) {
+      // 全量接口失败：保持兜底 tracks，不中断
+      console.error('[PlaylistDetail] track/all 失败，使用 detail 兜底:', String(e))
+    }
+
     return {
       success: true,
       playlist: {
