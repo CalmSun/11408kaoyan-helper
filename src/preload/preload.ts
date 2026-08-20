@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseCloudDrive: (pageSize?: number, pageNo?: number) => ipcRenderer.invoke('netease:cloud-drive', pageSize, pageNo),
   // v3.5.3：网易云歌曲下载URL（高音质）、云盘快传/匹配纠正/删除、歌曲详情
   neteaseDownloadUrl: (songId: number, level?: string) => ipcRenderer.invoke('netease:download-url', songId, level),
+  neteaseDownloadSong: (songId: number, artist: string, name: string, level?: string) => ipcRenderer.invoke('netease:download-song', songId, artist, name, level),
   neteaseCloudUploadCheck: (songs: Array<{md5: string; songId: number; bitrate: number; fileSize: number}>) => ipcRenderer.invoke('netease:cloud-upload-check', songs),
   neteaseCloudSongImport: (songs: Array<{songId: number; bitrate: number; song: string; artist: string; album: string; fileName: string}>) => ipcRenderer.invoke('netease:cloud-song-import', songs),
   neteaseCloudSongMatch: (songId: number, adjustSongId: number) => ipcRenderer.invoke('netease:cloud-song-match', songId, adjustSongId),

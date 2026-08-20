@@ -2136,6 +2136,216 @@ ipcMain.handle('netease:download-url', async (_e, songId: number, level = 'exhig
   }
 })
 
+// ── v3.5.3：网易云歌曲下载（主进程下载，控制文件名） ──
+
+ipcMain.handle('netease:download-song', async (_e, songId: number, artist: string, name: string, level = 'exhigh') => {
+  try {
+    // 获取下载URL
+    let data: any
+    try {
+      data = await neteaseSmartRequest('/song/enhance/download/url/v1', {
+        id: songId,
+        level,
+        encodeType: 'mp3'
+      }) as any
+    } catch {
+      data = await neteaseSmartRequest('/song/enhance/player/url/v1', {
+        ids: JSON.stringify([songId]),
+        level,
+        encodeType: 'mp3'
+      }) as any
+    }
+    const songData = data.data?.[0] || data.data
+    if (!songData?.url) {
+      return { success: false, message: '无法获取下载链接' }
+    }
+
+    // 让用户选择保存位置
+    const result = await dialog.showSaveDialog({
+      title: '保存歌曲',
+      defaultPath: `${artist} - ${name}.${songData.type || 'mp3'}`,
+      filters: [
+        { name: '音频文件', extensions: [songData.type || 'mp3'] }
+      ]
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, message: '用户取消' }
+    }
+
+    // 下载文件
+    const response = await net.fetch(songData.url)
+    if (!response.ok) {
+      return { success: false, message: `下载失败: HTTP ${response.status}` }
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    fs.writeFileSync(result.filePath, buffer)
+
+    // 同时下载歌词
+    let lyricSaved = false
+    try {
+      const lyricData = await neteaseSmartRequest('/song/lyric', { id: songId }) as any
+      if (lyricData?.lrc?.lyric) {
+        const lyricPath = result.filePath.replace(/\.[^.]+$/, '.lrc')
+        fs.writeFileSync(lyricPath, lyricData.lrc.lyric, 'utf-8')
+        lyricSaved = true
+      }
+    } catch { /* 歌词下载失败不影响主流程 */ }
+
+    return {
+      success: true,
+      filePath: result.filePath,
+      lyricPath: lyricSaved ? result.filePath.replace(/\.[^.]+$/, '.lrc') : null,
+      level: songData.level,
+      size: songData.size,
+      type: songData.type
+    }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
+// ── v3.5.3：网易云歌曲下载（主进程下载，控制文件名） ──
+
+ipcMain.handle('netease:download-song', async (_e, songId: number, artist: string, name: string, level = 'exhigh') => {
+  try {
+    // 获取下载URL
+    let data: any
+    try {
+      data = await neteaseSmartRequest('/song/enhance/download/url/v1', {
+        id: songId,
+        level,
+        encodeType: 'mp3'
+      }) as any
+    } catch {
+      data = await neteaseSmartRequest('/song/enhance/player/url/v1', {
+        ids: JSON.stringify([songId]),
+        level,
+        encodeType: 'mp3'
+      }) as any
+    }
+    const songData = data.data?.[0] || data.data
+    if (!songData?.url) {
+      return { success: false, message: '无法获取下载链接' }
+    }
+
+    // 让用户选择保存位置
+    const result = await dialog.showSaveDialog({
+      title: '保存歌曲',
+      defaultPath: `${artist} - ${name}.${songData.type || 'mp3'}`,
+      filters: [
+        { name: '音频文件', extensions: [songData.type || 'mp3'] }
+      ]
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, message: '用户取消' }
+    }
+
+    // 下载文件
+    const response = await net.fetch(songData.url)
+    if (!response.ok) {
+      return { success: false, message: `下载失败: HTTP ${response.status}` }
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    fs.writeFileSync(result.filePath, buffer)
+
+    // 同时下载歌词
+    let lyricSaved = false
+    try {
+      const lyricData = await neteaseSmartRequest('/song/lyric', { id: songId }) as any
+      if (lyricData?.lrc?.lyric) {
+        const lyricPath = result.filePath.replace(/\.[^.]+$/, '.lrc')
+        fs.writeFileSync(lyricPath, lyricData.lrc.lyric, 'utf-8')
+        lyricSaved = true
+      }
+    } catch { /* 歌词下载失败不影响主流程 */ }
+
+    return {
+      success: true,
+      filePath: result.filePath,
+      lyricPath: lyricSaved ? result.filePath.replace(/\.[^.]+$/, '.lrc') : null,
+      level: songData.level,
+      size: songData.size,
+      type: songData.type
+    }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
+// ── v3.5.3：网易云歌曲下载（主进程下载，控制文件名） ──
+
+ipcMain.handle('netease:download-song', async (_e, songId: number, artist: string, name: string, level = 'exhigh') => {
+  try {
+    // 获取下载URL
+    let data: any
+    try {
+      data = await neteaseSmartRequest('/song/enhance/download/url/v1', {
+        id: songId,
+        level,
+        encodeType: 'mp3'
+      }) as any
+    } catch {
+      data = await neteaseSmartRequest('/song/enhance/player/url/v1', {
+        ids: JSON.stringify([songId]),
+        level,
+        encodeType: 'mp3'
+      }) as any
+    }
+    const songData = data.data?.[0] || data.data
+    if (!songData?.url) {
+      return { success: false, message: '无法获取下载链接' }
+    }
+
+    // 让用户选择保存位置
+    const result = await dialog.showSaveDialog({
+      title: '保存歌曲',
+      defaultPath: `${artist} - ${name}.${songData.type || 'mp3'}`,
+      filters: [
+        { name: '音频文件', extensions: [songData.type || 'mp3'] }
+      ]
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, message: '用户取消' }
+    }
+
+    // 下载文件
+    const response = await net.fetch(songData.url)
+    if (!response.ok) {
+      return { success: false, message: `下载失败: HTTP ${response.status}` }
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer())
+    fs.writeFileSync(result.filePath, buffer)
+
+    // 同时下载歌词
+    let lyricSaved = false
+    try {
+      const lyricData = await neteaseSmartRequest('/song/lyric', { id: songId }) as any
+      if (lyricData?.lrc?.lyric) {
+        const lyricPath = result.filePath.replace(/\.[^.]+$/, '.lrc')
+        fs.writeFileSync(lyricPath, lyricData.lrc.lyric, 'utf-8')
+        lyricSaved = true
+      }
+    } catch { /* 歌词下载失败不影响主流程 */ }
+
+    return {
+      success: true,
+      filePath: result.filePath,
+      lyricPath: lyricSaved ? result.filePath.replace(/\.[^.]+$/, '.lrc') : null,
+      level: songData.level,
+      size: songData.size,
+      type: songData.type
+    }
+  } catch (err) {
+    return { success: false, message: String(err) }
+  }
+})
+
 // ── v3.5.3：云盘上传检查（检查文件是否已在云盘/CDN） ──
 
 ipcMain.handle('netease:cloud-upload-check', async (_e, songs: Array<{md5: string; songId: number; bitrate: number; fileSize: number}>) => {

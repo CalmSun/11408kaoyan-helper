@@ -1327,6 +1327,18 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  /** 主进程下载歌曲（控制文件名） */
+  async function downloadSong(songId: number, artist: string, name: string, level?: string): Promise<{ success: boolean; filePath?: string; lyricPath?: string; level?: string; size?: number; type?: string; message?: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseDownloadSong) return { success: false, message: 'API 不可用' }
+    try {
+      const res = await api.neteaseDownloadSong(songId, artist, name, level || qualityLevel.value)
+      return res
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
   /** 获取歌曲歌词 */
   async function getSongLyric(songId: number): Promise<{ success: boolean; lyric?: string; message?: string }> {
     const api = window.electronAPI
@@ -1347,30 +1359,38 @@ export const useMusicStore = defineStore('music', () => {
   /** 批量快传歌曲到云盘（通过歌曲ID获取文件信息后导入） */
   async function quickUploadSongs(songIds: number[], level?: string): Promise<{ success: boolean; message: string; results?: any[] }> {
     const api = window.electronAPI
-    if (!api?.neteaseSongUrl || !api?.neteaseCloudUploadCheck || !api?.neteaseCloudSongImport || !api?.neteaseCloudSongMatch) {
+    if (!api?.neteaseDownloadUrl || !api?.neteaseCloudUploadCheck || !api?.neteaseCloudSongImport || !api?.neteaseCloudSongMatch) {
       return { success: false, message: 'API 不可用' }
     }
     try {
       const results: any[] = []
-      // 第一步：获取歌曲文件信息（md5、size等）
-      const urlRes = await api.neteaseSongUrl(songIds, level || qualityLevel.value)
-      if (!urlRes.urls || urlRes.urls.length === 0) {
+      // 第一步：获取歌曲文件信息（md5、size等）- 使用 downloadUrl 接口获取完整信息
+      const fileInfos: any[] = []
+      for (const songId of songIds) {
+        const info = await api.neteaseDownloadUrl(songId, level || qualityLevel.value)
+        if (info.success && info.md5 && info.url) {
+          fileInfos.push({
+            songId,
+            md5: info.md5,
+            size: info.size || 0,
+            br: info.br || 128000,
+            url: info.url,
+            type: info.type || 'mp3'
+          })
+        }
+      }
+
+      if (fileInfos.length === 0) {
         return { success: false, message: '无法获取歌曲文件信息' }
       }
 
       // 第二步：检查文件是否已在云盘
-      const checkData = urlRes.urls
-        .filter((u: any) => u.md5 && u.url)
-        .map((u: any) => ({
-          md5: u.md5,
-          songId: u.id,
-          bitrate: Math.floor((u.br || 128000) / 1000),
-          fileSize: u.size || 0
-        }))
-
-      if (checkData.length === 0) {
-        return { success: false, message: '没有可快传的歌曲' }
-      }
+      const checkData = fileInfos.map((u: any) => ({
+        md5: u.md5,
+        songId: u.songId,
+        bitrate: Math.floor(u.br / 1000),
+        fileSize: u.size || 0
+      }))
 
       const checkRes = await api.neteaseCloudUploadCheck(checkData)
       if (!checkRes.success || !checkRes.data) {
@@ -1384,14 +1404,14 @@ export const useMusicStore = defineStore('music', () => {
       }
 
       const importData = needUpload.map((d: any) => {
-        const urlInfo = urlRes.urls.find((u: any) => u.id === d.songId)
+        const fileInfo = fileInfos.find((u: any) => u.songId === d.songId)
         return {
           songId: d.songId,
-          bitrate: Math.floor((urlInfo?.br || 128000) / 1000),
-          song: urlInfo?.name || '',
-          artist: urlInfo?.artist || '',
-          album: urlInfo?.album || '',
-          fileName: `${urlInfo?.artist || 'Unknown'} - ${urlInfo?.name || 'Unknown'}.${urlInfo?.type || 'mp3'}`.toLowerCase()
+          bitrate: Math.floor((fileInfo?.br || 128000) / 1000),
+          song: '', // 云盘会自动匹配
+          artist: '',
+          album: '',
+          fileName: `song_${d.songId}.${fileInfo?.type || 'mp3'}`
         }
       })
 
@@ -1559,6 +1579,7 @@ export const useMusicStore = defineStore('music', () => {
     toggleCommentLike,
     // v3.5.3：歌曲下载与云盘快传
     downloadSongUrl,
+    downloadSong,
     getSongLyric,
     quickUploadSongs,
     matchCloudSong,

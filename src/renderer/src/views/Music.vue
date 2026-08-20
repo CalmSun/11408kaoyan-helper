@@ -1002,41 +1002,21 @@ async function handleCommentLike(comment: { commentId: number; likedCount: numbe
   }
 }
 
-// v3.5.3：下载歌曲（同时下载音频和歌词）
+// v3.5.3：下载歌曲（同时下载音频和歌词到同一目录）
 async function handleDownloadSong(song: { id: number; name: string; artist: string }) {
   if (!song?.id) return
   downloadingSongId.value = song.id
   try {
-    // 获取下载URL
-    const result = await music.downloadSongUrl(song.id)
-    if (result.success && result.url) {
-      // 下载音频文件：歌手 - 歌曲名.格式
-      const audioLink = document.createElement('a')
-      audioLink.href = result.url
-      audioLink.download = `${song.artist} - ${song.name}.${result.type || 'mp3'}`
-      audioLink.target = '_blank'
-      document.body.appendChild(audioLink)
-      audioLink.click()
-      document.body.removeChild(audioLink)
-
-      // 同时下载歌词文件
-      const lyricResult = await music.getSongLyric(song.id)
-      if (lyricResult.success && lyricResult.lyric) {
-        const blob = new Blob([lyricResult.lyric], { type: 'text/plain' })
-        const url = URL.createObjectURL(blob)
-        const lyricLink = document.createElement('a')
-        lyricLink.href = url
-        lyricLink.download = `${song.artist} - ${song.name}.lrc`
-        document.body.appendChild(lyricLink)
-        lyricLink.click()
-        document.body.removeChild(lyricLink)
-        URL.revokeObjectURL(url)
-        ElMessage.success(`开始下载：${song.artist} - ${song.name}（含歌词）`)
+    // 使用主进程下载，一次选择保存位置，歌词自动保存在同一目录
+    const result = await music.downloadSong(song.id, song.artist, song.name)
+    if (result.success) {
+      if (result.lyricPath) {
+        ElMessage.success(`已下载：${song.artist} - ${song.name}（含歌词）`)
       } else {
-        ElMessage.success(`开始下载：${song.artist} - ${song.name}`)
+        ElMessage.success(`已下载：${song.artist} - ${song.name}`)
       }
-    } else {
-      ElMessage.error(result.message || '获取下载链接失败')
+    } else if (result.message !== '用户取消') {
+      ElMessage.error(result.message || '下载失败')
     }
   } catch (error) {
     ElMessage.error('下载失败：' + (error as Error).message)
