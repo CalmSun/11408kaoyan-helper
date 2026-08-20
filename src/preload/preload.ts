@@ -67,30 +67,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseCommentLike: (songId: number, commentId: number, like: boolean) => ipcRenderer.invoke('netease:comment-like', songId, commentId, like),
   // v3.2.2：网易云云盘歌曲
   neteaseCloudDrive: (pageSize?: number, pageNo?: number) => ipcRenderer.invoke('netease:cloud-drive', pageSize, pageNo),
-  // v3.5.3：哔哩哔哩（学习资料页集成：登录/收藏夹/搜索/推荐/播放）
-  biliQrKey: () => ipcRenderer.invoke('bili:qr-key'),
-  biliQrCheck: (key: string) => ipcRenderer.invoke('bili:qr-check', key),
-  biliLoginStatus: () => ipcRenderer.invoke('bili:login-status'),
-  biliLogout: () => ipcRenderer.invoke('bili:logout'),
-  biliSetCookie: (cookie: string) => ipcRenderer.invoke('bili:set-cookie', cookie),
-  biliPopular: (page?: number, pageSize?: number) => ipcRenderer.invoke('bili:popular', page, pageSize),
-  biliRelated: (bvid: string) => ipcRenderer.invoke('bili:related', bvid),
-  biliSearch: (keyword: string, page?: number) => ipcRenderer.invoke('bili:search', keyword, page),
-  biliFavFolders: () => ipcRenderer.invoke('bili:fav-folders'),
-  biliFavList: (mediaId: number, page?: number) => ipcRenderer.invoke('bili:fav-list', mediaId, page),
-  biliView: (bvid: string) => ipcRenderer.invoke('bili:view', bvid),
-  biliPlayurl: (bvid: string, cid: number, qn?: number, preferDurl?: boolean) => ipcRenderer.invoke('bili:playurl', bvid, cid, qn, preferDurl),
-  // v3.5.4：哔哩哔哩个性化推荐与视频交互（点赞/投币/收藏）
-  biliRcmd: (pageSize?: number, freshIdx?: number) => ipcRenderer.invoke('bili:rcmd', pageSize, freshIdx),
-  biliRelation: (aid: number) => ipcRenderer.invoke('bili:relation', aid),
-  biliLike: (aid: number, like: number) => ipcRenderer.invoke('bili:like', aid, like),
-  biliCoin: (aid: number, multiply: number) => ipcRenderer.invoke('bili:coin', aid, multiply),
-  biliFavToggle: (aid: number, mediaId: number, add: boolean) => ipcRenderer.invoke('bili:fav-toggle', aid, mediaId, add),
-  // v3.5.5：哔哩哔哩 DASH 高清晰度播放（流代理）、UP 主卡片与投稿
-  biliStreamToken: (url: string) => ipcRenderer.invoke('bili:stream-token', url),
-  biliCard: (mid: number) => ipcRenderer.invoke('bili:card', mid),
-  biliSpaceVideos: (mid: number, page?: number) => ipcRenderer.invoke('bili:space-videos', mid, page),
-  biliReply: (oid: number, page?: number) => ipcRenderer.invoke('bili:reply', oid, page),
+  // v3.5.3：网易云歌曲下载URL（高音质）、云盘快传/匹配纠正/删除、歌曲详情
+  neteaseDownloadUrl: (songId: number, level?: string) => ipcRenderer.invoke('netease:download-url', songId, level),
+  neteaseCloudUploadCheck: (songs: Array<{md5: string; songId: number; bitrate: number; fileSize: number}>) => ipcRenderer.invoke('netease:cloud-upload-check', songs),
+  neteaseCloudSongImport: (songs: Array<{songId: number; bitrate: number; song: string; artist: string; album: string; fileName: string}>) => ipcRenderer.invoke('netease:cloud-song-import', songs),
+  neteaseCloudSongMatch: (songId: number, adjustSongId: number) => ipcRenderer.invoke('netease:cloud-song-match', songId, adjustSongId),
+  neteaseCloudSongDelete: (songIds: number[]) => ipcRenderer.invoke('netease:cloud-song-delete', songIds),
+  neteaseSongDetail: (songIds: number[]) => ipcRenderer.invoke('netease:song-detail', songIds),
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

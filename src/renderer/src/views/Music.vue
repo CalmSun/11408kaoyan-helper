@@ -229,6 +229,14 @@
                 <el-button size="small" circle :type="music.isSongLiked(song.id) ? 'danger' : 'default'" @click="handleSongLike(song)">
                   <el-icon><StarFilled v-if="music.isSongLiked(song.id)" /><Star v-else /></el-icon>
                 </el-button>
+                <!-- v3.5.3：下载按钮 -->
+                <el-button size="small" circle @click="handleDownloadSong(song)" :loading="downloadingSongId === song.id" title="下载歌曲">
+                  <el-icon><Download /></el-icon>
+                </el-button>
+                <!-- v3.5.3：云盘快传按钮 -->
+                <el-button size="small" circle @click="handleQuickUpload(song)" :loading="uploadingSongId === song.id" title="快传到云盘">
+                  <el-icon><Upload /></el-icon>
+                </el-button>
               </div>
             </div>
           </div>
@@ -322,6 +330,10 @@
                   </el-button>
                   <el-button size="small" circle :type="music.isSongLiked(track.id) ? 'danger' : 'default'" @click="handleSongLike(track)">
                     <el-icon><StarFilled v-if="music.isSongLiked(track.id)" /><Star v-else /></el-icon>
+                  </el-button>
+                  <!-- v3.5.3：云盘歌曲下载按钮 -->
+                  <el-button size="small" circle @click="handleDownloadSong(track)" :loading="downloadingSongId === track.id" title="下载歌曲">
+                    <el-icon><Download /></el-icon>
                   </el-button>
                 </div>
               </div>
@@ -672,7 +684,7 @@ import {
   Headset, FolderOpened, Document, Delete, Search,
   VideoPlay, VideoPause, DArrowLeft, DArrowRight, Sort, StarFilled, Star,
   List, Plus, Close, User, InfoFilled, Loading,
-  TrendCharts, Trophy, ChatDotRound, Folder
+  TrendCharts, Trophy, ChatDotRound, Folder, Download, Upload
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
@@ -698,6 +710,10 @@ const cookieInput = ref('')
 const cookieLogging = ref(false)
 const viewingPlaylistId = ref(0)
 const viewingToplistId = ref(0)
+
+// v3.5.3：下载和上传状态
+const downloadingSongId = ref<number | null>(null)
+const uploadingSongId = ref<number | null>(null)
 
 const currentCover = computed(() => music.currentTrack?.cover || '')
 
@@ -967,6 +983,59 @@ async function handleCommentLike(comment: { commentId: number; likedCount: numbe
     ElMessage.success(wasLiked ? '已取消点赞' : '已点赞')
   } else {
     ElMessage.warning('点赞失败，请检查是否已登录')
+  }
+}
+
+// v3.5.3：下载歌曲
+async function handleDownloadSong(song: { id: number; name: string; artist: string }) {
+  if (!song?.id) return
+  downloadingSongId.value = song.id
+  try {
+    const result = await music.downloadSongUrl(song.id)
+    if (result.success && result.url) {
+      // 触发浏览器下载
+      const link = document.createElement('a')
+      link.href = result.url
+      link.download = `${song.artist} - ${song.name}.${result.type || 'mp3'}`
+      link.target = '_blank'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      ElMessage.success(`开始下载：${song.name}`)
+    } else {
+      ElMessage.error(result.message || '获取下载链接失败')
+    }
+  } catch (error) {
+    ElMessage.error('下载失败：' + (error as Error).message)
+  } finally {
+    downloadingSongId.value = null
+  }
+}
+
+// v3.5.3：快传歌曲到云盘
+async function handleQuickUpload(song: { id: number; name: string }) {
+  if (!song?.id) return
+  if (!music.neteaseLoggedIn) {
+    ElMessage.warning('请先登录网易云账号')
+    showLoginDialog.value = true
+    return
+  }
+  uploadingSongId.value = song.id
+  try {
+    const result = await music.quickUploadSongs([song.id])
+    if (result.success) {
+      ElMessage.success(result.message || '快传成功')
+      // 如果在云盘标签页，刷新云盘列表
+      if (neteaseTab.value === 'clouddrive') {
+        await music.fetchCloudDrive()
+      }
+    } else {
+      ElMessage.error(result.message || '快传失败')
+    }
+  } catch (error) {
+    ElMessage.error('快传失败：' + (error as Error).message)
+  } finally {
+    uploadingSongId.value = null
   }
 }
 

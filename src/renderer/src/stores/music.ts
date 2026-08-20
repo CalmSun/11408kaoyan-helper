@@ -1313,6 +1313,124 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  // ── v3.5.3：歌曲下载URL获取（高音质） ──
+
+  /** 获取歌曲下载URL（支持指定音质等级） */
+  async function downloadSongUrl(songId: number, level?: string): Promise<{ success: boolean; url?: string; level?: string; size?: number; type?: string; message?: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseDownloadUrl) return { success: false, message: 'API 不可用' }
+    try {
+      const res = await api.neteaseDownloadUrl(songId, level || qualityLevel.value)
+      return res
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
+  // ── v3.5.3：云盘快传（无需文件转存） ──
+
+  /** 批量快传歌曲到云盘（通过歌曲ID获取文件信息后导入） */
+  async function quickUploadSongs(songIds: number[], level?: string): Promise<{ success: boolean; message: string; results?: any[] }> {
+    const api = window.electronAPI
+    if (!api?.neteaseSongUrl || !api?.neteaseCloudUploadCheck || !api?.neteaseCloudSongImport || !api?.neteaseCloudSongMatch) {
+      return { success: false, message: 'API 不可用' }
+    }
+    try {
+      const results: any[] = []
+      // 第一步：获取歌曲文件信息（md5、size等）
+      const urlRes = await api.neteaseSongUrl(songIds, level || qualityLevel.value)
+      if (!urlRes.urls || urlRes.urls.length === 0) {
+        return { success: false, message: '无法获取歌曲文件信息' }
+      }
+
+      // 第二步：检查文件是否已在云盘
+      const checkData = urlRes.urls
+        .filter((u: any) => u.md5 && u.url)
+        .map((u: any) => ({
+          md5: u.md5,
+          songId: u.id,
+          bitrate: Math.floor((u.br || 128000) / 1000),
+          fileSize: u.size || 0
+        }))
+
+      if (checkData.length === 0) {
+        return { success: false, message: '没有可快传的歌曲' }
+      }
+
+      const checkRes = await api.neteaseCloudUploadCheck(checkData)
+      if (!checkRes.success || !checkRes.data) {
+        return { success: false, message: '检查云盘状态失败' }
+      }
+
+      // 第三步：导入需要上传的歌曲
+      const needUpload = checkRes.data.filter((d: any) => d.upload === 1)
+      if (needUpload.length === 0) {
+        return { success: true, message: '所有歌曲已在云盘中', results: [] }
+      }
+
+      const importData = needUpload.map((d: any) => {
+        const urlInfo = urlRes.urls.find((u: any) => u.id === d.songId)
+        return {
+          songId: d.songId,
+          bitrate: Math.floor((urlInfo?.br || 128000) / 1000),
+          song: urlInfo?.name || '',
+          artist: urlInfo?.artist || '',
+          album: urlInfo?.album || '',
+          fileName: `${urlInfo?.artist || 'Unknown'} - ${urlInfo?.name || 'Unknown'}.${urlInfo?.type || 'mp3'}`.toLowerCase()
+        }
+      })
+
+      const importRes = await api.neteaseCloudSongImport(importData)
+      if (!importRes.success) {
+        return { success: false, message: '导入云盘失败' }
+      }
+
+      // 第四步：匹配歌曲
+      const successSongs = importRes.data?.successSongs || []
+      for (const song of successSongs) {
+        if (song.song?.songId && song.song?.songId !== song.songId) {
+          await api.neteaseCloudSongMatch(song.song.songId, song.songId)
+        }
+        results.push({ songId: song.songId, success: true })
+      }
+
+      return { success: true, message: `成功快传 ${results.length} 首歌曲到云盘`, results }
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
+  // ── v3.5.3：云盘匹配纠正 ──
+
+  /** 纠正云盘歌曲匹配（将云盘歌曲关联到正确的歌曲ID） */
+  async function matchCloudSong(cloudSongId: number, targetSongId: number): Promise<{ success: boolean; message: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseCloudSongMatch) return { success: false, message: 'API 不可用' }
+    try {
+      const res = await api.neteaseCloudSongMatch(cloudSongId, targetSongId)
+      return { success: res.success, message: res.message || (res.success ? '匹配成功' : '匹配失败') }
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
+  /** 删除云盘歌曲 */
+  async function deleteCloudSongs(songIds: number[]): Promise<{ success: boolean; message: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseCloudSongDelete) return { success: false, message: 'API 不可用' }
+    try {
+      const res = await api.neteaseCloudSongDelete(songIds)
+      if (res.success) {
+        // 更新本地云盘列表
+        cloudDriveList.value = cloudDriveList.value.filter(s => !songIds.includes(s.id))
+        cloudDriveCount.value = Math.max(0, cloudDriveCount.value - songIds.length)
+      }
+      return { success: res.success, message: res.success ? `成功删除 ${songIds.length} 首歌曲` : '删除失败' }
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
   return {
     playlist,
     currentIndex,
@@ -1423,6 +1541,11 @@ export const useMusicStore = defineStore('music', () => {
     likedCommentIds,
     likingCommentId,
     isCommentLiked,
-    toggleCommentLike
+    toggleCommentLike,
+    // v3.5.3：歌曲下载与云盘快传
+    downloadSongUrl,
+    quickUploadSongs,
+    matchCloudSong,
+    deleteCloudSongs
   }
 })
