@@ -2185,7 +2185,7 @@ ipcMain.handle('netease:download-song', async (_e, songId: number, artist: strin
     // 同时下载歌词
     let lyricSaved = false
     try {
-      const lyricData = await neteaseSmartRequest('/song/lyric', { id: songId }) as any
+      const lyricData = await neteaseSmartRequest('/song/lyric', { id: songId, lv: -1, kv: -1, tv: -1 }) as any
       if (lyricData?.lrc?.lyric) {
         const lyricPath = result.filePath.replace(/\.[^.]+$/, '.lrc')
         fs.writeFileSync(lyricPath, lyricData.lrc.lyric, 'utf-8')
