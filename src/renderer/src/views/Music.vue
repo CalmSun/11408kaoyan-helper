@@ -716,7 +716,7 @@
       </div>
       <div class="batch-select-list">
         <el-checkbox-group v-model="batchSelected" class="batch-select-group">
-          <label v-for="s in batchSongList" :key="s.id" class="batch-select-item">
+          <label v-for="s in batchPageList" :key="s.id" class="batch-select-item">
             <el-checkbox :value="s.id">
               <span class="batch-item-name">{{ s.name }}</span>
               <span class="batch-item-artist" v-if="s.artist"> - {{ s.artist }}</span>
@@ -724,6 +724,9 @@
           </label>
         </el-checkbox-group>
         <div v-if="!batchSongList.length" class="batch-select-empty">暂无可操作的歌曲</div>
+        <div v-else-if="batchVisible < batchSongList.length" class="batch-select-more" @click="loadMoreBatchSelect">
+          加载更多（已显示 {{ Math.min(batchVisible, batchSongList.length) }} / {{ batchSongList.length }}）
+        </div>
       </div>
       <template #footer>
         <el-button @click="batchDialogVisible = false">取消</el-button>
@@ -1127,10 +1130,14 @@ async function handleCloudLocalUpload() {
 // v3.6.4：批量操作（选择歌曲 → 上传云盘 / 批量下载）
 const batchDialogVisible = ref(false)
 const batchMode = ref<'upload' | 'download'>('download')
-const batchSongList = ref<{ id: number; name: string; artist: string }[]>([])
+const batchSongList = ref<{ id: number; name: string; artist: string; album?: string }[]>([])
 const batchSelected = ref<number[]>([])
 const batchRunning = ref(false)
 const batchAll = ref(false)
+// v3.6.4：批量选择列表懒加载，每页 100 首
+const batchPageSize = 100
+const batchVisible = ref(batchPageSize)
+const batchPageList = computed(() => batchSongList.value.slice(0, batchVisible.value))
 const batchIndeterminate = computed(
   () => batchSelected.value.length > 0 && batchSelected.value.length < batchSongList.value.length
 )
@@ -1146,7 +1153,11 @@ function openBatchSelect(mode: 'upload' | 'download', list: { id: number; name?:
   }))
   batchSelected.value = batchSongList.value.map((s) => s.id)
   batchAll.value = true
+  batchVisible.value = batchPageSize
   batchDialogVisible.value = true
+}
+function loadMoreBatchSelect() {
+  batchVisible.value += batchPageSize
 }
 function toggleBatchAll(val: boolean) {
   batchSelected.value = val ? batchSongList.value.map((s) => s.id) : []
@@ -1168,7 +1179,9 @@ async function batchConfirm() {
         showLoginDialog.value = true
         return
       }
-      const res = await music.quickUploadSongs(selectedSongs)
+      // 强制构造普通对象，避免把 reactive 元素传入 IPC
+      const plain = selectedSongs.map((s) => ({ id: Number(s.id), name: String(s.name || ''), artist: String(s.artist || ''), album: String(s.album || '') }))
+      const res = await music.quickUploadSongs(plain)
       if (res.success) {
         ElMessage.success(res.message || '批量上传完成')
         if (neteaseTab.value === 'clouddrive') await music.fetchCloudDrive()
@@ -1176,7 +1189,8 @@ async function batchConfirm() {
         ElMessage.error(res.message || '批量上传失败')
       }
     } else {
-      const res = await music.batchDownloadSongs(selectedSongs)
+      const plain = selectedSongs.map((s) => ({ id: Number(s.id), name: String(s.name || ''), artist: String(s.artist || '') }))
+      const res = await music.batchDownloadSongs(plain)
       if (res.canceled) return
       if (res.success) {
         ElMessage.success(`批量下载完成：成功 ${res.successCount}/${res.total}`)
@@ -2122,6 +2136,16 @@ body.liquid-glass .glass-card:hover {
   color: #909399;
   padding: 20px;
   font-size: 13px;
+}
+.batch-select-more {
+  text-align: center;
+  color: #409eff;
+  padding: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.batch-select-more:hover {
+  color: #79bbff;
 }
 
 .playlist-tracks {

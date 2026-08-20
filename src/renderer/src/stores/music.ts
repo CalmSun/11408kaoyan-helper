@@ -1414,57 +1414,77 @@ export const useMusicStore = defineStore('music', () => {
         return { success: false, message: '无法获取歌曲文件信息' }
       }
 
-      // 第二步：检查文件是否已在云盘
-      const checkData = fileInfos.map((u: any) => ({
-        md5: u.md5,
-        songId: u.songId,
-        bitrate: Math.floor(u.br / 1000),
-        fileSize: u.size || 0
-      }))
-
-      const checkRes = await api.neteaseCloudUploadCheck(checkData)
-      if (!checkRes.success || !checkRes.data) {
-        return { success: false, message: '检查云盘状态失败' }
-      }
-
-      // 第三步：导入需要上传的歌曲
-      const needUpload = checkRes.data.filter((d: any) => d.upload === 1)
-      if (needUpload.length === 0) {
-        return { success: true, message: '所有歌曲已在云盘中', results: [] }
-      }
-
-      const importData = needUpload.map((d: any) => {
-        const fileInfo = fileInfos.find((u: any) => u.songId === d.songId)
+      // 第二步：批量检查 + 导入。分批进行（每批 BATCH 首），避免单次接口请求过大被拒
+      const BATCH = 100
+      let uploadedCount = 0
+      let firstFailMessage = ''
+      // 单首导入（导入成功且需要匹配时自动纠正关联）
+      const importOne = async (d: any, fileInfo: any): Promise<boolean> => {
         const meta = metaById[d.songId] || { name: '', artist: '', album: '' }
         const name = meta.name || `song_${d.songId}`
         const artist = meta.artist
         const fileName = `${name}${artist ? ' - ' + artist : ''}.${fileInfo?.type || 'mp3'}`.replace(/[\\/:*?"<>|]/g, '_')
-        return {
+        const imp = await api.neteaseCloudSongImport([{
           songId: d.songId,
           bitrate: Math.floor((fileInfo?.br || 128000) / 1000),
           song: name,
           artist,
           album: meta.album,
           fileName
+        }])
+        if (!imp.success) return false
+        const ss = imp.data?.successSongs || []
+        if (ss.length) {
+          const song = ss[0]
+          if (song.song?.songId && song.song?.songId !== song.songId) {
+            try { await api.neteaseCloudSongMatch(song.song.songId, song.songId) } catch { /* 关联失败不影响上传 */ }
+          }
+          results.push({ songId: song.songId, success: true })
         }
-      })
-
-      const importRes = await api.neteaseCloudSongImport(importData)
-      if (!importRes.success) {
-        // 透出接口的真实错误，便于定位
-        return { success: false, message: importRes.message || '导入云盘失败' }
+        return true
+      }
+      for (let i = 0; i < fileInfos.length; i += BATCH) {
+        const chunk = fileInfos.slice(i, i + BATCH)
+        const checkData = chunk.map((u: any) => ({
+          md5: u.md5,
+          songId: u.songId,
+          bitrate: Math.floor(u.br / 1000),
+          fileSize: u.size || 0
+        }))
+        let chunkCheck: any
+        try {
+          chunkCheck = await api.neteaseCloudUploadCheck(checkData)
+        } catch (e) {
+          chunkCheck = { success: false, message: String(e) }
+        }
+        if (!chunkCheck.success || !chunkCheck.data) {
+          // 整批失败：记录原因，并逐首回退尝试，尽量补上能成功的
+          firstFailMessage = firstFailMessage || (chunkCheck.message || '检查云盘状态失败')
+          for (const u of chunk) {
+            try {
+              const one = await api.neteaseCloudUploadCheck([{
+                md5: u.md5, songId: u.songId, bitrate: Math.floor(u.br / 1000), fileSize: u.size || 0
+              }])
+              if (one.success && one.data && one.data[0]?.upload === 1) {
+                const ok = await importOne(one.data[0], u)
+                if (ok) uploadedCount++
+              }
+            } catch { /* 单首检查失败忽略 */ }
+          }
+          continue
+        }
+        const needUpload = chunkCheck.data.filter((d: any) => d.upload === 1)
+        for (const d of needUpload) {
+          const fileInfo = chunk.find((u: any) => u.songId === d.songId)
+          const ok = await importOne(d, fileInfo)
+          if (ok) uploadedCount++
+        }
       }
 
-      // 第四步：匹配歌曲
-      const successSongs = importRes.data?.successSongs || []
-      for (const song of successSongs) {
-        if (song.song?.songId && song.song?.songId !== song.songId) {
-          await api.neteaseCloudSongMatch(song.song.songId, song.songId)
-        }
-        results.push({ songId: song.songId, success: true })
+      if (uploadedCount === 0 && firstFailMessage) {
+        return { success: false, message: firstFailMessage }
       }
-
-      return { success: true, message: `成功快传 ${results.length} 首歌曲到云盘`, results }
+      return { success: true, message: `成功快传 ${uploadedCount} 首歌曲到云盘`, results }
     } catch (err) {
       return { success: false, message: String(err) }
     }
