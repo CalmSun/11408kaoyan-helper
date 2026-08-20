@@ -428,6 +428,14 @@
                   <el-button size="small" circle :type="music.isSongLiked(track.id) ? 'danger' : 'default'" @click="handleSongLike(track)">
                     <el-icon><StarFilled v-if="music.isSongLiked(track.id)" /><Star v-else /></el-icon>
                   </el-button>
+                  <!-- v3.5.3：排行榜歌曲下载按钮 -->
+                  <el-button size="small" circle @click="handleDownloadSong(track)" :loading="downloadingSongId === track.id" title="下载歌曲">
+                    <el-icon><Download /></el-icon>
+                  </el-button>
+                  <!-- v3.5.3：排行榜歌曲云盘快传按钮 -->
+                  <el-button size="small" circle @click="handleQuickUpload(track)" :loading="uploadingSongId === track.id" title="快传到云盘">
+                    <el-icon><Upload /></el-icon>
+                  </el-button>
                 </div>
               </div>
             </div>
@@ -504,6 +512,14 @@
                   </el-button>
                   <el-button size="small" circle :type="music.isSongLiked(track.id) ? 'danger' : 'default'" @click="handleSongLike(track)">
                     <el-icon><StarFilled v-if="music.isSongLiked(track.id)" /><Star v-else /></el-icon>
+                  </el-button>
+                  <!-- v3.5.3：歌单歌曲下载按钮 -->
+                  <el-button size="small" circle @click="handleDownloadSong(track)" :loading="downloadingSongId === track.id" title="下载歌曲">
+                    <el-icon><Download /></el-icon>
+                  </el-button>
+                  <!-- v3.5.3：歌单歌曲云盘快传按钮 -->
+                  <el-button size="small" circle @click="handleQuickUpload(track)" :loading="uploadingSongId === track.id" title="快传到云盘">
+                    <el-icon><Upload /></el-icon>
                   </el-button>
                 </div>
               </div>
@@ -986,22 +1002,39 @@ async function handleCommentLike(comment: { commentId: number; likedCount: numbe
   }
 }
 
-// v3.5.3：下载歌曲
+// v3.5.3：下载歌曲（同时下载音频和歌词）
 async function handleDownloadSong(song: { id: number; name: string; artist: string }) {
   if (!song?.id) return
   downloadingSongId.value = song.id
   try {
+    // 获取下载URL
     const result = await music.downloadSongUrl(song.id)
     if (result.success && result.url) {
-      // 触发浏览器下载
-      const link = document.createElement('a')
-      link.href = result.url
-      link.download = `${song.artist} - ${song.name}.${result.type || 'mp3'}`
-      link.target = '_blank'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      ElMessage.success(`开始下载：${song.name}`)
+      // 下载音频文件：歌手 - 歌曲名.格式
+      const audioLink = document.createElement('a')
+      audioLink.href = result.url
+      audioLink.download = `${song.artist} - ${song.name}.${result.type || 'mp3'}`
+      audioLink.target = '_blank'
+      document.body.appendChild(audioLink)
+      audioLink.click()
+      document.body.removeChild(audioLink)
+
+      // 同时下载歌词文件
+      const lyricResult = await music.getSongLyric(song.id)
+      if (lyricResult.success && lyricResult.lyric) {
+        const blob = new Blob([lyricResult.lyric], { type: 'text/plain' })
+        const url = URL.createObjectURL(blob)
+        const lyricLink = document.createElement('a')
+        lyricLink.href = url
+        lyricLink.download = `${song.artist} - ${song.name}.lrc`
+        document.body.appendChild(lyricLink)
+        lyricLink.click()
+        document.body.removeChild(lyricLink)
+        URL.revokeObjectURL(url)
+        ElMessage.success(`开始下载：${song.artist} - ${song.name}（含歌词）`)
+      } else {
+        ElMessage.success(`开始下载：${song.artist} - ${song.name}`)
+      }
     } else {
       ElMessage.error(result.message || '获取下载链接失败')
     }

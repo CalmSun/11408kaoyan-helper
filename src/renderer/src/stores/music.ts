@@ -1327,6 +1327,21 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  /** 获取歌曲歌词 */
+  async function getSongLyric(songId: number): Promise<{ success: boolean; lyric?: string; message?: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseLyric) return { success: false, message: 'API 不可用' }
+    try {
+      const res = await api.neteaseLyric(songId)
+      if (res.success && res.lyric) {
+        return { success: true, lyric: res.lyric }
+      }
+      return { success: false, message: '无歌词' }
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
   // ── v3.5.3：云盘快传（无需文件转存） ──
 
   /** 批量快传歌曲到云盘（通过歌曲ID获取文件信息后导入） */
@@ -1544,6 +1559,7 @@ export const useMusicStore = defineStore('music', () => {
     toggleCommentLike,
     // v3.5.3：歌曲下载与云盘快传
     downloadSongUrl,
+    getSongLyric,
     quickUploadSongs,
     matchCloudSong,
     deleteCloudSongs
