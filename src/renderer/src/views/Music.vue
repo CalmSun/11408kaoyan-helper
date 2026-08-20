@@ -308,7 +308,7 @@
               <el-button size="small" :loading="cloudUploading" @click="handleCloudLocalUpload">
                 <el-icon><Upload /></el-icon> 本地上传
               </el-button>
-              <el-button size="small" :loading="cloudBatchDownloading" @click="handleBatchDownloadCloud">
+              <el-button size="small" :loading="batchRunning" @click="openBatchSelect('download', music.cloudDriveList)">
                 <el-icon><Download /></el-icon> 批量下载
               </el-button>
             </div>
@@ -496,7 +496,15 @@
               <el-button size="small" :loading="music.playlistLoading" @click="music.addPlaylistToQueue(music.currentPlaylistTracks)">
                 <el-icon><Plus /></el-icon> 添加到队列
               </el-button>
+              <!-- v3.6.4：歌单批量上传云盘(快传) + 批量下载 -->
+              <el-button size="small" :loading="batchRunning" @click="openBatchSelect('upload', music.currentPlaylistTracks)">
+                <el-icon><Upload /></el-icon> 批量上传云盘
+              </el-button>
+              <el-button size="small" :loading="batchRunning" @click="openBatchSelect('download', music.currentPlaylistTracks)">
+                <el-icon><Download /></el-icon> 批量下载
+              </el-button>
             </div>
+            <div v-if="cloudOpStatus" class="cloud-op-status">{{ cloudOpStatus }}</div>
             <div class="playlist-tracks">
               <div v-if="music.playlistLoading" class="search-loading">
                 <el-icon class="is-loading"><Loading /></el-icon> 加载中...
@@ -698,6 +706,32 @@
         <el-button :loading="music.commentsLoading" @click="loadMoreComments">加载更多</el-button>
       </div>
     </el-dialog>
+
+    <!-- v3.6.4：批量操作歌曲选择对话框 -->
+    <el-dialog v-model="batchDialogVisible" :title="batchMode === 'upload' ? '选择要上传到云盘的歌曲' : '选择要下载的歌曲'" width="560px" :close-on-click-modal="false">
+      <div class="batch-select-toolbar">
+        <el-checkbox v-model="batchAll" :indeterminate="batchIndeterminate" @change="toggleBatchAll">全选</el-checkbox>
+        <el-button size="small" text @click="invertBatchSelect">反选</el-button>
+        <span class="batch-select-count">已选 {{ batchSelected.length }} / {{ batchSongList.length }}</span>
+      </div>
+      <div class="batch-select-list">
+        <el-checkbox-group v-model="batchSelected" class="batch-select-group">
+          <label v-for="s in batchSongList" :key="s.id" class="batch-select-item">
+            <el-checkbox :value="s.id">
+              <span class="batch-item-name">{{ s.name }}</span>
+              <span class="batch-item-artist" v-if="s.artist"> - {{ s.artist }}</span>
+            </el-checkbox>
+          </label>
+        </el-checkbox-group>
+        <div v-if="!batchSongList.length" class="batch-select-empty">暂无可操作的歌曲</div>
+      </div>
+      <template #footer>
+        <el-button @click="batchDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="batchRunning" :disabled="!batchSelected.length" @click="batchConfirm">
+          确认{{ batchMode === 'upload' ? '上传' : '下载' }}（{{ batchSelected.length }}）
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -740,7 +774,6 @@ const downloadingSongId = ref<number | null>(null)
 const uploadingSongId = ref<number | null>(null)
 // v3.6.3：云盘本地上传 + 批量下载状态与进度
 const cloudUploading = ref(false)
-const cloudBatchDownloading = ref(false)
 const cloudOpStatus = ref('')
 
 const currentCover = computed(() => music.currentTrack?.cover || '')
@@ -1091,28 +1124,65 @@ async function handleCloudLocalUpload() {
   }
 }
 
-// v3.6.3：云盘歌曲批量下载（一次选目录，音频 + 同目录 .lrc）
-async function handleBatchDownloadCloud() {
-  if (!music.cloudDriveList.length) {
-    ElMessage.warning('云盘暂无歌曲')
-    return
-  }
-  cloudBatchDownloading.value = true
+// v3.6.4：批量操作（选择歌曲 → 上传云盘 / 批量下载）
+const batchDialogVisible = ref(false)
+const batchMode = ref<'upload' | 'download'>('download')
+const batchSongList = ref<{ id: number; name: string; artist: string }[]>([])
+const batchSelected = ref<number[]>([])
+const batchRunning = ref(false)
+const batchAll = ref(false)
+const batchIndeterminate = computed(
+  () => batchSelected.value.length > 0 && batchSelected.value.length < batchSongList.value.length
+)
+
+function openBatchSelect(mode: 'upload' | 'download', list: { id: number; name: string; artist: string }[]) {
+  batchMode.value = mode
+  batchSongList.value = list || []
+  batchSelected.value = batchSongList.value.map((s) => s.id)
+  batchAll.value = true
+  batchDialogVisible.value = true
+}
+function toggleBatchAll(val: boolean) {
+  batchSelected.value = val ? batchSongList.value.map((s) => s.id) : []
+}
+function invertBatchSelect() {
+  const all = batchSongList.value.map((s) => s.id)
+  batchSelected.value = all.filter((id) => !batchSelected.value.includes(id))
+}
+async function batchConfirm() {
+  const selectedSongs = batchSongList.value.filter((s) => batchSelected.value.includes(s.id))
+  if (!selectedSongs.length) return
+  batchDialogVisible.value = false
+  batchRunning.value = true
   cloudOpStatus.value = ''
   try {
-    const songs = music.cloudDriveList.map((s) => ({ id: s.id, name: s.name, artist: s.artist }))
-    const res = await music.batchDownloadSongs(songs)
-    if (res.canceled) return
-    if (res.success) {
-      ElMessage.success(`批量下载完成：成功 ${res.successCount} / ${res.total}`)
-      if (res.failCount) ElMessage.error(`失败 ${res.failCount} 首：${res.failed?.map((f) => f.name).join('、')}`)
+    if (batchMode.value === 'upload') {
+      if (!music.neteaseLoggedIn) {
+        ElMessage.warning('请先登录网易云账号')
+        showLoginDialog.value = true
+        return
+      }
+      const res = await music.quickUploadSongs(selectedSongs.map((s) => s.id))
+      if (res.success) {
+        ElMessage.success(res.message || '批量上传完成')
+        if (neteaseTab.value === 'clouddrive') await music.fetchCloudDrive()
+      } else {
+        ElMessage.error(res.message || '批量上传失败')
+      }
     } else {
-      ElMessage.error(res.message || '下载失败')
+      const res = await music.batchDownloadSongs(selectedSongs)
+      if (res.canceled) return
+      if (res.success) {
+        ElMessage.success(`批量下载完成：成功 ${res.successCount}/${res.total}`)
+        if (res.failCount) ElMessage.error(`失败 ${res.failCount} 首：${res.failed?.map((f) => f.name).join('、')}`)
+      } else {
+        ElMessage.error(res.message || '下载失败')
+      }
     }
   } catch (e) {
-    ElMessage.error('下载失败：' + (e as Error).message)
+    ElMessage.error('批量操作失败：' + (e as Error).message)
   } finally {
-    cloudBatchDownloading.value = false
+    batchRunning.value = false
     cloudOpStatus.value = ''
   }
 }
@@ -2003,6 +2073,49 @@ body.liquid-glass .glass-card:hover {
   color: #909399;
   margin-bottom: 10px;
   word-break: break-all;
+}
+
+/* v3.6.4：批量操作选择对话框 */
+.batch-select-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.batch-select-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: #909399;
+}
+.batch-select-list {
+  max-height: 360px;
+  overflow-y: auto;
+  border-top: 1px solid var(--el-border-color-light, #ebeef5);
+}
+.batch-select-group {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.batch-select-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--el-border-color-lighter, #f0f2f5);
+}
+.batch-item-name {
+  font-size: 13px;
+}
+.batch-item-artist {
+  font-size: 12px;
+  color: #909399;
+}
+.batch-select-empty {
+  text-align: center;
+  color: #909399;
+  padding: 20px;
+  font-size: 13px;
 }
 
 .playlist-tracks {
