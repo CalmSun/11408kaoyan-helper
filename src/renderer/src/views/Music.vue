@@ -1145,24 +1145,26 @@ function openBatchSelect(list: { id: number; name?: string; artist?: string }[])
     name: String(s?.name ?? ''),
     artist: String(s?.artist ?? '')
   }))
-  batchSelected.value = batchSongList.value.map((s) => s.id)
-  batchAll.value = true
   batchVisible.value = batchPageSize
+  // 打开时只默认勾选「已加载」的一页，未加载的歌曲不算入选择
+  batchSelected.value = batchSongList.value.slice(0, batchVisible.value).map((s) => s.id)
+  batchAll.value = true
   batchDialogVisible.value = true
 }
 function loadMoreBatchSelect() {
   batchVisible.value += batchPageSize
 }
-// v3.6.4：全选只勾选「已加载分页」内的歌曲，避免一次性全选带来的大列表操作
-function toggleBatchAll(val: boolean) {
+// v3.6.4：全选只勾选「已加载分页」内的歌曲，未加载的不处理；取消全选只清除已加载的勾选
+function toggleBatchAll(checked: boolean) {
   const loaded = batchSongList.value.slice(0, batchVisible.value)
-  if (batchAll.value) {
-    // 走全选：已加载全部勾上；保留此前手动勾选的未加载项不变
-    batchSelected.value = Array.from(new Set([...batchSelected.value, ...loaded.map((s) => s.id)]))
+  const loadedIds = loaded.map((s) => s.id)
+  if (checked) {
+    // 全选：仅把已加载的勾上，保留未加载的手动勾选
+    batchSelected.value = Array.from(new Set([...batchSelected.value, ...loadedIds]))
   } else {
-    // 取消全选时清除已加载的勾选，保留未加载的手动勾选
-    const loadedIds = new Set(loaded.map((s) => s.id))
-    batchSelected.value = batchSelected.value.filter((id) => !loadedIds.has(id))
+    // 取消全选：清除已加载的勾选，未加载的手动勾选保留
+    const loadedSet = new Set(loadedIds)
+    batchSelected.value = batchSelected.value.filter((id) => !loadedSet.has(id))
   }
 }
 function invertBatchSelect() {
@@ -1774,6 +1776,10 @@ body.liquid-glass .glass-card:hover {
   display: flex;
   gap: 4px;
   flex-shrink: 0;
+  /* v3.6.4：按钮较多时允许换行并垂直居中，避免图标按钮被挤压错位 */
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .search-empty {
@@ -2075,6 +2081,9 @@ body.liquid-glass .glass-card:hover {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+  /* v3.6.4：批量按钮较多时允许换行 + 垂直居中，避免图标与文字按钮错位 */
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 /* v3.6.3：云盘上传/下载进度提示 */
