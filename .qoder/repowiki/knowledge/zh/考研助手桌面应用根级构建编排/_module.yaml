@@ -1,0 +1,19 @@
+schema_version: 1
+module_path: ""
+title: 考研助手桌面应用根级构建编排
+scope:
+    - README.md
+    - overview.md
+    - CLAUDE.md
+    - .gitignore
+    - .gitattributes
+    - package.json
+    - package-lock.json
+    - tsconfig.json
+    - tsconfig.node.json
+    - vite.config.ts
+    - 启动开发版.bat
+    - background.jpg
+source_files: []
+depends_on: []
+related_to: []

@@ -5,16 +5,7 @@
         <el-icon><Folder /></el-icon>
         学习资料
       </h2>
-      <!-- v3.6.2：模式切换按钮上移，与"学习资料"标题、文件夹/刷新按钮同一行 -->
-      <div class="materials-mode-switch">
-        <button class="mode-btn" :class="{ active: materialsMode === 'local' }" @click="materialsMode = 'local'">
-          <el-icon><FolderOpened /></el-icon> 本地资料
-        </button>
-        <button class="mode-btn" :class="{ active: materialsMode === 'bili' }" @click="enterBili">
-          <el-icon><VideoCamera /></el-icon> 哔哩哔哩
-        </button>
-      </div>
-      <div class="materials-actions" :class="{ 'is-hidden': materialsMode === 'bili' }">
+      <div class="materials-actions">
         <el-button size="small" type="primary" @click="pickFolder">
           <el-icon><FolderOpened /></el-icon> 选择资料文件夹
         </el-button>
@@ -25,7 +16,7 @@
       </div>
     </div>
 
-    <div class="materials-body" v-show="materialsMode === 'local'" v-if="flatFiles.length > 0">
+    <div class="materials-body" v-if="flatFiles.length > 0">
       <!-- 文件树 -->
       <div class="file-list glass-card">
         <h3 class="section-title">
@@ -299,20 +290,13 @@
     </div>
 
     <!-- 空状态 -->
-    <div v-else v-show="materialsMode === 'local'" class="empty-state glass-card">
+    <div v-else class="empty-state glass-card">
       <el-icon :size="64"><FolderOpened /></el-icon>
       <h3>暂无资料</h3>
       <p>选择一个包含 PDF、MP4 等文件的文件夹</p>
       <el-button type="primary" @click="pickFolder">
         <el-icon><FolderOpened /></el-icon> 选择资料文件夹
       </el-button>
-    </div>
-
-    <!-- v3.5.3：哔哩哔哩在线视频面板（登录/收藏夹/搜索/推荐/播放）。
-         首次切入才挂载（biliVisited），之后 v-show 保活，视频播放不被模式切换打断；
-         本地资料功能完全独立，互不影响。 -->
-    <div v-if="biliVisited" v-show="materialsMode === 'bili'" class="bili-host">
-      <BiliBiliPanel />
     </div>
   </div>
 </template>
@@ -322,23 +306,12 @@ import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watc
 import { ElMessage } from 'element-plus'
 import {
   Folder, FolderOpened, Refresh, Document, VideoPlay, Files,
-  View, Warning, ArrowRight, ArrowLeft, List, Loading, Open, InfoFilled, VideoCamera
+  View, Warning, ArrowRight, ArrowLeft, List, Loading, Open, InfoFilled
 } from '@element-plus/icons-vue'
-// v3.5.3：哔哩哔哩在线视频面板（学习资料页集成，独立组件不影响本地资料逻辑）
-import BiliBiliPanel from '@/components/BiliBiliPanel.vue'
 // v3.5.2：统一文档预览（PDF / Office / 图片 → 全部走 createViewer 多插件架构）
 // PDF 使用 pdfPlugin（pdfjs-dist），与 Office/图片共用同一套页码跟踪和工具栏逻辑。
 // 所有插件按需动态加载，避免常驻体积。
 import '@open-file-viewer/core/style.css'
-
-// v3.5.3：本地资料 / 哔哩哔哩模式切换（v-show 保活，切换不打断 PDF 阅读与视频播放）
-const materialsMode = ref<'local' | 'bili'>('local')
-// B 站面板懒挂载标记：首次切入"哔哩哔哩"才创建组件，避免未使用时占用网络与内存
-const biliVisited = ref(false)
-function enterBili(): void {
-  biliVisited.value = true
-  materialsMode.value = 'bili'
-}
 
 // v2.9.2：使用全局 MaterialNode 类型（树形结构）
 interface DisplayNode extends MaterialNode {
@@ -1727,27 +1700,10 @@ function downloadFile() {
 }
 
 .materials-header {
-  /* v3.6.2：三列网格布局——标题居左、切换按钮居中、文件夹/刷新按钮居右。
-     切换按钮列固定居中，右列（actions）在 bili 模式下用 visibility 隐藏但保留占位，
-     从而切换本地/哔哩时按钮位置与整体布局保持不动（旧 flex space-between + v-show
-     会在 actions display:none 后把切换按钮挤到最右，造成位置漂移）。 */
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 12px;
   margin-bottom: 20px;
-}
-
-.materials-header .page-title {
-  justify-self: start;
-}
-
-.materials-header .materials-mode-switch {
-  justify-self: center;
-}
-
-.materials-header .materials-actions {
-  justify-self: end;
 }
 
 .page-title {
@@ -1766,56 +1722,6 @@ function downloadFile() {
   gap: 8px;
 }
 
-/* v3.6.2：bili 模式下隐藏文件夹/刷新按钮，但用 visibility 保留布局占位，
-   确保切换按钮（居中列）位置不随模式切换而变化 */
-.materials-actions.is-hidden {
-  visibility: hidden;
-  pointer-events: none;
-}
-
-/* v3.5.4：模式切换独立成行并水平居中，两种模式下位置统一 */
-/* v3.6.2：模式切换已上移至 .materials-header 同一行，原独立 mode-bar 行移除 */
-/* v3.5.3：本地资料 / 哔哩哔哩模式切换（胶囊分段控件，玻璃拟态） */
-.materials-mode-switch {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 999px;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
-  /* v3.6.2：在 header 行内不被压缩 */
-  flex-shrink: 0;
-}
-
-.materials-mode-switch .mode-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 16px;
-  border: none;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--mo-text-2);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  white-space: nowrap;
-}
-
-.materials-mode-switch .mode-btn:hover {
-  color: var(--mo-text-1);
-}
-
-.materials-mode-switch .mode-btn.active {
-  color: #fff;
-  background: var(--mo-accent);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
-}
-
 .folder-path {
   font-size: 12px;
   color: var(--mo-text-3);
@@ -1829,17 +1735,7 @@ function downloadFile() {
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: 16px;
-  /* v3.6.2：mode-bar 独立行已移除（切换按钮并入 header 行），
-     内容区可用高度增加，由 calc(100% - 70px) 收紧为 calc(100% - 56px) */
-  height: calc(100% - 56px);
-}
-
-/* v3.6.2：B 站面板宿主——水平居中，使面板内容中心与顶栏
-   "本地资料/哔哩哔哩"切换按钮（同容器居中）严格对齐 */
-.bili-host {
-  display: flex;
-  justify-content: center;
-  min-height: 0;
+  height: calc(100% - 70px);
 }
 
 .glass-card {

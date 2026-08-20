@@ -1,185 +1,47 @@
-# 11408 考研助手 v3.6.2 更新概述
+# v3.5.2 更新：项目精简（清理构建备份/临时产物，零功能影响）+ PDF 黑屏根治 + 回环 HTTP 资源服务 + 进度栏移至顶栏左侧
 
-本次迭代（覆盖更新）：**修复拖动进度条仍重置 + appendBuffer 报错**、**移动播放悬浮窗口卡片（右移）**、**模式切换按钮上移至顶栏同一行**、**优化高清晰度视频播放卡顿**、**修复切换按钮位置漂移**、**缩短推荐/热门卡片高度**、**视频信息缓存加速二次起播**、**封面图片异步解码**、**修复流拉取 502 与播放自动停止**、**播放机制重构（durl 原生播放优先）**。
+## 本轮：项目精简（最终交付）
 
-## 1. 修复拖动进度条报错 `SourceBuffer has been removed` 与仍重置到开头
+### 清理清单（全部为未跟踪/被忽略的可再生产物与开发期一次性工具，功能零影响）
+| 项 | 说明 |
+|---|------|
+| `dist.prev-*` ×6（各 22M） | 构建备份目录（.gitignore `dist.*/` 已忽略），可随时重建 |
+| `release-v352/`（897M）、`release/`（133M） | electron-builder 构建输出，可再生（CI 自动重建） |
+| `check-proc.mjs` / `check-worker.mjs` / `kill-proc.mjs` / `clean-release.mjs` / `rename-release.mjs` | 开发期一次性辅助脚本（进程检查/终止、release 目录改名绕锁定），未被 package.json/vite.config/scripts 引用 |
+| `.tmp-upload-v352.mjs` | 临时 GitHub asset 上传脚本 |
+| `git` / `main`（0 字节空文件，**已跟踪**） | 历史误提交的空文件，本次删除并提交记录 |
+| `tsconfig.node.tsbuildinfo` | tsc 增量缓存（*.tsbuildinfo 已忽略），下次构建自动重建 |
 
-### 根因
-拖动进度条超出缓冲时触发 `seekDashIfNeeded` 重启拉流管道（stopDash 销毁旧 MediaSource + startDash 新建），存在两类竞态：
-1. **旧 pumpTrack 竞态 append**：旧管道 `reader.read()` resolve 出数据后，若未检查 abort 就 `appendBuffer` 到**已从 MediaSource 移除的 SourceBuffer** → 抛 `InvalidStateError: This SourceBuffer has been removed from the parent media source` → 被 pumpTrack catch 显示为"视频流加载失败…"错误页（用户实测报错）；
-2. **连续快速拖动并发重启**：多次 `seekDashIfNeeded` 并发，`pendingSeekSec` 模块变量互相覆盖、旧管道覆盖新管道 → 播放头被重置到开头/管道错乱。
-
-### 修复（全链路防护，仅改 BiliBiliPanel.vue）
-| 防线 | 实现 |
-|---|---|
-| **append 竞态静默** | `appendWithQuotaGuard`：abort 后直接返回；catch 中 `InvalidStateError`/`InvalidAccessError`/`AbortError`（管道替换类）**一律静默返回**，不再向 UI 报错；`pumpTrack` 的 `reader.read()` 返回后、evict 前、append 后均加 abort 检查；pumpTrack catch 同样静默管道替换类错误 |
-| **并发重启序列防护** | `seekDashIfNeeded` 增加 `dashRestartSeq` 序列号：每次重启递增，`getPlayurlCached` 完成后若序列已过期（期间用户又拖了）→ **丢弃本次重启**，防止旧管道覆盖新管道 |
-| **seek 目标显式传递** | `startDash` 增加 `seekSecOverride` 参数（seekDashIfNeeded 显式传目标），`pendingSeekSec` 仅作默认——并发重启互不污染 |
-| **就绪轮询绑定管道** | `scheduleSeekAfterReady` 绑定本管道的 SourceBuffer/MediaSource，旧管道轮询因 `ms !== mediaSource` 直接退出，不误 seek |
-| **Range 失败回退** | Range 分支（HEAD/init/seg）任一失败 → try/catch **静默回退从头拉取**，不抛错不显示错误页 |
-
-## 2. 移动播放悬浮窗口卡片（右移）
-
-- **修正对象**：用户所指"播放卡片"是**播放视频时的悬浮窗口卡片**（el-dialog 播放器弹窗），而非整个 B 站面板——此前误将右移加在面板上，本轮撤销。
-- **撤销**：`.bili-host` 的 `padding-left: 160px`（面板右移）已移除；`.bili-panel` 的 `flex: 0 1 auto` 还原为 `flex: 1`。
-- **正确实现**：`.bili-player-dialog { margin-left: 160px; }`——播放悬浮窗（el-dialog，`align-center` + `append-to-body` + `width: min(1400px, 96vw)`）默认视口居中，`margin-left: 160px` 使其**中心相对视口水平中心右移约 80px**；用 margin 而非 transform，避免与 el-dialog 打开动画（zoom-in）的 transform 冲突。
-
-## 3. 模式切换按钮上移至顶栏同一行
-
-- "本地资料 / 哔哩哔哩"切换按钮从独立一行（原 `.materials-mode-bar`）**上移并入 `.materials-header`**，与"学习资料"标题、选择资料文件夹按钮、刷新按钮**同一行**（header 为 `flex + space-between`：标题左、切换按钮中、操作按钮右）；
-- 移除 `.materials-mode-bar` 模板与 CSS；`.materials-mode-switch` 加 `flex-shrink: 0` 防压缩；`.materials-body` 高度由 `calc(100% - 70px)` 收紧为 `calc(100% - 56px)`（让出原 mode-bar 行的高度）。
-
-## 4. 优化高清晰度视频播放卡顿
-
-高清晰度（1080P+）卡顿的三个主要来源与优化（仅改 BiliBiliPanel.vue）：
-
-| 优化项 | 内容 |
-|---|---|
-| **轨道选择优先 H.264 + 低码率** | `pickDashTrack`：同清晰度下**优先 avc1（H.264，Electron Chromium 硬件解码）**轨道，规避 hev/av1 软解卡顿；组内取**带宽最低**的轨道，降低缓冲/网络压力（仍是该清晰度） |
-| **缓冲水位按清晰度自适应** | 新增 `applyBufferWatermark(qn)`：qn≥80（1080P+）用**低水位 18s/8s**（高码率下 30s 缓冲会快速打满 MSE 配额，频繁 Quota 清理/重拉是高清卡顿主因）；低清晰度保持 30s/12s 保证流畅；`loadStream` 获取可播放清晰度后调用 |
-| **append 流水线化** | `appendWithQuotaGuard`：`appendBuffer` 后**不再等待 updateend**——SourceBuffer 内部队列自动串行，下次 append 前的 `sb.updating` 检查处理排队；QuotaExceededError 由 appendBuffer 同步抛出不影响配额保护；大 chunk 连续追加吞吐显著提升 |
-
-## 5. 验证与发布
-
-- `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误（ElMessage / pomodoro），零新增；
-- 行为模拟 24 项断言全 PASS：并发重启序列（慢旧丢弃/快新应用/串行应用）、append 竞态静默分类（abort/InvalidState/Quota/网络错误）、read 后 abort 提前返回、Range 失败回退、就绪轮询管道绑定、轨道选择（同 qn 优先 avc 低带宽/无 avc 选 hev 低带宽/无匹配 qn 选 avc）、水位自适应（1080P+ 低水位 18/8、低清 30/12）；
-- 产物核查：面板右移特征（`padding-left:160px`）**已消失**、悬浮窗右移（`margin-left:160px`）已编入、`InvalidStateError` 静默防护已编入、`materials-mode-bar` 已移除、`calc(100% - 56px)` 已生效、`avc1` 轨道选择特征已编入；
-- 版本号 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
-
-## 6. 本轮追加修复（2026-08-18）
-
-| 项目 | 内容 |
-|---|---|
-| **切换按钮位置固定** | `.materials-header` 由 `flex + space-between` 改为三列 `grid`（标题居左 / 切换按钮居中 / 文件夹·刷新按钮居右）；bili 模式下 `.materials-actions` 由 `v-show`（`display:none`）改为 `visibility: hidden` 占位——旧实现会在 actions 隐藏后把切换按钮挤到最右，造成切换本地/哔哩时位置漂移，现固定不动 |
-| **缩短卡片高度** | `.bili-card-info` padding `8/10 → 6/8`、`.bili-card-title` min-height `36 → 34`、`.bili-card-meta` margin-top `6 → 4`，个性推荐/热门推荐卡片整体更紧凑（两行标题仍完整显示） |
-| **二次起播加速** | 新增 `getViewCached`：`biliView` 结果缓存 5 分钟 TTL（LRU 上限 40 条），配合已有 playurl 10 分钟缓存，重开同一视频免重复请求 |
-| **图片异步解码** | 推荐/热门/收藏/搜索封面与投稿/相关缩略图 `img` 加 `decoding="async"`，减少 24 张卡片同时解码造成的主线程卡顿 |
-
-验证：`vite build` 到临时目录 `✓ built`；`vue-tsc` 仅 2 个预存无关错误（main.ts ElMessage / stores pomodoro），改动文件零新增错误。
-
-## 7. 修复"流拉取失败（HTTP 502）"与"播放自动停止"（2026-08-18 晚）
-
-| 项目 | 根因 | 修复 |
-|---|---|---|
-| **HTTP 502 报错** | `startDash` 只用 `vTrack.baseUrl` 单个 CDN 地址拉流，B 站备用 CDN（`backupUrl`）从未使用；主节点 502/被限流时无备用可切，`pumpTrack` 直接抛"流拉取失败（HTTP 502）" | `startDash` 收集 `[baseUrl, ...backupUrl]` 全部候选地址并逐一签发代理 token；`pumpTrack` 阶段一按候选地址**轮换**——非 2xx 或网络异常自动 `continue` 切下一个，全部失败才报错 |
-| **播放自动停止** | DASH 流播放中 CDN 连接被掐断：`reader.read()` 提前返回 `done` 或抛 `TypeError`，旧逻辑一律按"自然结束"或"加载失败"处理 → `endOfStream()` 后视频停住 / 直接弹错误页 | ① 读取中断（`.catch` 捕获网络错误）→ 触发 `recoverDashStream()` 续播；② `done` 时对比已知时长（`durationSec`），未播到末尾判定为提前断流 → 同样触发续播；③ `recoverDashStream()` 复用 Range 重启（`startDash(..., currentTime)`）从断点续播，带 `dashRecoverySeq` 并发防护 + 30 秒内限 5 次防网络持续抖动无限重启 |
-| **管道替换竞态防护** | 备用地址轮换期间可能发生 `appendBuffer` 到已移除 SourceBuffer | 阶段一 catch 中 `InvalidStateError/InvalidAccessError/AbortError` 静默返回；`QuotaExceededError` 透传外层配额恢复，不在此换地址 |
-
-验证：`vite build` 到临时目录 `✓ built in 35.49s`；`vue-tsc` 改动文件零新增错误（仅 2 个预存无关错误）。
-
-补充完善（66cfb9f）：
-- **Range 定位 init 重复追加**：init 与目标偏移流改为并行拉取、两者都成功才追加 init——避免 init 已追加但流片段失败后从头重拉造成 init 重复追加（备用地址轮换下更易触发）；
-- **主进程流代理 pipe 错误处理**：`Readable.pipe` 前挂 `error` 监听，upstream 中途断流时 `res.destroy()`，让渲染层明确感知中断并触发自动恢复，避免响应静默挂起表现为缓冲卡住。
-- 验证：`vue-tsc` + `tsc -p tsconfig.node.json`（主进程）均通过，`vite build` 到临时目录 `✓ built in 35.28s`。
-
-回归修复（5dd6659）：
-- **视频无法播放（回归根因）**：上轮"提前断流自动恢复"用 `el.currentTime` 判断是否读完——正常播放读完整个文件时 `currentTime` 可能还很小（刚起播/短文件快网络整文件迅速缓冲完），被误判为断流 → 无限重启恢复 → 30 秒 5 次上限后报"网络不稳定"，视频完全无法正常播放。
-- **修复**：判据改为**本轨道 SourceBuffer 缓冲最远位置** `sbBufferedEnd(sb) < knownDur - 2` 才算真断流；新增 `sbBufferedEnd` 辅助函数（不用 `videoEl.buffered` 的 union——音频文件小常先读完，union 会误判音频轨）。恢复逻辑与 Range 续播保持不变。
-- 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 39.26s`。
-
-播放器弹窗右移生效（f5b010b）：
-- **根因**：`.bili-player-dialog { margin-left: 160px }` 写在 `<style scoped>` 块中，而 el-dialog 设置了 `append-to-body` 渲染到 body 下——scoped CSS 的 `[data-v-xxx]` 属性选择器不会附加到 body 下的元素，该选择器**从 v3.6.2 起就匹配不上**，等同于未生效，所以弹窗从未真正右移。
-- **修复**：把该样式从 `<style scoped>` 块移至文件末尾新增的**非 scoped `<style>` 块**，成为全局样式才能命中 body 下的 `.bili-player-dialog`，`margin-left: 160px` 终于生效（中心相对视口中心右移约 80px）。
-- 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 35.05s`。
-
-播放自动停止（起播即暂停、无法继续）修复（c582cf8）：
-- **根因**：seek 续播（拖到缓冲外/恢复进度）与断流恢复都会走 `stopDash()`（撤销旧 blob URL → video 进入 paused）+ `startDash()`（仅改 src）。但**没有任何地方调用 `play()`**——首次播放靠 `<video autoplay>` 属性，而"仅改 src"的重新加载不会再次触发 autoplay，video 停在 paused，点击播放按钮也因无缓冲数据推动而无法继续。
-- **修复**：`startDash` 的 `sourceopen` 回调里 `seekSec <= 0`（从头起播）时显式 `play()`；`scheduleSeekAfterReady` 的 seek 定位后（含超时兜底分支）显式 `play()`。确保起播/管道重启/续播后都能恢复播放。
-- 验证：`vue-tsc` 改动文件零新增错误，`vite build` 到临时目录 `✓ built in 39.72s`。
-
-播放地址 Wbi 签名 + buvid 预获取（a0e64d4，参考 bilibili-api-collect）：
-- **优化点**：playurl 由未签名的 `/x/player/playurl` 改为 **Wbi 签名**的 `/x/player/wbi/playurl`——未签名老接口易被风控限流（表现为 HTTP 502 / 清晰度受限），签名后地址更完整稳定。复用已有 `biliWbiSign`/`biliEnsureWbiKeys` 基础设施（rcmd 接口早已在用）。
-- **回退兼容**：签名失败或接口异常（含 `code !== 0`）时自动回退老接口，保证不破坏原有解析逻辑。
-- **buvid 预获取**：启动时 `void biliEnsureBuvid()` 预取 buvid3/buvid4 设备标识（降低风控），playurl 内 `await biliEnsureBuvid()` 幂等兜底。
-- 验证：主进程 `tsc -p tsconfig.node.json` exit 0。
-
----
-
-### 历史（v3.6.2 前序轮次）
-
-- **appendBuffer removed 根治 + 播放卡片右移（已修正为悬浮窗）**（523066d）
-- **侧栏 58vh 滚动修复 + 拖动 Range 定位 + playurl 缓存 + 卡片居中**（ccc9564）
-- **侧栏 63→51vh 内部滚动 + 修复"一直跳开头"**（9c32dee）
-- **侧栏 1.5 倍 + 移除弹幕 + 进度保存续播**（571dd00）
-- **弹窗关闭 Assignment to constant variable**（5046309）
-- **弹幕 rAF 像素驱动重构**（55d6003）；**弹幕时序 bug + 降清移除**（d31723c）
-
----
-
-## 播放机制重构：durl 原生播放优先（本轮核心）
-
-### 背景
-多轮修复（降清/拖动重置/appendBuffer 报错/高清卡顿）后，自建 DASH 播放引擎（MSE + 手动拉流泵 + 回环代理 + Range 定位）链路仍过于复杂脆弱，用户反馈"播放体验极差"。决定**机制级重构**：默认回到浏览器原生播放器。
-
-### 方案（仅改 BiliBiliPanel.vue）
-- **`loadStream` 默认 `preferDurl = true`**：优先 durl 合并流直连（`videoSrc` 绑定，浏览器原生接管缓冲/seek/进度条/分片续播）——起播快（无 IPC token/MSE 开销）、拖动秒跳（原生 seek）、无手动泵的各类问题；
-- **DASH 降级为兜底**：durl 不可用（版权受限/接口异常/返回空）时 `loadStream(false)` 重新请求走 DASH（保留 4K/8K 高清能力）；
-- **`getPlayurlCached` 同步缓存 durl 结果**（原只缓存 dash），重开/切清晰度二次起播更快；
-- **实测验证**（node 直连 B 站）：fnval=4048 响应同时含 durl；durl URL 直连可播（`206 + video/mp4 + Accept-Ranges: bytes`），无防盗链拒绝 → video 元素可原生加载；
-- 既有防护全部保留：拖动 seek（durl 模式由浏览器原生处理，`seekDashIfNeeded` 因 `mediaSource=null` 自动跳过）、进度保存/续播（与播放模式无关）、onVideoError 备用 CDN 切换、清晰度下拉（durl 请求按 qn 重新拉取，超高清晰度 durl 不可达时自动落回 DASH）。
+### 保留（功能/资料性文件，一律不动）
+`src/`、`scripts/copy-pdfjs-assets.mjs`、`dist/`（当前完整构建：main/preload/renderer + 169 cmaps + 16 字体）、`assets/`、`resources/`、`background.jpg`、`CLAUDE.md`、`README.md`、`ref-api/`（刻意 gitignore 的参考资料）、`.workbuddy/`（工作记忆）、`启动开发版.bat`
 
 ### 验证
-- 行为模拟 11 项断言全 PASS：durl 可用 → 原生播放 / durl 空或失败 → 回退 DASH / DASH 兜底路径 / 均不可用 → 错误 / durl+dash 结果均可缓存；
-- `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误，零新增；
-- 产物核查：`durl 不可用，回退 DASH` 特征已编入；
-- 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
+- 删除前逐项确认：全部目标均 untracked 或被 .gitignore 忽略（除 git/main 为误提交空文件，无功能语义）
+- `dist/` 完整性核查通过：dist/main/main.js（含回环服务 127.0.0.1×5）+ dist/preload/preload.js + dist/renderer + pdfjs 169+16
+- 未改动任何功能源码（src/ 时间戳无变化），构建/类型/运行时行为不受影响
 
 ---
 
-## 修复"未获取到播放地址（版权受限或清晰度不足）"（durl/dash 互兜底）
+## 历史记录（本轮之前同版本累积）
 
-### 根因（重构回归）
-上一轮播放机制重构默认 `preferDurl=true` 后，主进程 playurl 逻辑仍是旧的：
-`if (!preferDurl && dash) return dash; else 走 durl`——当 `preferDurl=true` 且该视频/清晰度 **durl 为空（只有 dash）** 时，直接 throw `未获取到播放地址`，渲染层 `!res.success` 也直接报错、**没有回退 DASH**。
+### PDF 黑屏根治（getTextContent 防御性包装，修正 namespace 兼容）
+- **根因 A**：库 pdfPlugin.renderPage 把 canvas 渲染（核心）与文本层 getTextContent（可选增强）放同一 try/catch（dist/index.js:6128/6136/6138/6176-6182），getTextContent 抛异常（worker 侧 circular reference / Type3 bbox / CID 字体 CMap→Unicode 构建无 try/catch 等）→ catch-all 用错误页替换已成功渲染的 canvas =「一瞬间有效画面后黑屏」。render 路径对字体失败有 ErrorFont 兜底 → CMap 资产不是黑屏直接触发点（历史 4 轮资产修复未根治与此一致）。
+- **根因 B（回归）**：`import('pdfjs-dist/legacy/build/pdf.mjs')` 返回 ES module namespace（不可扩展、属性只读），旧补丁 `pdfjs.__ofvGetTextContentPatched = true` 抛 `Cannot add property ... not extensible`；`getDocument` 替换同样抛 read only。
+- **修复**：`patchPdfGetTextContent(pdfjs)` 基于 namespace **浅拷贝生成可写代理**（`{ ...pdfjs }`，GlobalWorkerOptions 仍同引用、workerSrc 赋值语义不变），代理上替换 getDocument；文档就绪后经 `doc.getPage(1)` 定位 `PDFPageProxy.prototype` 包装 `getTextContent`——正常透传；异常/畸形降级空文本层 `{ items: [], styles: {}, lang: null }`（canvas 保留、黑屏消除）；`WeakSet` 防重复包装；不改 node_modules。
+- **资产链路**：主进程回环 HTTP 服务（`http://127.0.0.1:<随机端口>/pdfjs/`，白名单 `^pdfjs/(cmaps|standard_fonts)/[\w.%-]+$`、CORS `ACAO:*` + OPTIONS 预检、`fs.readFileSync` 直读 asar）→ pdf.js 走 fetch 分支（dev/prod 一致）；`kaoyan-assets://` 保留备用。已核实 asar 打包、无 CSP、路径解析正确。
+- **进度栏**：`.doc-status-bar` `margin:0 auto 0 0`——顶栏左侧紧随标题，`margin-right:auto` 推「默认应用打开」按钮最右；视频预览按钮位置不变。
 
-### 修复（双保险）
-1. **主进程**（main.ts）：重构为 `buildDurl()`/`buildDash()` 双组装 + **互兜底**——`preferDurl` 时 durl 不可用自动返回 dash（不 throw）；非 preferDurl 时 dash 不可用自动返回 durl；两者都空才抛错。
-2. **渲染层**（BiliBiliPanel.vue `loadStream`）：
-   - `!res.success` 且 preferDurl → 回退 `loadStream(false)` 重试 DASH，不再直接报错；
-   - preferDurl 但主进程兜底返回 `mode='dash'` → 直接用该结果 MSE 播放（省二次请求）；
-   - durl/dash 都没有 → 重试 DASH 兜底。
+### 改动文件（本轮之前）
+- `src/renderer/src/views/Materials.vue`（patch 代理化 + 回环基址 cMapUrl + 进度栏位置）
+- `src/main/main.ts`（回环 HTTP 服务 + `assets:get-base-url` IPC + before-quit 关闭）
+- `src/preload/preload.ts`、`src/renderer/src/vite-env.d.ts`（getAssetsBaseUrl）
+- `overview.md`、`.workbuddy/memory/2026-08-17.md`
 
-### 验证
-- 行为模拟 6 项断言全 PASS：durl 空+dash 有 → 主进程兜底 dash / durl 有 → 原生 / 都空 → 回退重试 / DASH 模式互兜 / 都空且非 preferDurl → 才报错；
-- `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误；主进程 `tsc` exit 0；
-- 产物核查：渲染层含 `durl 请求失败`/`主进程已兜底 DASH` 回退日志，主进程含 buildDurl/buildDash；
-- 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
+### 验证（本轮之前）
+- `npm run build` 退出码 0；`vue-tsc --noEmit` 仅 2 个预存无关错误（main.ts ElMessage / stores/index.ts pomodoro）
+- 行为模拟 12 项断言全 PASS（含复现 namespace 错误、代理可扩展、GWO 同引用、透传/降级/兜底/二次 no-op、库 renderPage 等价流程 canvas 保留）
+- 构建坑：mv dist 备份后增量 tsc 不重建 dist/main → 须 `rm tsconfig.node.tsbuildinfo` 强制重编译
+- 已知限制：无法本地实测打包版 Electron；若抓到 console.warn 原始 worker 异常可进一步根治
 
----
-
-## 高清晰度播放卡顿优化（透明自动降清）
-
-### 方案（仅改 BiliBiliPanel.vue，durl/DASH 通用）
-**播放停滞检测 + 透明降清**：轮询（500ms）检测播放停滞——播放中（未暂停/未结束/元数据就绪）`currentTime` 连续不推进累计 **≥6s** 判定缓冲不足（高清高码率网络带宽不够）→ **自动降一档清晰度**：
-- **透明**：明确提示"网络缓冲不足，已自动切换清晰度（可手动切回）"，绝不静默降清；
-- **防抖**：30s 内不重复自动降（用户手动切换同样重置防抖）；
-- **保底**：降到最低可用档即停止；正常播放/暂停/元数据未就绪均不误判。
-- 不用 `waiting` 事件（Chromium 进入缓冲等待只触发一次，无法累计时长），轮询 `currentTime` 推进最可靠。
-
-### 验证
-- 行为模拟 7 项断言全 PASS：正常播放不降 / 停滞 6s 触发 / 暂停不触发 / 恢复推进后重置并可再触发 / 手动切换 30s 防抖 / 元数据未就绪不误判；
-- `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误，零新增；
-- 产物核查：`播放停滞，自动降清`/`网络缓冲不足，已自动切换清晰度` 特征已编入；
-- 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
-
----
-
-## 审查并完善 DASH 路径优化（v3.6.2 收尾）
-
-### 审查结论（逐项复核）
-| DASH 优化项 | 状态 |
-|---|---|
-| pickDashTrack（avc1 硬解优先 + 组内带宽最低） | ✅ 完好——durl 优先重构未影响，DASH 兜底路径仍生效 |
-| applyBufferWatermark（qn≥80 → 18/8 低水位） | ✅ 完好——loadStream 在 durl 分支前调用，DASH 兜底（loadStream(false)）会重设 |
-| append 流水线化（不等 updateend） | ✅ 完好——循环顶部 `sb.updating` 检查保证最多 1 个在途，无队列堆积；Quota 同步抛不受影响 |
-| Range 定位（seekDashIfNeeded） | ✅ 完好——仅 DASH（mediaSource 存在）时触发，durl 模式自动跳过 |
-| 断流自动恢复（recoverDashStream） | ✅ 完好——30s 窗口 5 次限制，与水位/降清无冲突 |
-
-### 发现并修复的改进点
-**自动降清会跳播放模式**：`autoDowngradeQuality` 此前无条件 `loadStream()`（durl 优先）——若当前是 DASH 模式（durl 不可用才走 DASH），降清后可能切到 durl（低清 durl 可用时）或再回退，行为不可控。
-→ 新增 `currentPlayMode` 记录当前播放模式（loadStream 各分支设置），**降清保持当前模式**（`loadStream(currentPlayMode === 'dash')`）；onPlayerClose 重置。
-
-### 验证
-- 行为模拟 5 项断言全 PASS：DASH 模式降清保持 DASH / durl 模式降清保持 durl / 无模式默认 durl 优先 / 最低档不降 / 降清取低一档最高；
-- `npm run build` 退出码 0；`vue-tsc` 仅 2 个预存无关错误，零新增；
-- 版本 **3.6.2**，提交并推送 main + 重建 tag `v3.6.2` 触发 CI。
+## 发布
+- 版本保持 3.5.2（覆盖更新），推送 main 后**删除远程 tag `v3.5.2` 再重建**触发 CI

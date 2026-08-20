@@ -2206,146 +2206,6 @@ ipcMain.handle('netease:download-song', async (_e, songId: number, artist: strin
   }
 })
 
-// ── v3.5.3：网易云歌曲下载（主进程下载，控制文件名） ──
-
-ipcMain.handle('netease:download-song', async (_e, songId: number, artist: string, name: string, level = 'exhigh') => {
-  try {
-    // 获取下载URL
-    let data: any
-    try {
-      data = await neteaseSmartRequest('/song/enhance/download/url/v1', {
-        id: songId,
-        level,
-        encodeType: 'mp3'
-      }) as any
-    } catch {
-      data = await neteaseSmartRequest('/song/enhance/player/url/v1', {
-        ids: JSON.stringify([songId]),
-        level,
-        encodeType: 'mp3'
-      }) as any
-    }
-    const songData = data.data?.[0] || data.data
-    if (!songData?.url) {
-      return { success: false, message: '无法获取下载链接' }
-    }
-
-    // 让用户选择保存位置
-    const result = await dialog.showSaveDialog({
-      title: '保存歌曲',
-      defaultPath: `${artist} - ${name}.${songData.type || 'mp3'}`,
-      filters: [
-        { name: '音频文件', extensions: [songData.type || 'mp3'] }
-      ]
-    })
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, message: '用户取消' }
-    }
-
-    // 下载文件
-    const response = await net.fetch(songData.url)
-    if (!response.ok) {
-      return { success: false, message: `下载失败: HTTP ${response.status}` }
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer())
-    fs.writeFileSync(result.filePath, buffer)
-
-    // 同时下载歌词
-    let lyricSaved = false
-    try {
-      const lyricData = await neteaseSmartRequest('/song/lyric', { id: songId }) as any
-      if (lyricData?.lrc?.lyric) {
-        const lyricPath = result.filePath.replace(/\.[^.]+$/, '.lrc')
-        fs.writeFileSync(lyricPath, lyricData.lrc.lyric, 'utf-8')
-        lyricSaved = true
-      }
-    } catch { /* 歌词下载失败不影响主流程 */ }
-
-    return {
-      success: true,
-      filePath: result.filePath,
-      lyricPath: lyricSaved ? result.filePath.replace(/\.[^.]+$/, '.lrc') : null,
-      level: songData.level,
-      size: songData.size,
-      type: songData.type
-    }
-  } catch (err) {
-    return { success: false, message: String(err) }
-  }
-})
-
-// ── v3.5.3：网易云歌曲下载（主进程下载，控制文件名） ──
-
-ipcMain.handle('netease:download-song', async (_e, songId: number, artist: string, name: string, level = 'exhigh') => {
-  try {
-    // 获取下载URL
-    let data: any
-    try {
-      data = await neteaseSmartRequest('/song/enhance/download/url/v1', {
-        id: songId,
-        level,
-        encodeType: 'mp3'
-      }) as any
-    } catch {
-      data = await neteaseSmartRequest('/song/enhance/player/url/v1', {
-        ids: JSON.stringify([songId]),
-        level,
-        encodeType: 'mp3'
-      }) as any
-    }
-    const songData = data.data?.[0] || data.data
-    if (!songData?.url) {
-      return { success: false, message: '无法获取下载链接' }
-    }
-
-    // 让用户选择保存位置
-    const result = await dialog.showSaveDialog({
-      title: '保存歌曲',
-      defaultPath: `${artist} - ${name}.${songData.type || 'mp3'}`,
-      filters: [
-        { name: '音频文件', extensions: [songData.type || 'mp3'] }
-      ]
-    })
-
-    if (result.canceled || !result.filePath) {
-      return { success: false, message: '用户取消' }
-    }
-
-    // 下载文件
-    const response = await net.fetch(songData.url)
-    if (!response.ok) {
-      return { success: false, message: `下载失败: HTTP ${response.status}` }
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer())
-    fs.writeFileSync(result.filePath, buffer)
-
-    // 同时下载歌词
-    let lyricSaved = false
-    try {
-      const lyricData = await neteaseSmartRequest('/song/lyric', { id: songId }) as any
-      if (lyricData?.lrc?.lyric) {
-        const lyricPath = result.filePath.replace(/\.[^.]+$/, '.lrc')
-        fs.writeFileSync(lyricPath, lyricData.lrc.lyric, 'utf-8')
-        lyricSaved = true
-      }
-    } catch { /* 歌词下载失败不影响主流程 */ }
-
-    return {
-      success: true,
-      filePath: result.filePath,
-      lyricPath: lyricSaved ? result.filePath.replace(/\.[^.]+$/, '.lrc') : null,
-      level: songData.level,
-      size: songData.size,
-      type: songData.type
-    }
-  } catch (err) {
-    return { success: false, message: String(err) }
-  }
-})
-
 // ── v3.5.3：云盘上传检查（检查文件是否已在云盘/CDN） ──
 
 ipcMain.handle('netease:cloud-upload-check', async (_e, songs: Array<{md5: string; songId: number; bitrate: number; fileSize: number}>) => {
@@ -2639,19 +2499,63 @@ ipcMain.handle('import-data', async () => {
   return { success: false }
 })
 
-// 开机自启动 - 设置
+// 开机自启动 - 设置（v3.5.3：改用注册表方式，解决 Windows 下设置失败问题）
+const AUTO_LAUNCH_REG_PATH = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+const AUTO_LAUNCH_REG_NAME = '11408考研助手'
+
 ipcMain.handle('set-auto-launch', async (_event, enabled: boolean) => {
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    path: process.execPath
-  })
-  return { success: true, enabled }
+  try {
+    // 方式1：优先使用 Electron API
+    app.setLoginItemSettings({
+      openAtLogin: enabled,
+      path: process.execPath,
+      args: []
+    })
+    // 验证是否设置成功
+    const settings = app.getLoginItemSettings()
+    if (settings.openAtLogin === enabled) {
+      return { success: true, enabled }
+    }
+    // 方式2：如果 Electron API 失败，使用注册表（Windows）
+    if (process.platform === 'win32') {
+      const { execSync } = require('child_process')
+      if (enabled) {
+        const exePath = `"${process.execPath}"`
+        execSync(`reg add "${AUTO_LAUNCH_REG_PATH}" /v "${AUTO_LAUNCH_REG_NAME}" /t REG_SZ /d ${exePath} /f`)
+      } else {
+        try {
+          execSync(`reg delete "${AUTO_LAUNCH_REG_PATH}" /v "${AUTO_LAUNCH_REG_NAME}" /f`)
+        } catch { /* 键不存在也视为成功 */ }
+      }
+      return { success: true, enabled }
+    }
+    return { success: false, enabled, message: '设置未生效' }
+  } catch (err) {
+    return { success: false, enabled: !enabled, message: String(err) }
+  }
 })
 
 // 开机自启动 - 查询状态
 ipcMain.handle('get-auto-launch', async () => {
-  const settings = app.getLoginItemSettings()
-  return { enabled: settings.openAtLogin }
+  try {
+    const settings = app.getLoginItemSettings()
+    if (settings.openAtLogin) {
+      return { enabled: true }
+    }
+    // 备用：检查注册表
+    if (process.platform === 'win32') {
+      const { execSync } = require('child_process')
+      try {
+        const result = execSync(`reg query "${AUTO_LAUNCH_REG_PATH}" /v "${AUTO_LAUNCH_REG_NAME}"`, { encoding: 'utf-8' })
+        if (result.includes(AUTO_LAUNCH_REG_NAME)) {
+          return { enabled: true }
+        }
+      } catch { /* 键不存在 */ }
+    }
+    return { enabled: false }
+  } catch {
+    return { enabled: false }
+  }
 })
 
 // 自定义背景 - 选择图片并应用（复制到数据目录固定文件）

@@ -17,38 +17,6 @@ interface MaterialNode {
   size?: number
 }
 
-// v3.5.3：哔哩哔哩视频卡片（热门/相关/搜索/收藏夹统一结构）
-interface BiliVideo {
-  bvid: string
-  title: string
-  pic: string
-  author: string
-  duration: string
-  play: number
-  danmaku: number
-  pubdate: number
-}
-
-// v3.5.3：B 站登录用户信息
-interface BiliUser {
-  mid: number
-  uname: string
-  face: string
-  vipStatus: number
-}
-
-// v3.5.5：DASH 音视频轨道（playurl fnval=4048）
-interface BiliDashTrack {
-  qn: number; label: string; mimeType: string; codecs: string; bandwidth: number
-  width: number; height: number; baseUrl: string; backupUrl: string[]
-}
-
-// v3.5.5：UP 主卡片
-interface BiliUpCard { mid: number; name: string; face: string; sign: string; fans: number; archives: number }
-
-// v3.5.8：视频评论条目
-interface BiliReply { rpid: number; uname: string; face: string; message: string; like: number; ctime: number }
-
 interface ElectronAPI {
   exportData: (data: string) => Promise<{ success: boolean; path?: string }>
   importData: () => Promise<{ success: boolean; data?: string }>
@@ -212,50 +180,6 @@ interface ElectronAPI {
     count?: number
     message?: string
   }>
-  // v3.5.3：哔哩哔哩 API
-  biliQrKey: () => Promise<{ success: boolean; key?: string; qrimg?: string; qrurl?: string; message?: string }>
-  biliQrCheck: (key: string) => Promise<{ success: boolean; code?: number; message?: string }>
-  biliLoginStatus: () => Promise<{ success: boolean; loggedIn?: boolean; user?: BiliUser | null; message?: string }>
-  biliLogout: () => Promise<{ success: boolean }>
-  biliSetCookie: (cookie: string) => Promise<{ success: boolean; loggedIn?: boolean; user?: BiliUser | null; message?: string }>
-  biliPopular: (page?: number, pageSize?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
-  biliRelated: (bvid: string) => Promise<{ success: boolean; list?: BiliVideo[]; message?: string }>
-  biliSearch: (keyword: string, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; total?: number; numPages?: number; message?: string }>
-  biliFavFolders: () => Promise<{ success: boolean; folders?: { id: number; title: string; count: number; cover: string }[]; message?: string }>
-  biliFavList: (mediaId: number, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
-  biliView: (bvid: string) => Promise<{
-    success: boolean
-    video?: {
-      bvid: string; aid: number; title: string; pic: string; desc: string; duration: string; durationSec: number; pubdate: number
-      owner: { mid: number; name: string; face: string }
-      stat: { view: number; danmaku: number; like: number; coin: number; favorite: number; reply: number }
-      pages: { cid: number; page: number; part: string; duration: string; durationSec: number }[]
-    } | null
-    message?: string
-  }>
-  biliPlayurl: (bvid: string, cid: number, qn?: number, preferDurl?: boolean) => Promise<{
-    success: boolean
-    // v3.5.5：mode='dash' 时音视频分离（MSE 播放），'durl' 为合并流直连
-    mode?: 'dash' | 'durl' | ''
-    quality?: number
-    qualityLabel?: string
-    acceptQuality?: { qn: number; label: string }[]
-    dash?: { video: BiliDashTrack[]; audio: BiliDashTrack[] }
-    durl?: { url: string; backupUrl: string[]; size: number; length: number }[]
-    message?: string
-  }>
-  // v3.5.4：哔哩哔哩个性化推荐与视频交互（点赞/投币/收藏）
-  biliRcmd: (pageSize?: number, freshIdx?: number) => Promise<{ success: boolean; list?: BiliVideo[]; message?: string }>
-  biliRelation: (aid: number) => Promise<{ success: boolean; like?: boolean; coin?: number; favorite?: boolean; message?: string }>
-  biliLike: (aid: number, like: number) => Promise<{ success: boolean; message?: string }>
-  biliCoin: (aid: number, multiply: number) => Promise<{ success: boolean; message?: string }>
-  biliFavToggle: (aid: number, mediaId: number, add: boolean) => Promise<{ success: boolean; message?: string }>
-  // v3.5.5：DASH 流代理 token、UP 主卡片与投稿
-  biliStreamToken: (url: string) => Promise<{ success: boolean; token?: string; baseUrl?: string; message?: string }>
-  biliCard: (mid: number) => Promise<{ success: boolean; card?: BiliUpCard | null; message?: string }>
-  biliSpaceVideos: (mid: number, page?: number) => Promise<{ success: boolean; list?: BiliVideo[]; hasMore?: boolean; message?: string }>
-  // v3.5.8：视频评论
-  biliReply: (oid: number, page?: number) => Promise<{ success: boolean; list?: BiliReply[]; hasMore?: boolean; message?: string }>
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

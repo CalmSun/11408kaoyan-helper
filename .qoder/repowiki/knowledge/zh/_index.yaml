@@ -1,0 +1,27 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: main
+nodes_managed: true
+exported_at: "2026-08-18T16:37:01Z"
+modules:
+    "":
+        dir_name: 考研助手桌面应用根级构建编排
+        title: 考研助手桌面应用根级构建编排
+        scope:
+            - README.md
+            - overview.md
+            - CLAUDE.md
+            - .gitignore
+            - .gitattributes
+            - package.json
+            - package-lock.json
+            - tsconfig.json
+            - tsconfig.node.json
+            - vite.config.ts
+            - 启动开发版.bat
+            - background.jpg
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
