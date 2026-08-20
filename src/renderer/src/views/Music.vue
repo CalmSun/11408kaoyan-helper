@@ -308,7 +308,7 @@
               <el-button size="small" :loading="cloudUploading" @click="handleCloudLocalUpload">
                 <el-icon><Upload /></el-icon> 本地上传
               </el-button>
-              <el-button size="small" :loading="batchRunning" @click="openBatchSelect('download', music.cloudDriveList)">
+              <el-button size="small" :loading="batchRunning" @click="openBatchSelect(music.cloudDriveList)">
                 <el-icon><Download /></el-icon> 批量下载
               </el-button>
             </div>
@@ -496,11 +496,8 @@
               <el-button size="small" :loading="music.playlistLoading" @click="music.addPlaylistToQueue(music.currentPlaylistTracks)">
                 <el-icon><Plus /></el-icon> 添加到队列
               </el-button>
-              <!-- v3.6.4：歌单批量上传云盘(快传) + 批量下载 -->
-              <el-button size="small" :loading="batchRunning" @click="openBatchSelect('upload', music.currentPlaylistTracks)">
-                <el-icon><Upload /></el-icon> 批量上传云盘
-              </el-button>
-              <el-button size="small" :loading="batchRunning" @click="openBatchSelect('download', music.currentPlaylistTracks)">
+              <!-- v3.6.4：歌单批量下载 -->
+              <el-button size="small" :loading="batchRunning" @click="openBatchSelect(music.currentPlaylistTracks)">
                 <el-icon><Download /></el-icon> 批量下载
               </el-button>
             </div>
@@ -708,7 +705,7 @@
     </el-dialog>
 
     <!-- v3.6.4：批量操作歌曲选择对话框 -->
-    <el-dialog v-model="batchDialogVisible" :title="batchMode === 'upload' ? '选择要上传到云盘的歌曲' : '选择要下载的歌曲'" width="560px" :close-on-click-modal="false">
+    <el-dialog v-model="batchDialogVisible" title="选择要下载的歌曲" width="560px" :close-on-click-modal="false">
       <div class="batch-select-toolbar">
         <el-checkbox v-model="batchAll" :indeterminate="batchIndeterminate" @change="toggleBatchAll">全选</el-checkbox>
         <el-button size="small" text @click="invertBatchSelect">反选</el-button>
@@ -731,7 +728,7 @@
       <template #footer>
         <el-button @click="batchDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="batchRunning" :disabled="!batchSelected.length" @click="batchConfirm">
-          确认{{ batchMode === 'upload' ? '上传' : '下载' }}（{{ batchSelected.length }}）
+          确认下载（{{ batchSelected.length }}）
         </el-button>
       </template>
     </el-dialog>
@@ -1127,10 +1124,9 @@ async function handleCloudLocalUpload() {
   }
 }
 
-// v3.6.4：批量操作（选择歌曲 → 上传云盘 / 批量下载）
+// v3.6.4：批量下载（选择歌曲 → 下载）
 const batchDialogVisible = ref(false)
-const batchMode = ref<'upload' | 'download'>('download')
-const batchSongList = ref<{ id: number; name: string; artist: string; album?: string }[]>([])
+const batchSongList = ref<{ id: number; name: string; artist: string }[]>([])
 const batchSelected = ref<number[]>([])
 const batchRunning = ref(false)
 const batchAll = ref(false)
@@ -1142,14 +1138,12 @@ const batchIndeterminate = computed(
   () => batchSelected.value.length > 0 && batchSelected.value.length < batchSongList.value.length
 )
 
-function openBatchSelect(mode: 'upload' | 'download', list: { id: number; name?: string; artist?: string; album?: string }[]) {
-  batchMode.value = mode
+function openBatchSelect(list: { id: number; name?: string; artist?: string }[]) {
   // 归一化为普通对象，避免把 Vue 的 reactive Proxy 对象传给 IPC（否则报 “An object could not be cloned”）
   batchSongList.value = (list || []).map((s) => ({
     id: Number(s.id),
     name: String(s?.name ?? ''),
-    artist: String(s?.artist ?? ''),
-    album: String(s?.album ?? '')
+    artist: String(s?.artist ?? '')
   }))
   batchSelected.value = batchSongList.value.map((s) => s.id)
   batchAll.value = true
@@ -1159,12 +1153,24 @@ function openBatchSelect(mode: 'upload' | 'download', list: { id: number; name?:
 function loadMoreBatchSelect() {
   batchVisible.value += batchPageSize
 }
+// v3.6.4：全选只勾选「已加载分页」内的歌曲，避免一次性全选带来的大列表操作
 function toggleBatchAll(val: boolean) {
-  batchSelected.value = val ? batchSongList.value.map((s) => s.id) : []
+  const loaded = batchSongList.value.slice(0, batchVisible.value)
+  if (batchAll.value) {
+    // 走全选：已加载全部勾上；保留此前手动勾选的未加载项不变
+    batchSelected.value = Array.from(new Set([...batchSelected.value, ...loaded.map((s) => s.id)]))
+  } else {
+    // 取消全选时清除已加载的勾选，保留未加载的手动勾选
+    const loadedIds = new Set(loaded.map((s) => s.id))
+    batchSelected.value = batchSelected.value.filter((id) => !loadedIds.has(id))
+  }
 }
 function invertBatchSelect() {
-  const all = batchSongList.value.map((s) => s.id)
-  batchSelected.value = all.filter((id) => !batchSelected.value.includes(id))
+  const loaded = batchSongList.value.slice(0, batchVisible.value)
+  const loadedIds = loaded.map((s) => s.id)
+  const selectedSet = new Set(batchSelected.value)
+  loadedIds.forEach((id) => (selectedSet.has(id) ? selectedSet.delete(id) : selectedSet.add(id)))
+  batchSelected.value = Array.from(selectedSet)
 }
 async function batchConfirm() {
   const selectedSongs = batchSongList.value.filter((s) => batchSelected.value.includes(s.id))
@@ -1173,31 +1179,15 @@ async function batchConfirm() {
   batchRunning.value = true
   cloudOpStatus.value = ''
   try {
-    if (batchMode.value === 'upload') {
-      if (!music.neteaseLoggedIn) {
-        ElMessage.warning('请先登录网易云账号')
-        showLoginDialog.value = true
-        return
-      }
-      // 强制构造普通对象，避免把 reactive 元素传入 IPC
-      const plain = selectedSongs.map((s) => ({ id: Number(s.id), name: String(s.name || ''), artist: String(s.artist || ''), album: String(s.album || '') }))
-      const res = await music.quickUploadSongs(plain)
-      if (res.success) {
-        ElMessage.success(res.message || '批量上传完成')
-        if (neteaseTab.value === 'clouddrive') await music.fetchCloudDrive()
-      } else {
-        ElMessage.error(res.message || '批量上传失败')
-      }
+    // 精简为普通对象传给 IPC
+    const plain = selectedSongs.map((s) => ({ id: Number(s.id), name: String(s.name || ''), artist: String(s.artist || '') }))
+    const res = await music.batchDownloadSongs(plain)
+    if (res.canceled) return
+    if (res.success) {
+      ElMessage.success(`批量下载完成：成功 ${res.successCount}/${res.total}`)
+      if (res.failCount) ElMessage.error(`失败 ${res.failCount} 首：${res.failed?.map((f) => f.name).join('、')}`)
     } else {
-      const plain = selectedSongs.map((s) => ({ id: Number(s.id), name: String(s.name || ''), artist: String(s.artist || '') }))
-      const res = await music.batchDownloadSongs(plain)
-      if (res.canceled) return
-      if (res.success) {
-        ElMessage.success(`批量下载完成：成功 ${res.successCount}/${res.total}`)
-        if (res.failCount) ElMessage.error(`失败 ${res.failCount} 首：${res.failed?.map((f) => f.name).join('、')}`)
-      } else {
-        ElMessage.error(res.message || '下载失败')
-      }
+      ElMessage.error(res.message || '下载失败')
     }
   } catch (e) {
     ElMessage.error('批量操作失败：' + (e as Error).message)

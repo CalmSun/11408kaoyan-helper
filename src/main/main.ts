@@ -1636,16 +1636,29 @@ ipcMain.handle('netease:playlist-detail', async (_e, id: number) => {
       playlist?: {
         id: number; name: string; coverImgUrl?: string; playCount?: number
         trackCount?: number; description?: string
-        tracks?: Array<{
-          id: number; name: string; ar?: Array<{ name: string }>
-          al?: { name: string; picUrl?: string }; dt?: number
-        }>
       }
       code?: number
     }
     const pl = data.playlist
     if (!pl) return { success: false, playlist: null, tracks: [], message: '歌单不存在' }
-    const tracks = (pl.tracks || []).map(t => ({
+
+    // v3.6.4：改用 /v1/playlist/track/all 分页拉取全部歌曲。
+    // /v6/playlist/detail 的 tracks 只返回歌单前约 1000 首，超过则缺失。
+    const allTracks: Array<{ id: number; name: string; ar?: Array<{ name: string }>; al?: { name: string; picUrl?: string }; dt?: number }> = []
+    const LIMIT = 500
+    for (let offset = 0; offset < 100000; offset += LIMIT) {
+      const page = await neteaseSmartRequest('/v1/playlist/track/all', {
+        id,
+        limit: LIMIT,
+        offset
+      }) as { code?: number; songs?: Array<{ id: number; name: string; ar?: Array<{ name: string }>; al?: { name: string; picUrl?: string }; dt?: number }> }
+      const songs = page.songs || []
+      if (songs.length === 0) break
+      allTracks.push(...songs)
+      if (songs.length < LIMIT) break
+    }
+
+    const tracks = allTracks.map(t => ({
       id: t.id,
       name: t.name,
       artist: (t.ar || []).map(a => a.name).join(' / '),
