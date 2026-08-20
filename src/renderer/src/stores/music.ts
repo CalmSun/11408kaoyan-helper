@@ -1380,13 +1380,19 @@ export const useMusicStore = defineStore('music', () => {
 
   // ── v3.5.3：云盘快传（无需文件转存） ──
 
-  /** 批量快传歌曲到云盘（通过歌曲ID获取文件信息后导入） */
-  async function quickUploadSongs(songIds: number[], level?: string): Promise<{ success: boolean; message: string; results?: any[] }> {
+  /** 批量快传歌曲到云盘（通过歌曲ID获取文件信息后导入；songInfo 可选，提供真实名称用于导入） */
+  async function quickUploadSongs(songInfos: Array<{ id: number; name?: string; artist?: string; album?: string }>, level?: string): Promise<{ success: boolean; message: string; results?: any[] }> {
     const api = window.electronAPI
     if (!api?.neteaseDownloadUrl || !api?.neteaseCloudUploadCheck || !api?.neteaseCloudSongImport || !api?.neteaseCloudSongMatch) {
       return { success: false, message: 'API 不可用' }
     }
     try {
+      const songIds = songInfos.map((s) => Number(s.id)).filter((id) => id > 0)
+      if (songIds.length === 0) return { success: false, message: '没有可操作的歌曲' }
+      const metaById: Record<number, { name: string; artist: string; album: string }> = {}
+      songInfos.forEach((s) => {
+        metaById[Number(s.id)] = { name: String(s?.name ?? ''), artist: String(s?.artist ?? ''), album: String(s?.album ?? '') }
+      })
       const results: any[] = []
       // 第一步：获取歌曲文件信息（md5、size等）- 使用 downloadUrl 接口获取完整信息
       const fileInfos: any[] = []
@@ -1429,19 +1435,24 @@ export const useMusicStore = defineStore('music', () => {
 
       const importData = needUpload.map((d: any) => {
         const fileInfo = fileInfos.find((u: any) => u.songId === d.songId)
+        const meta = metaById[d.songId] || { name: '', artist: '', album: '' }
+        const name = meta.name || `song_${d.songId}`
+        const artist = meta.artist
+        const fileName = `${name}${artist ? ' - ' + artist : ''}.${fileInfo?.type || 'mp3'}`.replace(/[\\/:*?"<>|]/g, '_')
         return {
           songId: d.songId,
           bitrate: Math.floor((fileInfo?.br || 128000) / 1000),
-          song: '', // 云盘会自动匹配
-          artist: '',
-          album: '',
-          fileName: `song_${d.songId}.${fileInfo?.type || 'mp3'}`
+          song: name,
+          artist,
+          album: meta.album,
+          fileName
         }
       })
 
       const importRes = await api.neteaseCloudSongImport(importData)
       if (!importRes.success) {
-        return { success: false, message: '导入云盘失败' }
+        // 透出接口的真实错误，便于定位
+        return { success: false, message: importRes.message || '导入云盘失败' }
       }
 
       // 第四步：匹配歌曲

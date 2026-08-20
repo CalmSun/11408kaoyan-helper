@@ -1071,7 +1071,7 @@ async function handleDownloadSong(song: { id: number; name: string; artist: stri
 }
 
 // v3.5.3：快传歌曲到云盘
-async function handleQuickUpload(song: { id: number; name: string }) {
+async function handleQuickUpload(song: { id: number; name: string; artist: string; album?: string }) {
   if (!song?.id) return
   if (!music.neteaseLoggedIn) {
     ElMessage.warning('请先登录网易云账号')
@@ -1080,7 +1080,7 @@ async function handleQuickUpload(song: { id: number; name: string }) {
   }
   uploadingSongId.value = song.id
   try {
-    const result = await music.quickUploadSongs([song.id])
+    const result = await music.quickUploadSongs([{ id: song.id, name: song.name, artist: song.artist, album: song.album }])
     if (result.success) {
       ElMessage.success(result.message || '快传成功')
       // 如果在云盘标签页，刷新云盘列表
@@ -1135,9 +1135,15 @@ const batchIndeterminate = computed(
   () => batchSelected.value.length > 0 && batchSelected.value.length < batchSongList.value.length
 )
 
-function openBatchSelect(mode: 'upload' | 'download', list: { id: number; name: string; artist: string }[]) {
+function openBatchSelect(mode: 'upload' | 'download', list: { id: number; name?: string; artist?: string; album?: string }[]) {
   batchMode.value = mode
-  batchSongList.value = list || []
+  // 归一化为普通对象，避免把 Vue 的 reactive Proxy 对象传给 IPC（否则报 “An object could not be cloned”）
+  batchSongList.value = (list || []).map((s) => ({
+    id: Number(s.id),
+    name: String(s?.name ?? ''),
+    artist: String(s?.artist ?? ''),
+    album: String(s?.album ?? '')
+  }))
   batchSelected.value = batchSongList.value.map((s) => s.id)
   batchAll.value = true
   batchDialogVisible.value = true
@@ -1162,7 +1168,7 @@ async function batchConfirm() {
         showLoginDialog.value = true
         return
       }
-      const res = await music.quickUploadSongs(selectedSongs.map((s) => s.id))
+      const res = await music.quickUploadSongs(selectedSongs)
       if (res.success) {
         ElMessage.success(res.message || '批量上传完成')
         if (neteaseTab.value === 'clouddrive') await music.fetchCloudDrive()
