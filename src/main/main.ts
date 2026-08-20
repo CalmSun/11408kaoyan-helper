@@ -2261,6 +2261,199 @@ ipcMain.handle('netease:cloud-song-delete', async (_e, songIds: number[]) => {
   }
 })
 
+// ── v3.6.3：云盘本地上传（本地音频文件真实上传到网易云云盘） ──
+// 流程参考 Cinvin/myuserscripts 油猴脚本：check → token → NOS 分片上传 → info → status → pub
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function md5File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('md5')
+    const rs = fs.createReadStream(filePath)
+    rs.on('error', reject)
+    rs.on('data', (chunk) => hash.update(chunk))
+    rs.on('end', () => resolve(hash.digest('hex')))
+  })
+}
+
+/** 文件名清洗：去掉非法字符，避免写入失败 */
+function sanitizeFileName(name: string): string {
+  return (name || '').replace(/[\\/:*?"<>|]/g, '_').trim() || 'untitled'
+}
+
+const NOS_UPLOAD_BASE = 'http://45.127.129.8/jd-musicrep-privatecloud-audio-public/'
+const CLOUD_UPLOAD_CHUNK = 1024 * 1024 // 1MB 分片，与油猴脚本一致
+
+ipcMain.handle('netease:cloud-upload-files', async () => {
+  const result = await dialog.showOpenDialog({
+    title: '选择要上传到云盘的音频文件',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: '音频文件', extensions: ['mp3', 'flac', 'm4a', 'aac', 'wav', 'ogg'] }]
+  })
+  if (result.canceled || result.filePaths.length === 0) {
+    return { success: false, canceled: true, message: '用户取消' }
+  }
+  const total = result.filePaths.length
+  const failed: string[] = []
+  let successCount = 0
+  const notify = (current: number, fileName: string, status: string) => {
+    mainWindow?.webContents.send('netease:cloud-upload-progress', { current, total, fileName, status })
+  }
+  const uploadOne = async (filePath: string): Promise<boolean> => {
+    const fileName = path.basename(filePath)
+    const ext = (fileName.slice(fileName.lastIndexOf('.') + 1) || 'mp3').toLowerCase()
+    const title = sanitizeFileName(fileName.slice(0, fileName.lastIndexOf('.')) || fileName)
+    try {
+      // 1. 计算 MD5
+      const md5 = await md5File(filePath)
+      const size = fs.statSync(filePath).size
+      // 2. 检查资源是否已在云盘
+      const check = await neteaseSmartRequest('/cloud/upload/check', {
+        songId: 0, md5, length: size, ext, version: 1, bitrate: 128
+      }) as any
+      if (check.code !== 200) throw new Error('检查资源失败: ' + (check.message || check.code))
+      const cloudId = check.songId ?? 0
+      // 3. 获取上传令牌
+      const tokenRes = await neteaseSmartRequest('/nos/token/alloc', {
+        filename: title, length: size, ext, type: 'audio',
+        bucket: 'jd-musicrep-privatecloud-audio-public', local: false, nos_product: 3, md5
+      }) as any
+      if (tokenRes.code !== 200 || !tokenRes.result) throw new Error('获取上传令牌失败: ' + (tokenRes.code ?? ''))
+      const { token, objectKey, resourceId } = tokenRes.result
+      // 4. 需要上传时，分片上传到 NOS
+      if (check.needUpload) {
+        let offset = 0
+        let context: string | null = null
+        while (offset < size) {
+          const complete = offset + CLOUD_UPLOAD_CHUNK >= size
+          let url = `${NOS_UPLOAD_BASE}${encodeURIComponent(objectKey)}?offset=${offset}&complete=${String(complete)}&version=1.0`
+          if (context) url += `&context=${context}`
+          const fd = fs.openSync(filePath, 'r')
+          const buf = Buffer.alloc(Math.min(CLOUD_UPLOAD_CHUNK, size - offset))
+          fs.readSync(fd, buf, 0, buf.length, offset)
+          fs.closeSync(fd)
+          const resp = await net.fetch(url, {
+            method: 'POST',
+            headers: { 'x-nos-token': token, 'Content-MD5': md5, 'Content-Type': 'audio/mpeg' },
+            body: buf
+          })
+          const text = await resp.text()
+          if (!resp.ok) throw new Error('上传分片失败: HTTP ' + resp.status)
+          let parsed: any
+          try { parsed = JSON.parse(text) } catch { throw new Error('上传分片响应异常') }
+          if (complete) break
+          offset = parsed.offset != null ? Number(parsed.offset) : offset + CLOUD_UPLOAD_CHUNK
+          context = parsed.context || context
+        }
+      }
+      // 5. 提交上传信息（转码中重试，最多约 60s）
+      let songId = 0
+      const deadline = Date.now() + 60000
+      while (true) {
+        const info = await neteaseSmartRequest('/upload/cloud/info/v2', {
+          md5, songid: cloudId, filename: fileName, song: title, album: '', artist: '',
+          bitrate: '128', resourceId
+        }) as any
+        if (info.code === 200) { songId = info.songId ?? 0; break }
+        if (Date.now() > deadline || (info.msg && String(info.msg).includes('rep create failed'))) {
+          throw new Error('提交上传信息失败: ' + (info.msg || info.code))
+        }
+        await sleepMs(1000) // 正在转码，继续等待
+      }
+      // 6. 等待音乐就绪后发布
+      const readyDeadline = Date.now() + 120000
+      while (true) {
+        const st = await neteaseSmartRequest('/v1/cloud/music/status', { songIds: [songId] }) as any
+        if (st.code !== 200) throw new Error('查询上传状态失败')
+        const stItem = st.statuses && st.statuses[songId]
+        if (stItem && stItem.status === 9) break
+        if (stItem && stItem.status === 1) {
+          if (Date.now() > readyDeadline) throw new Error('等待转码超时')
+          await sleepMs((stItem.waitTime || 1) * 1000)
+        } else {
+          throw new Error('上传状态异常: ' + (stItem && stItem.status))
+        }
+      }
+      // 7. 发布到云盘
+      const pub = await neteaseSmartRequest('/cloud/pub/v2', { songid: songId }) as any
+      if (pub.code !== 200 && pub.code !== 201) throw new Error('发布失败: ' + (pub.code ?? ''))
+      return true
+    } catch (e) {
+      console.error('[CloudUpload]', fileName, String(e))
+      notify(0, fileName, '失败: ' + String(e))
+      return false
+    }
+  }
+  for (let i = 0; i < result.filePaths.length; i++) {
+    notify(i + 1, path.basename(result.filePaths[i]), '上传中...')
+    const ok = await uploadOne(result.filePaths[i])
+    if (ok) successCount++
+    else failed.push(path.basename(result.filePaths[i]))
+  }
+  return { success: true, total, successCount, failCount: failed.length, failed }
+})
+
+// ── v3.6.3：云盘/歌单歌曲批量下载（一次选目录，音频 + 同目录 .lrc） ──
+
+ipcMain.handle('netease:batch-download', async (_e, songs: Array<{ id: number; name: string; artist: string }>) => {
+  if (!Array.isArray(songs) || songs.length === 0) {
+    return { success: false, message: '没有可下载的歌曲' }
+  }
+  const dirRes = await dialog.showOpenDialog({
+    title: '选择保存目录',
+    properties: ['openDirectory', 'createDirectory']
+  })
+  if (dirRes.canceled || dirRes.filePaths.length === 0) {
+    return { success: false, canceled: true, message: '用户取消' }
+  }
+  const dir = dirRes.filePaths[0]
+  const total = songs.length
+  const failed: { id: number; name: string }[] = []
+  let successCount = 0
+  const notify = (current: number, fileName: string, status: string) => {
+    mainWindow?.webContents.send('netease:cloud-download-progress', { current, total, fileName, status })
+  }
+  for (let i = 0; i < songs.length; i++) {
+    const song = songs[i]
+    const disp = `${song.artist || ''} - ${song.name || song.id}`.replace(/^\s*-\s*/, '') || String(song.id)
+    notify(i + 1, disp, '下载中...')
+    try {
+      // 1. 获取下载链接
+      let data: any
+      try {
+        data = await neteaseSmartRequest('/song/enhance/download/url/v1', { id: song.id, level: 'exhigh', encodeType: 'mp3' }) as any
+      } catch {
+        data = await neteaseSmartRequest('/song/enhance/player/url/v1', { ids: JSON.stringify([song.id]), level: 'exhigh', encodeType: 'mp3' }) as any
+      }
+      const songData = (data.data && data.data[0]) || data.data
+      if (!songData || !songData.url) {
+        failed.push({ id: song.id, name: song.name })
+        continue
+      }
+      const ext = (songData.type || 'mp3').toLowerCase()
+      const baseName = sanitizeFileName(disp)
+      const audioPath = path.join(dir, `${baseName}.${ext}`)
+      const resp = await net.fetch(songData.url)
+      if (!resp.ok) throw new Error('HTTP ' + resp.status)
+      fs.writeFileSync(audioPath, Buffer.from(await resp.arrayBuffer()))
+      // 2. 下载歌词到同目录（.lrc）
+      try {
+        const lrc = await neteaseSmartRequest('/song/lyric', { id: song.id, lv: -1, kv: -1, tv: -1 }) as any
+        if (lrc?.lrc?.lyric) {
+          fs.writeFileSync(path.join(dir, `${baseName}.lrc`), lrc.lrc.lyric, 'utf-8')
+        }
+      } catch { /* 歌词失败不影响主流程 */ }
+      successCount++
+    } catch (e) {
+      console.error('[BatchDownload]', song.name, String(e))
+      failed.push({ id: song.id, name: song.name })
+    }
+  }
+  return { success: true, total, successCount, failCount: failed.length, failed, dir }
+})
+
 // ── v3.5.3：获取歌曲详细信息（用于下载时获取音质信息） ──
 
 ipcMain.handle('netease:song-detail', async (_e, songIds: number[]) => {

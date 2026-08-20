@@ -180,6 +180,74 @@ interface ElectronAPI {
     count?: number
     message?: string
   }>
+  // v3.5.3：歌曲下载与云端管理（补全之前缺位的类型声明）
+  neteaseDownloadUrl: (songId: number, level?: string) => Promise<{
+    success: boolean
+    url?: string
+    level?: string
+    size?: number
+    type?: string
+    md5?: string
+    br?: number
+    message?: string
+  }>
+  neteaseDownloadSong: (songId: number, artist: string, name: string, level?: string) => Promise<{
+    success: boolean
+    filePath?: string
+    lyricPath?: string
+    level?: string
+    size?: number
+    type?: string
+    message?: string
+  }>
+  neteaseCloudUploadCheck: (songs: Array<{ md5: string; songId: number; bitrate: number; fileSize: number }>) => Promise<{
+    success: boolean
+    data?: any[]
+    message?: string
+  }>
+  neteaseCloudSongImport: (songs: Array<{ songId: number; bitrate: number; song: string; artist: string; album: string; fileName: string }>) => Promise<{
+    success: boolean
+    data?: any
+    message?: string
+  }>
+  neteaseCloudSongMatch: (songId: number, adjustSongId: number) => Promise<{
+    success: boolean
+    code?: number
+    message?: string
+  }>
+  neteaseCloudSongDelete: (songIds: number[]) => Promise<{
+    success: boolean
+    code?: number
+    message?: string
+  }>
+  neteaseSongDetail: (songIds: number[]) => Promise<{
+    success: boolean
+    code?: number
+    data?: any
+    message?: string
+  }>
+  // v3.6.3：云盘本地上传 + 批量下载
+  neteaseCloudUploadFiles: () => Promise<{
+    success: boolean
+    canceled?: boolean
+    total?: number
+    successCount?: number
+    failCount?: number
+    failed?: string[]
+    message?: string
+  }>
+  neteaseBatchDownload: (songs: Array<{ id: number; name: string; artist: string }>) => Promise<{
+    success: boolean
+    canceled?: boolean
+    total?: number
+    successCount?: number
+    failCount?: number
+    failed?: { id: number; name: string }[]
+    dir?: string
+    message?: string
+  }>
+  onCloudUploadProgress: (cb: (p: { current: number; total: number; fileName: string; status: string }) => void) => void
+  onCloudDownloadProgress: (cb: (p: { current: number; total: number; fileName: string; status: string }) => void) => void
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => Promise<{ success: boolean; data?: Record<string, string>; message?: string }>
   weatherSearch: (name: string) => Promise<{ success: boolean; results?: { id: string; name: string; province: string }[]; message?: string }>

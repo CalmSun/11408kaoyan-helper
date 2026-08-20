@@ -75,6 +75,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   neteaseCloudSongMatch: (songId: number, adjustSongId: number) => ipcRenderer.invoke('netease:cloud-song-match', songId, adjustSongId),
   neteaseCloudSongDelete: (songIds: number[]) => ipcRenderer.invoke('netease:cloud-song-delete', songIds),
   neteaseSongDetail: (songIds: number[]) => ipcRenderer.invoke('netease:song-detail', songIds),
+  // v3.6.3：云盘本地上传 + 批量下载
+  neteaseCloudUploadFiles: () => ipcRenderer.invoke('netease:cloud-upload-files'),
+  neteaseBatchDownload: (songs: Array<{ id: number; name: string; artist: string }>) => ipcRenderer.invoke('netease:batch-download', songs),
+  onCloudUploadProgress: (cb: (p: { current: number; total: number; fileName: string; status: string }) => void) => {
+    ipcRenderer.on('netease:cloud-upload-progress', (_e, p) => cb(p))
+  },
+  onCloudDownloadProgress: (cb: (p: { current: number; total: number; fileName: string; status: string }) => void) => {
+    ipcRenderer.on('netease:cloud-download-progress', (_e, p) => cb(p))
+  },
   // 国内天气服务（v2.8.0）
   weatherCurrent: (cityId: string) => ipcRenderer.invoke('weather:current', cityId),
   weatherSearch: (name: string) => ipcRenderer.invoke('weather:search', name),

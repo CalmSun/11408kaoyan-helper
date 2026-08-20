@@ -1339,6 +1339,30 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  // ── v3.6.3：云盘本地上传 + 批量下载 ──
+
+  /** 云盘本地上传：选择本地音频文件上传到网易云云盘 */
+  async function cloudUploadFiles(): Promise<{ success: boolean; canceled?: boolean; total?: number; successCount?: number; failCount?: number; failed?: string[]; message?: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseCloudUploadFiles) return { success: false, message: 'API 不可用' }
+    try {
+      return await api.neteaseCloudUploadFiles()
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
+  /** 批量下载：所选歌曲一键下载到选定目录（音频 + 同目录 .lrc） */
+  async function batchDownloadSongs(songs: { id: number; name: string; artist: string }[]): Promise<{ success: boolean; canceled?: boolean; total?: number; successCount?: number; failCount?: number; failed?: { id: number; name: string }[]; dir?: string; message?: string }> {
+    const api = window.electronAPI
+    if (!api?.neteaseBatchDownload) return { success: false, message: 'API 不可用' }
+    try {
+      return await api.neteaseBatchDownload(songs)
+    } catch (err) {
+      return { success: false, message: String(err) }
+    }
+  }
+
   /** 获取歌曲歌词 */
   async function getSongLyric(songId: number): Promise<{ success: boolean; lyric?: string; message?: string }> {
     const api = window.electronAPI
@@ -1583,6 +1607,9 @@ export const useMusicStore = defineStore('music', () => {
     getSongLyric,
     quickUploadSongs,
     matchCloudSong,
-    deleteCloudSongs
+    deleteCloudSongs,
+    // v3.6.3：云盘本地上传 + 批量下载
+    cloudUploadFiles,
+    batchDownloadSongs
   }
 })

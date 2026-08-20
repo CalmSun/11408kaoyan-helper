@@ -304,7 +304,15 @@
               <el-button size="small" :loading="music.cloudDriveLoading" @click="music.addPlaylistToQueue(music.cloudDriveList)">
                 <el-icon><Plus /></el-icon> 添加到队列
               </el-button>
+              <!-- v3.6.3：云盘本地上传 + 批量下载 -->
+              <el-button size="small" :loading="cloudUploading" @click="handleCloudLocalUpload">
+                <el-icon><Upload /></el-icon> 本地上传
+              </el-button>
+              <el-button size="small" :loading="cloudBatchDownloading" @click="handleBatchDownloadCloud">
+                <el-icon><Download /></el-icon> 批量下载
+              </el-button>
             </div>
+            <div v-if="cloudOpStatus" class="cloud-op-status">{{ cloudOpStatus }}</div>
             <div v-if="music.cloudDriveLoading && music.cloudDriveList.length === 0" class="search-loading">
               <el-icon class="is-loading"><Loading /></el-icon> 加载中...
             </div>
@@ -730,6 +738,10 @@ const viewingToplistId = ref(0)
 // v3.5.3：下载和上传状态
 const downloadingSongId = ref<number | null>(null)
 const uploadingSongId = ref<number | null>(null)
+// v3.6.3：云盘本地上传 + 批量下载状态与进度
+const cloudUploading = ref(false)
+const cloudBatchDownloading = ref(false)
+const cloudOpStatus = ref('')
 
 const currentCover = computed(() => music.currentTrack?.cover || '')
 
@@ -1052,6 +1064,59 @@ async function handleQuickUpload(song: { id: number; name: string }) {
   }
 }
 
+// v3.6.3：云盘本地上传（选择本地音频上传到云盘）
+async function handleCloudLocalUpload() {
+  if (!music.neteaseLoggedIn) {
+    ElMessage.warning('请先登录网易云账号')
+    showLoginDialog.value = true
+    return
+  }
+  cloudUploading.value = true
+  cloudOpStatus.value = ''
+  try {
+    const res = await music.cloudUploadFiles()
+    if (res.canceled) return
+    if (res.success) {
+      ElMessage.success(`云盘上传完成：成功 ${res.successCount} / ${res.total}`)
+      if (res.failCount) ElMessage.error(`失败 ${res.failCount} 个：${res.failed?.join('、')}`)
+      await music.fetchCloudDrive()
+    } else {
+      ElMessage.error(res.message || '上传失败')
+    }
+  } catch (e) {
+    ElMessage.error('上传失败：' + (e as Error).message)
+  } finally {
+    cloudUploading.value = false
+    cloudOpStatus.value = ''
+  }
+}
+
+// v3.6.3：云盘歌曲批量下载（一次选目录，音频 + 同目录 .lrc）
+async function handleBatchDownloadCloud() {
+  if (!music.cloudDriveList.length) {
+    ElMessage.warning('云盘暂无歌曲')
+    return
+  }
+  cloudBatchDownloading.value = true
+  cloudOpStatus.value = ''
+  try {
+    const songs = music.cloudDriveList.map((s) => ({ id: s.id, name: s.name, artist: s.artist }))
+    const res = await music.batchDownloadSongs(songs)
+    if (res.canceled) return
+    if (res.success) {
+      ElMessage.success(`批量下载完成：成功 ${res.successCount} / ${res.total}`)
+      if (res.failCount) ElMessage.error(`失败 ${res.failCount} 首：${res.failed?.map((f) => f.name).join('、')}`)
+    } else {
+      ElMessage.error(res.message || '下载失败')
+    }
+  } catch (e) {
+    ElMessage.error('下载失败：' + (e as Error).message)
+  } finally {
+    cloudBatchDownloading.value = false
+    cloudOpStatus.value = ''
+  }
+}
+
 // 切换歌曲时检查喜欢状态 + 获取热门评论
 watch(() => music.currentTrack?.id, (newId) => {
   if (newId && music.currentTrack?.source === 'online') {
@@ -1119,6 +1184,14 @@ onMounted(() => {
     music.checkSongLikeStatus(track.id)
     music.fetchSongComments(track.id, 1, 20, 1)
   }
+  // v3.6.3：云盘上传/下载进度
+  const api = (window as any).electronAPI
+  api?.onCloudUploadProgress?.((p: { current: number; total: number; fileName: string; status: string }) => {
+    cloudOpStatus.value = `上传 ${p.current}/${p.total} ${p.fileName}：${p.status}`
+  })
+  api?.onCloudDownloadProgress?.((p: { current: number; total: number; fileName: string; status: string }) => {
+    cloudOpStatus.value = `下载 ${p.current}/${p.total} ${p.fileName}：${p.status}`
+  })
 })
 
 onUnmounted(() => {
@@ -1922,6 +1995,14 @@ body.liquid-glass .glass-card:hover {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+/* v3.6.3：云盘上传/下载进度提示 */
+.cloud-op-status {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 10px;
+  word-break: break-all;
 }
 
 .playlist-tracks {
