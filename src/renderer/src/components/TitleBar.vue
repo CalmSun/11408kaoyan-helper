@@ -251,7 +251,7 @@
       </button>
 
       <!-- v3.1.2：液态玻璃开关 -->
-      <button class="mini-btn liquidglass-btn" :class="{ on: liquidGlassOn }" :title="liquidGlassOn ? '关闭液态玻璃效果' : '开启液态玻璃效果'" @click="handleToggleLiquidGlass">
+      <button class="mini-btn liquidglass-btn" :class="{ on: liquidGlassOn }" :title="liquidGlassOn ? '关闭超通透玻璃' : '开启超通透玻璃'" @click="handleToggleLiquidGlass">
         <svg width="13" height="13" viewBox="0 0 13 13"><defs><linearGradient id="lg-grad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.9"/><stop offset="50%" stop-color="currentColor" stop-opacity="0.4"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.7"/></linearGradient></defs><rect x="1.5" y="1.5" width="10" height="10" rx="3" fill="url(#lg-grad)" stroke="currentColor" stroke-width="0.8"/><path d="M3 4 Q6.5 2.5 10 4" fill="none" stroke="currentColor" stroke-width="0.8" stroke-opacity="0.6" stroke-linecap="round"/></svg>
       </button>
 

@@ -105,10 +105,10 @@
           <el-button :disabled="!customBgOn || bgBusy" @click="resetCustomBg">恢复默认</el-button>
           <span class="unit-desc">自定义浅色模式的全屏背景图（深色模式不受影响）</span>
         </el-form-item>
-        <!-- v3.0.0：增强液态玻璃模式 -->
+        <!-- v3.6.5：该开关现在是"超通透档"——基础样式已是玻璃质感，开启后进一步降低底色、加大模糊与折射色差 -->
         <el-form-item label="液态玻璃">
           <el-switch v-model="liquidGlassOn" @change="handleLiquidGlassChange" />
-          <span class="unit-desc">开启增强版液态玻璃效果（更强模糊、动态高光、流动背景）</span>
+          <span class="unit-desc">超通透档：玻璃更透、模糊更强、边缘折射色差更明显，圆角更大</span>
         </el-form-item>
         <el-form-item label="开机自启动">
           <el-switch v-model="autoLaunch" @change="toggleAutoLaunch" />
@@ -401,7 +401,7 @@ const liquidGlassOn = computed({
 })
 
 function handleLiquidGlassChange(on: boolean) {
-  ElMessage.success(on ? '已开启液态玻璃效果' : '已关闭液态玻璃效果')
+  ElMessage.success(on ? '已切换到超通透玻璃' : '已恢复标准玻璃质感')
 }
 
 // ── 项目与更新（v2.6.7） ──

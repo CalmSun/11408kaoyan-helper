@@ -1,3 +1,53 @@
+# v3.6.5 更新：设计风格重构为液态玻璃（Liquid Glass）+ 玻璃样式去重 + 无用代码清理
+
+参照 https://liquid-glass.ybouane.com/ 的视觉语言重构全局设计体系，功能行为零改动。
+
+## 一、设计重构（纯 CSS，不引入 WebGL）
+
+| 维度 | v3.6.4 | v3.6.5 |
+|---|---|---|
+| 玻璃高光 | 顶部单层内亮边 + 左上光斑 | 镜面亮边 + 左上光斑 + 左右菲涅尔 + 底边折射微光 + 极轻 RGB 色差（一次伪元素多背景层实现） |
+| 玻璃质感 | 无颗粒，大面偏"塑料" | `::after` 承载极轻噪点，消掉半透明面的塑料感 |
+| 深色背景 | 纯深蓝渐变 + 噪点 | 三层彩色光溢出（蓝 / 紫 / 青）叠近黑底 + 上下暗角，制造可被玻璃折射的明暗变化 |
+| 圆角 | 14 / 20 / 10px | 18 / 26 / 12px（超通透档 24 / 34 / 16），贴近参考站的大圆角形态 |
+| 字阶 | 无统一变量 | `--fs-title` / `--fs-body` / `--fs-small`，标题 `letter-spacing: -0.02em` + `text-wrap: balance` |
+| 文本对比度 | text-3 `#8b92a0` | text-3 `#6f7889`（玻璃面上小字达 4.5:1） |
+| 浏览器原生面 | 默认滚动条 / 选中色 | 滚动条胶囊化 + 选中色跟随强调色 + `:focus-visible` 键盘焦点环 |
+
+**关键取舍：为什么不直接接 `@ybouane/liquidglass`**
+该库靠 `html-to-image` 逐帧把 DOM 栅格化进 canvas，再走多 pass WebGL pipeline。本项目单页含数百条列表项，接入后每帧都要重绘取景，必然掉帧；且每个实例独占一个 WebGL 上下文（浏览器上限约 16 个）。因此用 CSS 合成层复刻同一套光学语言：`backdrop-filter` 负责折射模糊，伪元素负责镜面 / 菲涅尔 / 色差，零额外 DOM、零 JS 逐帧开销。
+
+**"液态玻璃"开关保留并重新定位**：基础样式已是玻璃质感，该开关变为"超通透档"——降低玻璃底色、加大模糊与色差、放大圆角。持久化 key（`kaoyan_liquid_glass`）未变，用户既有偏好继续生效。
+
+## 二、性能红线（保持既有约束）
+
+- 每张卡片始终只有 **一层** `backdrop-filter`，伪元素不叠加滤镜
+- `.glass-lite` 保持无滤镜，供长列表 / 网格使用
+- hover 仍只用 `box-shadow`，**不做 `transform` 位移**（v3.2.7 修复的合成层遮挡问题不能回退）
+- 模糊半径 18px → 22px（深色 24px），补偿：本次删除了 137 行各处重复的玻璃规则，全站带滤镜元素数量反而减少
+- 过渡仍限定具体属性，不使用 `all`
+
+## 三、代码清理
+
+| 位置 | 内容 | 处理 |
+|---|---|---|
+| `views/Materials.vue` | 本地 `.glass-card` 全套视觉 + 4 段 `body.liquid-glass` 覆盖（65 行） | 删除，仅保留 `padding` / flex 布局 |
+| `views/Music.vue` | 同上（72 行） | 删除，保留布局 + `overflow: visible`（v3.2.6 合成层修复所需） |
+| `style.css` | `.gradient-text`、`.number-emphasis`、裸 `.glass` 选择器 | 删除（全项目零引用） |
+| `components/SideNav.vue` | `.theme-section` / `.theme-toggle` / `.theme-text` / `.user-section` / `.user-info` / `.user-icon` / `.user-name` | 删除（v2.7.0 起主题切换与用户栏已迁至顶栏，模板中无对应节点） |
+| `style.css` | 旧高光变量 `--glass-edge-highlight` / `--glass-highlight-*` | 收敛为 `--glass-rim-*` / `--glass-specular` / `--glass-top-glow` / `--glass-bottom-glow`，视图侧零残留 |
+
+新增全局类 `.glass-card`：此前 Materials / Music 用裸 `<div class="glass-card">`，全局规则只覆盖 `.glass-card--card`，两页只好各自复制整套玻璃样式并单独补 `body.liquid-glass` 覆盖——这是重复代码的根因。现将其提升为一等玻璃类，与 `.card` / `.glass-card--card` 视觉一致。
+
+## 四、验证
+
+- `npm run build` 通过（56.5s，exit 0），dist/renderer 正常产出
+- 旧变量引用残留：0；`--glass-*` 引用与定义一一对应
+- 构建产物 CSS 渲染验收：深色 / 浅色 × 默认 / 超通透 四组截图对照通过，正文与次级文字对比度达标
+- 功能面零改动：无模板结构变更、无 store / 路由 / IPC 改动、无新增依赖
+
+---
+
 # v3.5.2 更新：项目精简（清理构建备份/临时产物，零功能影响）+ PDF 黑屏根治 + 回环 HTTP 资源服务 + 进度栏移至顶栏左侧
 
 ## 本轮：项目精简（最终交付）

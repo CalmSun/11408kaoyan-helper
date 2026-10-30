@@ -273,7 +273,10 @@ function toggleCollapse() {
   background: var(--mo-gradient);
   color: #fff;
   font-weight: 600;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  /* 顶部亮边让实心选中项也属于玻璃体系，而不是浮在界面上的纯色块 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.34),
+    0 6px 18px rgba(59, 130, 246, 0.28);
 }
 
 .nav-text {
@@ -290,76 +293,6 @@ function toggleCollapse() {
 .side-nav.collapsed .nav-footer {
   padding: 12px 8px;
   align-items: center;
-}
-
-/* 主题切换 */
-.theme-section {
-  width: 100%;
-}
-
-.theme-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-  border-radius: var(--mo-radius-sm);
-  background: var(--mo-surface);
-  border: 1px solid var(--glass-border);
-  color: var(--side-nav-text-2);
-  cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.side-nav.collapsed .theme-toggle {
-  justify-content: center;
-  padding: 9px;
-}
-
-.theme-toggle:hover {
-  background: var(--side-nav-hover);
-  color: var(--mo-primary);
-}
-
-.theme-text {
-  flex: 1;
-}
-
-/* 用户信息 */
-.user-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 10px;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 6px;
-  transition: background-color 0.2s ease;
-  min-width: 0;
-}
-
-.user-info:hover {
-  background: var(--side-nav-hover);
-}
-
-.user-icon {
-  color: var(--mo-primary);
-}
-
-.user-name {
-  font-size: 13px;
-  color: var(--side-nav-text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100px;
 }
 
 .study-tip {
