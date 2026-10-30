@@ -49,14 +49,14 @@ uniform vec2  uOrigin;     // 元素左上角在视口中的位置（CSS px）
 uniform vec2  uViewport;   // 视口尺寸（CSS px）
 uniform float uDpr;
 uniform float uRadius;     // 圆角（CSS px）
-uniform float uBevel;      // 斜面宽度（CSS px）
+uniform float uBevel;      // 斜面宽度（CSS px，对应参考站 zRadius）
 uniform float uStrength;   // 折射位移强度（CSS px）
-uniform float uChroma;     // 色差
-uniform float uRim;        // 菲涅尔边缘亮度
+uniform float uChroma;     // 色差（对应 chromAberration）
+uniform float uBlurPx;     // 模糊半径（对应 blurAmount 0.25）
+uniform float uRim;        // 菲涅尔边缘亮度（对应 edgeHighlight / fresnel）
 uniform float uSpec;       // 镜面光斑强度
-uniform float uTint;       // 玻璃染色白度
-uniform float uContrast;   // 背景对比度压缩（清透玻璃必须削极值，否则深色树影上的文字看不清）
-uniform float uLift;       // 背景亮度抬升
+uniform float uContrast;   // 背景对比度压缩（vibrancy：只收极值，不染色）
+uniform float uLift;       // 暗部抬升
 uniform float uUseTex;     // 1 = 背景图，0 = 程序化深色渐变
 uniform sampler2D uTex;
 uniform vec2  uCover;      // cover 采样比例（x / y 分别计算）
@@ -67,7 +67,6 @@ float sdRoundBox(vec2 p, vec2 b, float r) {
   return min(max(q.x, q.y), 0.0) + length(max(q, 0.0)) - r;
 }
 
-// 圆角矩形 SDF 梯度：数值差分，便宜且足够平滑
 vec2 sdfGrad(vec2 p, vec2 b, float r) {
   float e = 1.0;
   float dx = sdRoundBox(p + vec2(e, 0.0), b, r) - sdRoundBox(p - vec2(e, 0.0), b, r);
@@ -77,9 +76,9 @@ vec2 sdfGrad(vec2 p, vec2 b, float r) {
 
 vec3 sampleBg(vec2 screenPx) {
   if (uUseTex > 0.5) {
-    // 复刻 background-size: cover + background-position: center
+    // 复刻 background-size: cover + background-position: center。
+    // 贴图用 UNPACK_FLIP_Y_WEBGL=0 上传，纹素 v=0 即图片顶行，不要再翻转 Y
     vec2 uv = (screenPx / uViewport - 0.5) * uCover + 0.5;
-    uv.y = 1.0 - uv.y;
     return texture2D(uTex, clamp(uv, 0.001, 0.999)).rgb;
   }
   // 深色主题：程序化光溢出，对应 style.css 里三层 radial-gradient
@@ -89,6 +88,16 @@ vec3 sampleBg(vec2 screenPx) {
   col += vec3(0.49, 0.33, 1.00) * smoothstep(0.92, 0.0, length((p - vec2(1.02, -0.02)) * vec2(1.25, 1.80))) * 0.32;
   col += vec3(0.00, 0.69, 0.84) * smoothstep(0.92, 0.0, length((p - vec2(0.50, 1.12)) * vec2(1.20, 1.60))) * 0.22;
   return col;
+}
+
+// 十字五点模糊：Regular Glass 的 blurAmount 0.25 就落在这个量级
+vec3 blurBg(vec2 screenPx, float r) {
+  vec3 sum = sampleBg(screenPx) * 0.36;
+  sum += sampleBg(screenPx + vec2( r,  0.0)) * 0.16;
+  sum += sampleBg(screenPx + vec2(-r,  0.0)) * 0.16;
+  sum += sampleBg(screenPx + vec2(0.0,  r)) * 0.16;
+  sum += sampleBg(screenPx + vec2(0.0, -r)) * 0.16;
+  return sum;
 }
 
 void main() {
@@ -103,40 +112,39 @@ void main() {
 
   vec2 screenPx = uOrigin + local;
 
-  // 斜面：edge 从中心 0 到最外缘 1；平方衰减更接近真实斜面曲率
+  // 斜面：edge 从中心 0 到最外缘 1；平方衰减更接近真实斜面曲率。
+  // 这就是 Regular Glass 的 refraction + zRadius：只有靠近边缘才发生透镜位移
   float edge = clamp(1.0 + d / max(uBevel, 1.0), 0.0, 1.0);
   float bend = edge * edge;
   vec2 n = sdfGrad(p, half_, uRadius);
-  vec2 offset = n * bend * uStrength;
+  vec2 base = screenPx + n * bend * uStrength;
 
-  // 色差：三通道折射率略有差异
-  vec2 base = screenPx + offset;
-  float ca = uChroma * bend;
-  vec3 col;
-  col.r = sampleBg(base + n * ca).r;
-  col.g = sampleBg(base).g;
-  col.b = sampleBg(base - n * ca).b;
+  // 主色：模糊后采样（opacity 1 / saturation 0 / brightness 0 —— 不染色、不改亮度）
+  vec3 col = blurBg(base, uBlurPx);
 
-  // 斜面带内轻微弥散：厚玻璃边缘比中心更"糊"一点，中心保持清晰
-  vec3 soft = sampleBg(base + n * uBevel * 0.35);
-  col = mix(col, soft, bend * 0.30);
+  // 色差：只在斜面带内出现，中心完全无色边
+  if (bend > 0.02) {
+    float ca = uChroma * bend;
+    vec3 f;
+    f.r = blurBg(base + n * ca, uBlurPx).r;
+    f.b = blurBg(base - n * ca, uBlurPx).b;
+    col.r = mix(col.r, f.r, 0.9);
+    col.b = mix(col.b, f.b, 0.9);
+  }
 
-  // 压缩背景对比度并整体抬亮：既保留树影/云层的结构（通透视感），
-  // 又把极暗与极亮拉进窄区间，深色文字压上去才读得清
+  // vibrancy：把背景压进窄区间。玻璃仍不染色（Regular Glass 的 opacity 1 / saturation 0），
+  // 只是削掉极暗极亮，否则深色文字压在树影上会整片消失
   col = (col - 0.5) * uContrast + 0.5 + uLift;
 
-  // 玻璃染色
-  col = mix(col, vec3(1.0), uTint);
-
-  // 菲涅尔：越靠边越亮
-  col += vec3(1.0) * smoothstep(0.62, 1.0, edge) * uRim;
+  // 菲涅尔：越靠边越亮（edgeHighlight + fresnel）
+  col += vec3(1.0) * smoothstep(0.70, 1.0, edge) * uRim;
 
   // 镜面光斑：左上柔光
   vec2 sp = (local - vec2(uRes.x * 0.20, -uRes.y * 0.04)) / max(uRes.x, 1.0);
   col += vec3(1.0) * smoothstep(0.55, 0.0, length(sp * vec2(1.0, 1.7))) * uSpec;
 
   // 顶端细亮线
-  col += vec3(1.0) * smoothstep(2.0, 0.0, local.y) * 0.32;
+  col += vec3(1.0) * smoothstep(2.0, 0.0, local.y) * 0.30;
 
   gl_FragColor = vec4(clamp(col, 0.0, 1.0), inside);
 }
@@ -228,7 +236,7 @@ class LiquidGlassEngine {
     gl.useProgram(prog)
     for (const name of [
       'uRes', 'uOrigin', 'uViewport', 'uDpr', 'uRadius', 'uBevel', 'uStrength',
-      'uChroma', 'uRim', 'uSpec', 'uTint', 'uContrast', 'uLift', 'uUseTex', 'uTex', 'uCover', 'uDarkA'
+      'uChroma', 'uBlurPx', 'uRim', 'uSpec', 'uContrast', 'uLift', 'uUseTex', 'uTex', 'uCover', 'uDarkA'
     ]) {
       this.u[name] = gl.getUniformLocation(prog, name)
     }
@@ -319,6 +327,13 @@ class LiquidGlassEngine {
       const canvas = document.createElement('canvas')
       canvas.className = 'lg-canvas'
       canvas.setAttribute('aria-hidden', 'true')
+      // 先按元素尺寸把 canvas 撑好，避免首帧之前它以 300×150 默认尺寸露出底色
+      const cw = el.clientWidth
+      const ch = el.clientHeight
+      canvas.width = cw
+      canvas.height = ch
+      canvas.style.width = cw + 'px'
+      canvas.style.height = ch + 'px'
       el.insertBefore(canvas, el.firstChild)
 
       const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 18
@@ -327,10 +342,11 @@ class LiquidGlassEngine {
         canvas,
         ctx: canvas.getContext('2d'),
         radius,
-        lastW: 0,
-        lastH: 0
+        lastW: cw,
+        lastH: ch
       })
-      el.classList.add('lg-on')
+      // 注意：这里不给元素加 .lg-on。要等着色器真正画上去以后再切换，
+      // 否则渲染失败或尚未渲染的元素会露出原始背景，出现深浅不一的块
     }
 
     this.schedule()
@@ -384,7 +400,6 @@ class LiquidGlassEngine {
     const vw = window.innerWidth
     const vh = window.innerHeight
     const dark = document.documentElement.classList.contains('dark')
-    const liquid = document.body.classList.contains('liquid-glass')
 
     gl.useProgram(this.program)
     gl.uniform2f(this.u.uViewport, vw, vh)
@@ -403,8 +418,11 @@ class LiquidGlassEngine {
       if (rect.width < 10 || rect.height < 10) continue
       if (rect.bottom < 0 || rect.top > vh || rect.right < 0 || rect.left > vw) continue
 
-      const w = rect.width
-      const h = rect.height
+      const w = entry.el.clientWidth
+      const h = entry.el.clientHeight
+      // canvas 定位在 padding box 内，所以原点要加上边框宽度，否则整体偏移 1px
+      const originX = rect.left + entry.el.clientLeft
+      const originY = rect.top + entry.el.clientTop
       const pw = Math.round(w * dpr)
       const ph = Math.round(h * dpr)
 
@@ -431,26 +449,32 @@ class LiquidGlassEngine {
       gl.clear(gl.COLOR_BUFFER_BIT)
 
       gl.uniform2f(this.u.uRes, w, h)
-      gl.uniform2f(this.u.uOrigin, rect.left, rect.top)
-      // 斜面宽度与位移量按元素尺寸自适应：小卡片若用固定像素值，会被斜面吞掉整块面
+      gl.uniform2f(this.u.uOrigin, originX, originY)
+      // ── Regular Glass 参数（参考站默认档）──
+      // refraction 0.69 / zRadius 40 / blurAmount 0.25 / chromAberration 0.05
+      // opacity 1 + saturation 0 + brightness 0 → 不染色、不增亮，纯透射
       const short = Math.min(w, h)
-      const bevel = Math.min(liquid ? 30 : 24, Math.max(8, entry.radius * 0.8), short * 0.26)
-      const strength = Math.min(liquid ? 22 : 16, short * 0.18)
+      // 斜面宽度：大卡片给满 40px，小卡片按短边收敛，避免整块面都变成斜面
+      const bevel = Math.min(40, Math.max(9, short * 0.30))
+      const strength = bevel * 0.69
       gl.uniform1f(this.u.uRadius, Math.min(entry.radius, short * 0.5))
       gl.uniform1f(this.u.uBevel, bevel)
       gl.uniform1f(this.u.uStrength, strength)
-      gl.uniform1f(this.u.uChroma, liquid ? 1.8 : 1.2)
-      gl.uniform1f(this.u.uRim, dark ? 0.10 : 0.18)
-      gl.uniform1f(this.u.uSpec, dark ? 0.035 : 0.07)
-      gl.uniform1f(this.u.uTint, dark ? 0.04 : 0.20)
-      // 深色主题背景本来就是近黑 + 柔和光斑，无需压缩；浅色主题必须削反差
-      gl.uniform1f(this.u.uContrast, dark ? 0.95 : 0.55)
-      gl.uniform1f(this.u.uLift, dark ? 0.02 : 0.30)
+      gl.uniform1f(this.u.uChroma, bevel * 0.05)
+      gl.uniform1f(this.u.uBlurPx, Math.min(6, Math.max(2, short * 0.02)))
+      gl.uniform1f(this.u.uRim, dark ? 0.10 : 0.13)
+      gl.uniform1f(this.u.uSpec, dark ? 0.025 : 0.04)
+      // 不染色（Regular Glass），只做 vibrancy 收极值：暗部抬到 ~0.54、亮部压到 ~0.90
+      gl.uniform1f(this.u.uContrast, dark ? 0.95 : 0.45)
+      gl.uniform1f(this.u.uLift, dark ? 0.02 : 0.24)
 
       gl.drawArrays(gl.TRIANGLES, 0, 3)
 
       entry.ctx.clearRect(0, 0, pw, ph)
       entry.ctx.drawImage(this.glCanvas!, 0, 0, pw, ph, 0, 0, pw, ph)
+
+      // 画成功之后才把元素切到透明，让着色器接管背景
+      if (!entry.el.classList.contains('lg-on')) entry.el.classList.add('lg-on')
     }
   }
 
@@ -489,16 +513,19 @@ export function initLiquidGlass(options: LiquidGlassOptions = {}): void {
   bindScroll()
   window.addEventListener('scroll', onScroll, { passive: true })
 
-  // 补挂载：路由切换 / 列表刷新后出现的新卡片
-  let lastCount = -1
-  const timer = window.setInterval(() => {
-    if (!liquidGlass.available) return
-    bindScroll()
-    const n = document.querySelectorAll(GLASS_SELECTOR).length
-    if (n !== lastCount) {
-      lastCount = n
+  // DOM 变动（路由切换 / 条件渲染 / 列表刷新）后补挂载。
+  // 用 MutationObserver 而不是轮询元素数量：数量不变但节点被替换时轮询会漏掉
+  let debounce = 0
+  let selfMutating = false
+  const observer = new MutationObserver(() => {
+    if (selfMutating) return
+    window.clearTimeout(debounce)
+    debounce = window.setTimeout(() => {
+      selfMutating = true
+      bindScroll()
       liquidGlass.mount()
-    }
-  }, 500)
-  window.addEventListener('beforeunload', () => clearInterval(timer))
+      selfMutating = false
+    }, 120)
+  })
+  observer.observe(document.body, { childList: true, subtree: true })
 }

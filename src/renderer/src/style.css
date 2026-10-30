@@ -91,11 +91,11 @@
   --mo-border: rgba(59, 130, 246, 0.10);
   --glass-lite-bg: rgba(255, 255, 255, 0.70);
 
-  /* ── 文字：清透玻璃会透出背景明暗，文字色阶必须整体压深才能保住对比度 ── */
-  --mo-text-1: #10161f;
-  --mo-text-2: #333d4c;
-  --mo-text-3: #46505f;
-  --mo-text-disabled: #6e7887;
+  /* ── 文字：玻璃不染色后，背景明暗会透上来，文字色阶必须足够深 ── */
+  --mo-text-1: #0d131c;
+  --mo-text-2: #2b3442;
+  --mo-text-3: #3b4452;
+  --mo-text-disabled: #626c7c;
 
   /* ── 侧边导航 ── */
   --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.50) 60%, rgba(255, 255, 255, 0.44) 100%);
@@ -332,12 +332,11 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  /* 整层提亮：玻璃本身几乎不染色后，靠这一层给背景抬亮度，
-     既保住文字对比度，又不像加厚玻璃那样把背景糊掉（零滤镜开销）。
-     这是"玻璃通透 + 文字可读"能同时成立的关键：抬背景，不抬玻璃。 */
+  /* 只做极轻的顶部柔光。曾经的 0.44 全屏白蒙版会让整个应用像隔了一层雾——
+     可读性现在由玻璃着色器内部压缩对比度解决，背景层保持照片本色 */
   background:
-    radial-gradient(120% 55% at 50% -18%, rgba(255, 255, 255, 0.40) 0%, transparent 62%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0.36) 100%);
+    radial-gradient(120% 55% at 50% -18%, rgba(255, 255, 255, 0.22) 0%, transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.06) 100%);
 }
 
 .app-bg-decor::before,
@@ -539,6 +538,24 @@ html.dark .lg-canvas {
    这样无需给子元素强行改 position（那会破坏各视图里的绝对定位布局） */
 .lg-on {
   isolation: isolate;
+  border-color: rgba(255, 255, 255, 0.34) !important;
+}
+
+html.dark .lg-on {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* 玻璃卡片内部的轻量行/网格：玻璃本体已经清透，内层若仍用 70% 白会变成一块块白砖 */
+.lg-on .glass-lite,
+.lg-on .glass-card--lite {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.42);
+}
+
+html.dark .lg-on .glass-lite,
+html.dark .lg-on .glass-card--lite {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.10);
 }
 
 /* ═══════════════════════════════════════════════════════════

@@ -1,3 +1,44 @@
+# v3.6.5 更新（第四轮）：对齐 Regular Glass 参数 + 修三个显示 bug
+
+用户反馈"大量显示 bug、整体像套一层白雾、卡片有白块、卡片背景倒置"，并要求改用参考站的
+**Regular Glass** 效果应用所有大小卡片。
+
+## 一、三个 bug 的根因与修复
+
+| 现象 | 根因 | 修复 |
+|---|---|---|
+| 卡片背景倒置 | 纹理上传用 `UNPACK_FLIP_Y_WEBGL=0`（纹素 v=0 即图片顶行），采样时又多做了一次 `uv.y = 1-uv.y` | 去掉那次翻转 |
+| 整体像套一层白雾 | 第二轮为了救文字对比度，给 `.app-bg-decor` 加了 44% 全屏白蒙版 | 降到 10%，可读性改由着色器内部解决 |
+| 卡片出现白块 | ① 对比度压缩过猛，亮部直接顶到 1.0；② 未渲染成功的元素已被设为背景透明，露出原始背景 | ① 压缩区间收到 0.54~0.90；② 改成**渲染成功后才加 `.lg-on`**，没画上就保持 CSS 玻璃 |
+
+顺带修的两处：canvas 定位在 padding box 内，原点要加 `clientLeft/clientTop`，否则整体偏 1px；
+补挂载从"轮询元素数量"改为 `MutationObserver`——数量不变但节点被替换时轮询会漏掉。
+
+## 二、Regular Glass 参数对齐
+
+参考站默认档：`refraction 0.69 / zRadius 40 / blurAmount 0.25 / chromAberration 0.05 /
+edgeHighlight 0.05 / opacity 1 / saturation 0 / brightness 0 / shadowOpacity 0.3`。
+
+| 参数 | 实现 |
+|---|---|
+| refraction 0.69 + zRadius 40 | 斜面宽度 `min(40, max(9, 短边×0.30))`，位移 = 斜面 × 0.69 |
+| blurAmount 0.25 | 十字五点模糊，半径 `clamp(短边×0.02, 2, 6)` px |
+| chromAberration 0.05 | 色差 = 斜面 × 0.05，只在斜面带内出现，中心无色边 |
+| opacity 1 / saturation 0 / brightness 0 | **不染色、不增饱和、不增亮**（删掉了之前的 tint） |
+| edgeHighlight + fresnel | 菲涅尔边缘亮度 + 左上镜面光斑 + 顶端细亮线 |
+
+唯一保留的偏离：仍做一层很轻的**对比度压缩**（`(col-0.5)*0.45+0.5+0.24`，不染色、不发白），
+作用等同 Apple 的 vibrancy——否则深色文字压在照片的树影上会整片消失。
+如果完全不要这一层，把 `uContrast` 设为 1.0、`uLift` 设为 0 即可，代价是暗部文字丢失。
+
+## 三、验证
+
+- `npm run build` 多次 exit 0（57–77s）
+- Edge 实例逐屏截图：背景不再发雾、卡片无白块、背景方向正确、KPI 小卡片与大卡片同样生效
+- 仍偏弱的位置：快捷入口等密集小字压在树影最深处时对比度偏低（清透玻璃的固有代价）
+
+---
+
 # v3.6.5 更新（第三轮）：自研边缘透镜 WebGL 玻璃
 
 CSS 的 `backdrop-filter` 只有模糊与色彩函数，做不出参考站那种**边缘透镜放大**——
