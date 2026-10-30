@@ -498,6 +498,50 @@ html.dark .app-bg-decor::after {
 }
 
 /* ═══════════════════════════════════════════════════════════
+   液态玻璃 WebGL 层（v3.6.5 · 边缘透镜）
+   ────────────────────────────────────────────────────────────
+   .lg-on        该元素交由 WebGL 着色器渲染玻璃本体，DOM 背景与 backdrop-filter 必须让位
+   .lg-canvas    着色器输出承接层，绝对定位铺满元素、位于内容之下（内容已有 z-index:1）
+   未启用（WebGL 不可用 / 自定义背景跨域）时元素保持 CSS 玻璃观感，无需任何回退代码
+   ═══════════════════════════════════════════════════════════ */
+.card.lg-on,
+.glass-card.lg-on,
+.stat-card.lg-on,
+.login-card.lg-on {
+  background: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+}
+
+.lg-canvas {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  z-index: -1 !important;
+  display: block;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    0 1px 2px rgba(13, 38, 84, 0.06),
+    0 10px 26px rgba(13, 38, 84, 0.09),
+    0 32px 80px rgba(13, 38, 84, 0.10);
+}
+
+html.dark .lg-canvas {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 12px 30px rgba(0, 0, 0, 0.42),
+    0 40px 92px rgba(0, 0, 0, 0.5);
+}
+
+/* 用 z-index:-1 + 父级 isolation 把 canvas 放在内容与自身背景之下，
+   这样无需给子元素强行改 position（那会破坏各视图里的绝对定位布局） */
+.lg-on {
+  isolation: isolate;
+}
+
+/* ═══════════════════════════════════════════════════════════
    排版工具类
    ═══════════════════════════════════════════════════════════ */
 .page-title {

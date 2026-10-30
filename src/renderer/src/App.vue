@@ -40,12 +40,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useMainStore } from '@/stores'
 import { usePomodoroStore } from '@/stores/pomodoro'
-import { initTheme, initCustomBg } from '@/utils/theme'
+import { initTheme, initCustomBg, isDark, liquidGlass as liquidGlassOn } from '@/utils/theme'
 import { initDataSync } from '@/utils/datasync'
+import { initLiquidGlass, liquidGlass } from '@/utils/liquidGlass'
 import SideNav from '@/components/SideNav.vue'
 import TitleBar from '@/components/TitleBar.vue'
 import PomodoroMini from '@/components/PomodoroMini.vue'
@@ -93,6 +94,9 @@ function todayLocal(): string {
 }
 
 onMounted(() => {
+  // v3.6.5：启动液态玻璃 WebGL 层（边缘透镜）。不可用时自动保持 CSS 玻璃观感
+  nextTick(() => initLiquidGlass())
+
   // 每60秒记录一次使用时长，并检测是否跨天（跨天时自动固化新一天快照）
   usageTimer = window.setInterval(() => {
     store.recordAppUsage()
@@ -102,6 +106,17 @@ onMounted(() => {
       store.recordPlanSnapshot()
     }
   }, 60000)
+})
+
+// 路由切换：新视图的卡片需要重新挂载玻璃层
+watch(() => route.path, () => {
+  nextTick(() => liquidGlass.mount())
+})
+
+// 主题 / 超通透档切换：重算玻璃染色与折射强度
+watch([isDark, liquidGlassOn], () => {
+  liquidGlass.refreshTheme()
+  nextTick(() => liquidGlass.mount())
 })
 
 // v2.8.2：应用关闭/刷新前固化当日计划快照，防止异常退出丢失最后状态
