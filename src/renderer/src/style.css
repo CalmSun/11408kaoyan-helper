@@ -45,29 +45,33 @@
   --ring-track: rgba(255, 255, 255, 0.6);
 
   /* ══ 玻璃光学参数（浅色） ══
-     折射：saturate > 1 让玻璃后方的颜色被"吸"出来
-     镜面：顶部内亮边 + 左上光斑，模拟光源在左上方
-     菲涅尔：边缘比中心亮，越靠近轮廓反射越强
-     色差：左右各一道极淡红/蓝偏移，真实玻璃的厚度感来源 */
-  --glass-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.64) 0%, rgba(255, 255, 255, 0.44) 48%, rgba(255, 255, 255, 0.36) 100%);
+     液态玻璃不是磨砂：玻璃本体几乎不染色，靠"折射"透出背后的内容；
+     blur 只保留 2px 用来柔化高频细节，真正塑造形态的是亮边 + 菲涅尔 + 色差。
+     brightness 抬高背景亮度，保证深色文字压在照片上仍然可读。 */
+  /* 浅色主题：不模糊、只薄薄染色——背景的形状与颜色能透出来（通透），
+     但保留足够白度，让深色文字压在照片的暗部时仍可读。
+     深色主题才是完全清透的那一档（白字在深底上天然高对比）。 */
+  --glass-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.40) 0%, rgba(255, 255, 255, 0.31) 48%, rgba(255, 255, 255, 0.27) 100%);
   --glass-bg-strong: linear-gradient(155deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.80) 55%, rgba(255, 255, 255, 0.74) 100%);
   --glass-bg-fallback: #f2f6fd;
   --glass-bg-strong-fallback: #fafcff;
-  --glass-border: rgba(255, 255, 255, 0.72);
-  --glass-blur: 22px;
-  --glass-blur-pop: 28px;
-  --glass-saturate: 1.9;
-  --glass-brightness: 1.02;
+  --glass-border: rgba(255, 255, 255, 0.66);
+  --glass-blur: 2px;
+  --glass-blur-pop: 3px;
+  --glass-saturate: 1.45;
+  --glass-brightness: 1.12;
+  /* 折射波源：默认档（由 index.html 的 SVG 滤镜提供，不支持时见下方 @supports 兜底） */
+  --glass-wave: url(#kaoyan-glass-wave);
 
   /* 高光强度 */
-  --glass-rim-top: 0.85;        /* 顶部内亮边 */
-  --glass-rim-bottom: 0.10;     /* 底部反射亮线 */
-  --glass-rim-side: 0.22;       /* 左右菲涅尔 */
-  --glass-specular: 0.30;       /* 左上镜面光斑 */
-  --glass-top-glow: 0.22;       /* 顶部渐变高光 */
-  --glass-bottom-glow: 0.06;    /* 底边折射微光 */
-  --glass-chromatic: 0.018;     /* 色差边缘 */
-  --glass-noise: 0.035;         /* 玻璃内部颗粒 */
+  --glass-rim-top: 0.95;        /* 顶部内亮边 */
+  --glass-rim-bottom: 0.16;     /* 底部反射亮线 */
+  --glass-rim-side: 0.34;       /* 左右菲涅尔 */
+  --glass-specular: 0.40;       /* 左上镜面光斑 */
+  --glass-top-glow: 0.24;       /* 顶部渐变高光 */
+  --glass-bottom-glow: 0.07;    /* 底边折射微光 */
+  --glass-chromatic: 0.040;     /* 色差边缘 */
+  --glass-noise: 0.016;         /* 玻璃内部颗粒 */
   --glass-shadow:
     0 1px 2px rgba(13, 38, 84, 0.06),
     0 10px 26px rgba(13, 38, 84, 0.09),
@@ -77,9 +81,9 @@
     0 16px 38px rgba(13, 38, 84, 0.12),
     0 40px 92px rgba(13, 38, 84, 0.13);
 
-  /* 统一滤镜表达式：所有玻璃层只引用这两个变量，一处调参全站生效 */
-  --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
-  --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
+  /* 兜底滤镜：浏览器不支持 url() 折射时退回低模糊玻璃（仍比原磨砂通透） */
+  --glass-filter: blur(12px) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
+  --glass-filter-pop: blur(16px) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
 
   /* ── 中性表面（高频小元素：无滤镜，纯半透明色） ── */
   --mo-surface: rgba(255, 255, 255, 0.55);
@@ -87,11 +91,11 @@
   --mo-border: rgba(59, 130, 246, 0.10);
   --glass-lite-bg: rgba(255, 255, 255, 0.70);
 
-  /* ── 文字（在玻璃面上的实测对比度：正文 ≥4.5:1） ── */
-  --mo-text-1: #1c2331;
-  --mo-text-2: #4d5666;
-  --mo-text-3: #6f7889;
-  --mo-text-disabled: #a6adba;
+  /* ── 文字：清透玻璃会透出背景明暗，文字色阶必须整体压深才能保住对比度 ── */
+  --mo-text-1: #10161f;
+  --mo-text-2: #333d4c;
+  --mo-text-3: #46505f;
+  --mo-text-disabled: #6e7887;
 
   /* ── 侧边导航 ── */
   --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.50) 60%, rgba(255, 255, 255, 0.44) 100%);
@@ -103,10 +107,10 @@
   --side-nav-divider: rgba(59, 130, 246, 0.12);
   --side-nav-collapse-bg: rgba(255, 255, 255, 0.88);
 
-  /* ── 圆角：参考站用大圆角，这里在信息密度与形态之间取中 ── */
-  --mo-radius: 18px;
-  --mo-radius-lg: 26px;
-  --mo-radius-sm: 12px;
+  /* ── 圆角：参考站默认 cornerRadius 40，这里按信息密度取 20/28/13 ── */
+  --mo-radius: 20px;
+  --mo-radius-lg: 28px;
+  --mo-radius-sm: 13px;
   --mo-radius-pill: 999px;
 
   /* ── 字阶 ── */
@@ -124,6 +128,18 @@
   --mo-transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
 }
 
+/* 真正的折射：支持 backdrop-filter: url() 时，用 SVG 位移滤镜取代磨砂模糊。
+   -webkit- 前缀不支持 url()，因此用 or 判断，命中后两套滤镜都取 var(--glass-wave)。
+   var() 在最终使用处才解析，所以这里引用主题变量即可自动适配深浅色。 */
+@supports (backdrop-filter: url(#kaoyan-glass-wave)) or (-webkit-backdrop-filter: url(#kaoyan-glass-wave)) {
+  :root {
+    --glass-filter:
+      var(--glass-wave) blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
+    --glass-filter-pop:
+      var(--glass-wave) blur(var(--glass-blur-pop)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════
    深色主题：影院级底 + 彩色光溢出（最接近参考站的观感）
    ═══════════════════════════════════════════════════════════ */
@@ -132,34 +148,35 @@ html.dark {
 
   --mo-primary-light: #7cb3ff;
 
-  /* 三层彩色光斑叠在近黑底上，替代参考站的摄影背景 */
+  /* 三层彩色光斑叠在近黑底上，替代参考站的摄影背景。
+     亮度比磨砂时代更高——玻璃现在几乎不染色，需要背景本身有可辨认的明暗才有折射感。 */
   --mo-bg-image: none;
   --mo-bg-gradient:
-    radial-gradient(85% 65% at 14% -12%, rgba(58, 106, 255, 0.26) 0%, transparent 62%),
-    radial-gradient(75% 60% at 102% -6%, rgba(126, 84, 255, 0.20) 0%, transparent 58%),
-    radial-gradient(70% 60% at 50% 112%, rgba(0, 176, 214, 0.13) 0%, transparent 62%),
-    linear-gradient(180deg, #070a13 0%, #04060c 100%);
+    radial-gradient(85% 65% at 14% -12%, rgba(58, 106, 255, 0.34) 0%, transparent 62%),
+    radial-gradient(75% 60% at 102% -6%, rgba(126, 84, 255, 0.26) 0%, transparent 58%),
+    radial-gradient(70% 60% at 50% 112%, rgba(0, 176, 214, 0.18) 0%, transparent 62%),
+    linear-gradient(180deg, #080c16 0%, #04060c 100%);
   --ring-track: rgba(255, 255, 255, 0.12);
 
-  /* 深色玻璃：通透度更高（白字在深底上仍有充足对比度），高光收敛 */
-  --glass-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.085) 0%, rgba(255, 255, 255, 0.048) 50%, rgba(255, 255, 255, 0.030) 100%);
+  /* 深色玻璃：几乎没有白色染色，全靠折射与亮边成形；深底上白字对比度天然充足 */
+  --glass-bg: linear-gradient(155deg, rgba(255, 255, 255, 0.048) 0%, rgba(255, 255, 255, 0.026) 50%, rgba(255, 255, 255, 0.016) 100%);
   --glass-bg-strong: linear-gradient(155deg, rgba(26, 34, 50, 0.94) 0%, rgba(16, 22, 34, 0.90) 100%);
   --glass-bg-fallback: #10151f;
   --glass-bg-strong-fallback: #131926;
-  --glass-border: rgba(255, 255, 255, 0.145);
-  --glass-blur: 24px;
-  --glass-blur-pop: 30px;
-  --glass-saturate: 1.55;
+  --glass-border: rgba(255, 255, 255, 0.20);
+  --glass-blur: 2px;
+  --glass-blur-pop: 3px;
+  --glass-saturate: 1.40;
   --glass-brightness: 1.06;
 
-  --glass-rim-top: 0.20;
-  --glass-rim-bottom: 0.05;
-  --glass-rim-side: 0.07;
-  --glass-specular: 0.09;
-  --glass-top-glow: 0.07;
-  --glass-bottom-glow: 0.025;
-  --glass-chromatic: 0.030;
-  --glass-noise: 0.05;
+  --glass-rim-top: 0.40;
+  --glass-rim-bottom: 0.08;
+  --glass-rim-side: 0.14;
+  --glass-specular: 0.14;
+  --glass-top-glow: 0.10;
+  --glass-bottom-glow: 0.035;
+  --glass-chromatic: 0.060;
+  --glass-noise: 0.026;
   --glass-shadow:
     0 1px 2px rgba(0, 0, 0, 0.50),
     0 12px 30px rgba(0, 0, 0, 0.42),
@@ -315,10 +332,12 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  /* 顶部柔光 + 底部暗角：制造画面纵深，零滤镜开销 */
+  /* 整层提亮：玻璃本身几乎不染色后，靠这一层给背景抬亮度，
+     既保住文字对比度，又不像加厚玻璃那样把背景糊掉（零滤镜开销）。
+     这是"玻璃通透 + 文字可读"能同时成立的关键：抬背景，不抬玻璃。 */
   background:
-    radial-gradient(120% 55% at 50% -18%, rgba(255, 255, 255, 0.30) 0%, transparent 62%),
-    radial-gradient(110% 70% at 50% 118%, rgba(13, 38, 84, 0.10) 0%, transparent 62%);
+    radial-gradient(120% 55% at 50% -18%, rgba(255, 255, 255, 0.40) 0%, transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.44) 0%, rgba(255, 255, 255, 0.36) 100%);
 }
 
 .app-bg-decor::before,
@@ -684,51 +703,52 @@ html.dark .el-textarea__inner:focus {
    注意：此档只覆写变量与少量阴影，不新增任何滤镜层，开销与默认档一致。
    ═══════════════════════════════════════════════════════════ */
 body.liquid-glass {
-  --glass-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.24) 50%, rgba(255, 255, 255, 0.16) 100%);
+  /* 折射波源换成强档，白底进一步降低：越通透，越要靠折射和亮边交代形体 */
+  --glass-wave: url(#kaoyan-glass-wave-strong);
+  --glass-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.10) 50%, rgba(255, 255, 255, 0.06) 100%);
   --glass-bg-strong: linear-gradient(150deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.58) 50%, rgba(255, 255, 255, 0.50) 100%);
-  --glass-border: rgba(255, 255, 255, 0.55);
-  --glass-blur: 28px;
-  --glass-blur-pop: 34px;
-  --glass-saturate: 2.1;
-  --glass-rim-top: 0.95;
-  --glass-rim-bottom: 0.12;
-  --glass-rim-side: 0.30;
-  --glass-specular: 0.42;
-  --glass-top-glow: 0.26;
-  --glass-chromatic: 0.035;
-  --glass-noise: 0.03;
+  --glass-border: rgba(255, 255, 255, 0.58);
+  --glass-blur: 1px;
+  --glass-blur-pop: 2px;
+  --glass-saturate: 1.60;
+  --glass-brightness: 1.26;
+  --glass-rim-top: 0.98;
+  --glass-rim-bottom: 0.16;
+  --glass-rim-side: 0.38;
+  --glass-specular: 0.46;
+  --glass-top-glow: 0.24;
+  --glass-chromatic: 0.045;
+  --glass-noise: 0.016;
   --glass-shadow:
     0 2px 6px rgba(13, 38, 84, 0.08),
     0 16px 40px rgba(13, 38, 84, 0.12),
     0 44px 100px rgba(13, 38, 84, 0.14);
-  --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
-  --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate)) brightness(var(--glass-brightness));
 
   /* 参考站 Corner Radius ≈ 40px，这里取 28/36，保持信息密度可读 */
   --mo-radius: 24px;
   --mo-radius-lg: 34px;
   --mo-radius-sm: 16px;
 
-  --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.20) 60%, rgba(255, 255, 255, 0.14) 100%);
-  --side-nav-border: rgba(255, 255, 255, 0.40);
-  --glass-lite-bg: rgba(255, 255, 255, 0.58);
-  --titlebar-bg: rgba(255, 255, 255, 0.16);
-  --titlebar-border: rgba(255, 255, 255, 0.22);
+  --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0.10) 60%, rgba(255, 255, 255, 0.06) 100%);
+  --side-nav-border: rgba(255, 255, 255, 0.42);
+  --glass-lite-bg: rgba(255, 255, 255, 0.46);
+  --titlebar-bg: rgba(255, 255, 255, 0.12);
+  --titlebar-border: rgba(255, 255, 255, 0.20);
 }
 
 html.dark body.liquid-glass {
-  --glass-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.115) 0%, rgba(255, 255, 255, 0.065) 50%, rgba(255, 255, 255, 0.040) 100%);
+  --glass-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.062) 0%, rgba(255, 255, 255, 0.032) 50%, rgba(255, 255, 255, 0.018) 100%);
   --glass-bg-strong: linear-gradient(150deg, rgba(24, 31, 46, 0.92) 0%, rgba(15, 21, 33, 0.88) 100%);
-  --glass-border: rgba(255, 255, 255, 0.185);
-  --glass-saturate: 1.75;
-  --glass-rim-top: 0.26;
-  --glass-rim-side: 0.10;
-  --glass-specular: 0.12;
-  --glass-top-glow: 0.09;
-  --glass-chromatic: 0.05;
-  --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.05) 60%, rgba(255, 255, 255, 0.035) 100%);
-  --side-nav-border: rgba(255, 255, 255, 0.13);
-  --glass-lite-bg: rgba(255, 255, 255, 0.075);
-  --titlebar-bg: rgba(255, 255, 255, 0.06);
-  --titlebar-border: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.24);
+  --glass-saturate: 1.55;
+  --glass-rim-top: 0.42;
+  --glass-rim-side: 0.16;
+  --glass-specular: 0.16;
+  --glass-top-glow: 0.11;
+  --glass-chromatic: 0.075;
+  --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.052) 0%, rgba(255, 255, 255, 0.026) 60%, rgba(255, 255, 255, 0.016) 100%);
+  --side-nav-border: rgba(255, 255, 255, 0.16);
+  --glass-lite-bg: rgba(255, 255, 255, 0.045);
+  --titlebar-bg: rgba(255, 255, 255, 0.045);
+  --titlebar-border: rgba(255, 255, 255, 0.08);
 }
