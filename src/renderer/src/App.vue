@@ -46,6 +46,7 @@ import { useMainStore } from '@/stores'
 import { usePomodoroStore } from '@/stores/pomodoro'
 import { initTheme, initCustomBg } from '@/utils/theme'
 import { initDataSync } from '@/utils/datasync'
+import { initLiquidGlass, liquidGlass } from '@/utils/liquidGlass'
 import SideNav from '@/components/SideNav.vue'
 import TitleBar from '@/components/TitleBar.vue'
 import PomodoroMini from '@/components/PomodoroMini.vue'
@@ -93,6 +94,9 @@ function todayLocal(): string {
 }
 
 onMounted(() => {
+  // v3.6.5：液态玻璃折射层。DOM 挂载后再启动，路由切换由内部 MutationObserver 补挂载
+  initLiquidGlass()
+
   // 每60秒记录一次使用时长，并检测是否跨天（跨天时自动固化新一天快照）
   usageTimer = window.setInterval(() => {
     store.recordAppUsage()
@@ -116,6 +120,7 @@ onUnmounted(() => {
     usageTimer = null
   }
   window.removeEventListener('beforeunload', handleBeforeUnload)
+  liquidGlass.destroy()
   // 最终保存
   store.recordAppUsage()
   store.recordPlanSnapshot()

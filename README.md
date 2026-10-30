@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-3.5.2-blue">
+  <img alt="版本" src="https://img.shields.io/badge/version-3.6.5-blue">
   <img alt="平台" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
   <img alt="技术栈" src="https://img.shields.io/badge/stack-Vue3%20%2B%20Electron28-9cf">
   <img alt="协议" src="https://img.shields.io/badge/license-MIT-green">
@@ -41,7 +41,7 @@
 | # | 亮点 | 说明 |
 | - | ---- | ---- |
 | 1 | **一站式考研全流程** | 倒计时、番茄专注、每日计划、真题统计、背诵、词库、视频播放、网易云听歌全部内置，无需多开软件 |
-| 2 | **液态玻璃拟态原生 UI** | 全局磨砂玻璃卡片、双主题 + 护眼模式，长列表分批渲染防掉帧，低卡顿轻量化 |
+| 2 | **液态玻璃拟态原生 UI** | 全站统一折射玻璃卡片、双主题 + 护眼模式，长列表无滤镜分批渲染防掉帧，低卡顿轻量化 |
 | 3 | **完整离线可用** | 所有学习数据本地双备份存储（IndexedDB + 文件快照），不上传云端，隐私可控 |
 | 4 | **深度整合网易云音乐** | 云盘、歌单、心动模式、评论、三种登录方式，全局顶栏悬浮播放器 |
 | 5 | **多格式内置播放器** | 支持 MP4 / MKV / AVI 等主流视频，倍速、快捷键、音量增益、快进退；PDF 本地渲染、中文无乱码 |
@@ -99,7 +99,7 @@
 ### 外观与全局体验
 
 - 🌗 **三色切换**：深色 / 浅色 / 跟随系统，独立暖色护眼滤光模式
-- 🪟 **全局液态玻璃 UI**：统一 CSS 封装磨砂模糊卡片，长列表分批渲染防掉帧
+- 🪟 **全局液态玻璃 UI**：参照 liquid-glass-vue 重构为真实折射玻璃 —— 边缘透镜折射 + 色差 + 轮廓高光，玻璃面会真实弯折后方背景而非只是糊化；长列表无滤镜分批渲染防掉帧
 - 🌤️ **顶栏天气小组件**：中国天气网数据源，17 座城市快捷切换、自定义城市搜索；每小时自动刷新，30 分钟本地缓存
 - 🪟 **可自定义顶部导航栏**：窗口控制、滚动歌词、天气、迷你音乐播放条自由组合
 - 🚀 **自动更新程序**：基于 `electron-updater`，设置页一键检测、下载、静默安装新版本
@@ -119,7 +119,7 @@
 | 路由管理 | Vue Router 4 |
 | 数据可视化 | ECharts 5 + vue-echarts 6（按需引入） |
 | 日期处理 | Day.js |
-| 玻璃拟态样式 | 原生 CSS 变量封装 `backdrop-filter`，低版本自动滤镜降级 |
+| 玻璃拟态样式 | `backdrop-filter`（采样+霜化）叠 `filter: url(#svg)`（圆角 SDF 位移图折射），运行时按宽高比分桶共享滤镜；不支持时自动降级为纯 CSS 玻璃 |
 | 文档 / PDF 渲染 | `@open-file-viewer/core` + `pdfjs-dist`（主进程回环 HTTP 托管 CMap / 标准字体） |
 | 应用更新 | electron-updater 6 |
 | 本地数据存储 | IndexedDB 渲染进程存储 + 文件 JSON 快照双备份 |

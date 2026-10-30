@@ -1738,70 +1738,13 @@ function downloadFile() {
   height: calc(100% - 70px);
 }
 
+/* 卡片视觉（底色 / 边框 / 圆角 / 阴影 / 高光）统一由全局 .glass-card 承载，
+   本文件只保留布局属性 */
 .glass-card {
-  position: relative;
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--mo-radius);
-  backdrop-filter: var(--glass-filter);
-  -webkit-backdrop-filter: var(--glass-filter);
-  box-shadow:
-    var(--glass-shadow),
-    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
-    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom));
-  transition: box-shadow 0.25s ease;
   padding: 20px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  isolation: isolate;
-}
-
-/* v3.4.2：液态高光层（与全局 .glass-card--card::before 一致，修复液态玻璃模式不生效） */
-.glass-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    radial-gradient(120% 60% at 18% 0%, rgba(255, 255, 255, var(--glass-highlight-corner)) 0%, transparent 60%),
-    linear-gradient(180deg, rgba(255, 255, 255, var(--glass-highlight-top)) 0%, transparent 32%);
-}
-
-/* v3.4.2：液态玻璃模式下：菲涅尔镜面反射 + 色差边缘 + 噪声纹理（与全局一致） */
-body.liquid-glass .glass-card::before {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-highlight-top) * 1.5)) 0%, transparent 30%),
-    linear-gradient(90deg, rgba(255,255,255,var(--glass-highlight-corner)) 0%, transparent 15%, transparent 85%, rgba(255,255,255,var(--glass-highlight-corner)) 100%),
-    linear-gradient(0deg, rgba(255,255,255,var(--glass-highlight-bottom)) 0%, transparent 20%);
-}
-body.liquid-glass .glass-card {
-  box-shadow:
-    var(--glass-shadow),
-    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
-    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
-    inset 1px 0 0 rgba(255, 100, 100, 0.02),
-    inset -1px 0 0 rgba(100, 100, 255, 0.02);
-}
-body.liquid-glass .glass-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0.025;
-  z-index: -1;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-body.liquid-glass .glass-card:hover {
-  box-shadow:
-    0 8px 28px rgba(31, 64, 130, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.08)),
-    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
-    inset 1px 0 0 rgba(255, 100, 100, 0.03),
-    inset -1px 0 0 rgba(100, 100, 255, 0.03);
 }
 
 .section-title {
