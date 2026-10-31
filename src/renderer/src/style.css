@@ -55,19 +55,19 @@
   /* 统一滤镜表达式：所有玻璃层只引用该变量，便于一处调参 */
   --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
-  /* 外壳面（侧边栏/顶栏）：比内容卡更实一档。它们承载成排的导航文字，
-     通透度要让位于可读性；仍比 3.6.4 的 0.78/0.55 半透明得多。 */
-  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(255, 255, 255, 0.56) 0%, rgba(255, 255, 255, 0.46) 60%, rgba(255, 255, 255, 0.40) 100%);
+  /* 外壳面（侧边栏/顶栏）：通透玻璃。底色只给到维持文字对比的最低白度，
+     玻璃感交给「更实的 blur + 高饱和」，而不是靠加白——加白越多越像磨砂/白雾。 */
+  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.12) 60%, rgba(255, 255, 255, 0.09) 100%);
 
   /* v3.6.5 折射层：底色要淡。折射层会自己采样并模糊背景，
      底色加白越多越像磨砂片；这里只保留维持文字对比度所需的最低白度。 */
-  --glass-bg-lg: linear-gradient(150deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.07) 100%);
-  --lg-blur: 4px;
-  --lg-saturate: 155%;
-  /* contrast < 1 把背景压进窄带、brightness > 1 再把窄带抬到可读区间。
-     这是让「通透」与「字看得清」同时成立的关键：抬背景而不是加厚玻璃。 */
-  --lg-contrast: 0.85;
-  --lg-brightness: 1.08;
+  --glass-bg-lg: linear-gradient(150deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.09) 45%, rgba(255, 255, 255, 0.06) 100%);
+  --lg-blur: 13px;
+  --lg-saturate: 170%;
+  /* 通透关键：不压对比、不提亮。压对比会把背景拍成灰、提亮会糊成白雾；
+     文字可读性交给「更实的 blur + 极淡白底」保证，而非拉伸背景亮度。 */
+  --lg-contrast: 1.0;
+  --lg-brightness: 1.0;
 
   /* 中性表面（列表项等高频元素：无滤镜，纯半透明色） */
   --mo-surface: rgba(255, 255, 255, 0.55);
@@ -138,11 +138,11 @@ html.dark {
   --glass-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.45), 0 12px 30px rgba(0, 0, 0, 0.38), 0 32px 72px rgba(0, 0, 0, 0.42);
   /* 深色主题背景本身柔和，折射层可以更透：白字压深底，对比度天然够 */
   --glass-bg-lg: linear-gradient(150deg, rgba(38, 50, 74, 0.18) 0%, rgba(26, 35, 54, 0.12) 50%, rgba(19, 26, 40, 0.09) 100%);
-  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(34, 44, 63, 0.60) 0%, rgba(20, 27, 42, 0.50) 60%, rgba(13, 19, 31, 0.44) 100%);
-  --lg-blur: 5px;
-  --lg-saturate: 148%;
-  --lg-contrast: 0.90;
-  --lg-brightness: 1.06;
+  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(30, 40, 58, 0.36) 0%, rgba(20, 27, 42, 0.28) 60%, rgba(13, 19, 31, 0.24) 100%);
+  --lg-blur: 14px;
+  --lg-saturate: 155%;
+  --lg-contrast: 1.0;
+  --lg-brightness: 1.0;
 
   /* 中性表面 */
   --mo-surface: rgba(255, 255, 255, 0.06);
@@ -192,17 +192,17 @@ html.dark {
 /* 超通透档：模糊更小、饱和更高、压缩更轻，让折射与背景结构更明显
    （代价是最暗处的文字对比度略降，这是这一档刻意的取舍） */
 body.liquid-glass {
-  --lg-blur: 4px;
-  --lg-saturate: 182%;
-  --lg-contrast: 0.66;
-  --lg-brightness: 1.18;
+  --lg-blur: 12px;
+  --lg-saturate: 190%;
+  --lg-contrast: 1.0;
+  --lg-brightness: 1.0;
 }
 
 html.dark body.liquid-glass {
-  --lg-blur: 5px;
-  --lg-saturate: 168%;
-  --lg-contrast: 0.90;
-  --lg-brightness: 1.08;
+  --lg-blur: 13px;
+  --lg-saturate: 175%;
+  --lg-contrast: 1.0;
+  --lg-brightness: 1.0;
 }
 
 * {
@@ -463,11 +463,10 @@ html.dark .lg-on {
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
   box-shadow:
-    0 0 0 0.5px rgba(255, 255, 255, 0.5) inset,
-    0 1px 3px rgba(255, 255, 255, 0.25) inset,
-    0 1px 4px rgba(0, 0, 0, 0.35) inset,
+    0 0 0 0.5px rgba(255, 255, 255, 0.6) inset,
+    0 1px 3px rgba(255, 255, 255, 0.3) inset,
     /* 底边折射微光：厚玻璃的下缘会聚光，没有它玻璃会薄得像一张纸 */
-    0 -1px 0 rgba(255, 255, 255, 0.30) inset;
+    0 -1px 0 rgba(255, 255, 255, 0.28) inset;
   background: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0) 0%,

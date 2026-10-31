@@ -61,8 +61,10 @@ const MAP_MIN = 28
  *  由 FILTER_MARGIN_PCT 派生，二者必须同步，否则位移图里的圆角会被反推错。 */
 const FILTER_MARGIN_PCT = 10
 const REGION = 1 + (FILTER_MARGIN_PCT / 100) * 2
-/** 位移强度：负值 = 边缘放大（对应库 standard 模式的 scale = -1） */
-const BASE_SCALE = -56
+/** 位移强度：负值 = 边缘放大（对应库 standard 模式的 scale = -1）。
+ *  56 时边缘最大位移达 28px，对小尺寸浮层（44px 顶栏）是剧烈透镜，边缘采样错位；
+ *  降到 30 收敛为 15px，边缘折射更细腻，也不易露出锯齿/暗带。 */
+const BASE_SCALE = -30
 /** 三通道位移量的递增比例，形成边缘色差 */
 const ABERRATION = 0.055
 /** 宽高比量化步长：避免为每个元素单独生成一张位移图 */
