@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/models.dart';
 import '../services/app_store.dart';
 import '../services/storage_service.dart';
 import '../services/theme_controller.dart';
@@ -25,6 +26,17 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _examNameCtl =
       TextEditingController(text: AppStore.instance.examName);
+
+  static const List<Color> _subjectColors = [
+    Color(0xFF4A6CF7),
+    Color(0xFF8A4AF7),
+    Color(0xFF00B0D6),
+    Color(0xFFF87171),
+    Color(0xFF34D399),
+    Color(0xFFFBBF24),
+    Color(0xFFF472B6),
+    Color(0xFFFB923C),
+  ];
 
   @override
   void dispose() {
@@ -47,6 +59,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 14),
             _section('考试设置'),
             _buildExamCard(context),
+            const SizedBox(height: 14),
+            _section('考试科目'),
+            _buildSubjectsCard(context),
             const SizedBox(height: 14),
             _section('番茄钟设置'),
             _buildPomodoroCard(context),
@@ -150,6 +165,151 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     ]);
+  }
+
+  // ── 考试科目管理 ──
+  Widget _buildSubjectsCard(BuildContext context) {
+    final store = AppStore.instance;
+    return _wrapCard([
+      for (final s in store.allSubjects)
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(color: s.color, shape: BoxShape.circle),
+          ),
+          title: Text(s.name),
+          subtitle: Text('满分 ${s.fullScore}'),
+          trailing: store.isCustomSubject(s.id)
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.pencil, size: 16),
+                      onPressed: () => _showSubjectDialog(subject: s),
+                    ),
+                    IconButton(
+                      icon: const Icon(CupertinoIcons.trash,
+                          size: 16, color: Color(0xFFEF4444)),
+                      onPressed: () => store.removeCustomSubject(s.id),
+                    ),
+                  ],
+                )
+              : Text('内置',
+                  style:
+                      TextStyle(fontSize: 11, color: Theme.of(context).hintColor)),
+        ),
+      Align(
+        alignment: Alignment.centerRight,
+        child: TextButton.icon(
+          onPressed: () => _showSubjectDialog(),
+          icon: const Icon(CupertinoIcons.plus, size: 16),
+          label: const Text('添加自定义科目'),
+        ),
+      ),
+    ]);
+  }
+
+  void _showSubjectDialog({Subject? subject}) {
+    final isEditing = subject != null;
+    final nameCtl = TextEditingController(text: subject?.name ?? '');
+    final scoreCtl =
+        TextEditingController(text: '${subject?.fullScore ?? 100}');
+    var colorValue =
+        subject?.colorValue ?? KaoyanColors.primary.toARGB32();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlg) => AlertDialog(
+          title: Text(isEditing ? '编辑科目' : '添加自定义科目'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtl,
+                  decoration: const InputDecoration(
+                      labelText: '科目名称（如「专业课一」）', isDense: true),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: scoreCtl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                      labelText: '满分（如 150）', isDense: true),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    const Text('颜色'),
+                    const SizedBox(width: 12),
+                    for (final c in _subjectColors)
+                      GestureDetector(
+                        onTap: () => setDlg(() => colorValue = c.toARGB32()),
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 4),
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: colorValue == c.toARGB32()
+                                  ? Colors.white
+                                  : Colors.transparent,
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('取消')),
+            FilledButton(
+              onPressed: () async {
+                final name = nameCtl.text.trim();
+                final score = int.tryParse(scoreCtl.text) ?? 100;
+                if (name.isEmpty) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('请输入科目名称')));
+                  return;
+                }
+                final store = AppStore.instance;
+                if (isEditing) {
+                  await store.updateCustomSubject(Subject(
+                    id: subject.id,
+                    name: name,
+                    shortName: name,
+                    colorValue: colorValue,
+                    fullScore: score,
+                  ));
+                } else {
+                  await store.addCustomSubject(Subject(
+                    id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+                    name: name,
+                    shortName: name,
+                    colorValue: colorValue,
+                    fullScore: score,
+                  ));
+                }
+                if (!ctx.mounted) return;
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── 番茄钟设置 ──
@@ -500,7 +660,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const ListTile(
         contentPadding: EdgeInsets.zero,
         leading: Icon(CupertinoIcons.book, color: KaoyanColors.primary),
-        title: Text('11408 考研助手 · 液态玻璃全平台版'),
+        title: Text('考研助手 · 液态玻璃全平台版'),
         subtitle: Text('Windows / Linux / Android'),
       ),
     ]);

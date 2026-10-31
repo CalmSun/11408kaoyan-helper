@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 /// 日期字段沿用字符串（ISO 时间戳或 YYYY-MM-DD），与旧数据格式兼容，
 /// 需要运算时再 parse，避免时区错位。
 
-/// 考研科目（11408）
+/// 考研科目
 enum SubjectType {
   politics('politics', '政治', '政治', Color(0xFFF87171)),
   english('english', '英语一', '英语', Color(0xFF34D399)),
@@ -25,6 +25,51 @@ enum SubjectType {
     }
     return null;
   }
+}
+
+/// 考试科目（内置 4 科 + 用户自定义科目）。
+class Subject {
+  const Subject({
+    required this.id,
+    required this.name,
+    required this.shortName,
+    required this.colorValue,
+    required this.fullScore,
+  });
+
+  final String id;
+  final String name;
+  final String shortName;
+  final int colorValue;
+  final int fullScore;
+
+  Color get color => Color(colorValue);
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'shortName': shortName,
+        'colorValue': colorValue,
+        'fullScore': fullScore,
+      };
+
+  factory Subject.fromJson(Map<String, dynamic> j) => Subject(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        shortName: j['shortName'] as String? ?? '',
+        colorValue: j['colorValue'] as int? ?? 0xFF4A6CF7,
+        fullScore: j['fullScore'] as int? ?? 100,
+      );
+}
+
+extension SubjectTypeX on SubjectType {
+  Subject toSubject() => Subject(
+        id: id,
+        name: name,
+        shortName: shortName,
+        colorValue: color.toARGB32(),
+        fullScore: subjectFullScore[this] ?? 100,
+      );
 }
 
 /// 各科满分（408 满分 150）
@@ -261,7 +306,7 @@ class DailyStudyRecord {
       );
 }
 
-/// 11408 知识大纲节点（树形）
+/// 知识大纲节点（树形）
 class OutlineNode {
   const OutlineNode({
     required this.id,
@@ -403,7 +448,7 @@ class ExamScoreRecord {
   });
 
   final String id;
-  final SubjectType subject;
+  final String subject; // 科目 id（内置或自定义）
   final int year;
   final int score;
   final int fullScore;
@@ -412,7 +457,7 @@ class ExamScoreRecord {
 
   Map<String, dynamic> toJson() => {
         'id': id,
-        'subject': subject.id,
+        'subject': subject,
         'year': year,
         'score': score,
         'fullScore': fullScore,
@@ -422,7 +467,7 @@ class ExamScoreRecord {
 
   factory ExamScoreRecord.fromJson(Map<String, dynamic> j) => ExamScoreRecord(
         id: j['id'] as String,
-        subject: SubjectType.fromId(j['subject'] as String?) ?? SubjectType.math,
+        subject: j['subject'] as String? ?? 'math',
         year: j['year'] as int? ?? 0,
         score: j['score'] as int? ?? 0,
         fullScore: j['fullScore'] as int? ?? 150,

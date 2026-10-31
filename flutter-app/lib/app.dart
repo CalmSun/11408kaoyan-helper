@@ -18,7 +18,7 @@ class KaoyanApp extends StatelessWidget {
       listenable: ThemeController.instance,
       builder: (context, _) {
         return MaterialApp(
-          title: '11408 考研助手',
+          title: '考研助手',
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             useMaterial3: true,

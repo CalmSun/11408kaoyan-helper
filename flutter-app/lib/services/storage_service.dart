@@ -48,7 +48,8 @@ class StorageService {
   Future<void> setString(String key, String value) =>
       _prefs!.setString(_key(key), value);
 
-  bool getBool(String key) => _prefs?.getBool(_key(key)) ?? false;
+  bool getBool(String key, {bool defaultValue = false}) =>
+      _prefs?.getBool(_key(key)) ?? defaultValue;
 
   Future<void> setBool(String key, bool value) =>
       _prefs!.setBool(_key(key), value);

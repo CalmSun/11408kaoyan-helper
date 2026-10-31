@@ -18,7 +18,7 @@ class AppStore extends ChangeNotifier {
 
   // ── 状态 ──────────────────────────────────────────────
   String examDate = '2026-12-21';
-  String examName = '2027年全国硕士研究生招生考试（11408）';
+  String examName = '2027年全国硕士研究生招生考试';
   List<PlanItem> plans = [];
   List<Flashcard> flashcards = [];
   List<PomodoroRecord> pomodoroRecords = [];
@@ -34,6 +34,7 @@ class AppStore extends ChangeNotifier {
   PomodoroSettings pomodoroSettings = const PomodoroSettings();
   int appUsageMinutes = 0;
   int _sessionStartAt = DateTime.now().millisecondsSinceEpoch;
+  List<Subject> _customSubjects = [];
 
   bool _initialized = false;
   bool get isInitialized => _initialized;
@@ -59,7 +60,7 @@ class AppStore extends ChangeNotifier {
     final s = StorageService.instance;
     examDate = s.getString('examDate') ?? '2026-12-21';
     examName =
-        s.getString('examName') ?? '2027年全国硕士研究生招生考试（11408）';
+        s.getString('examName') ?? '2027年全国硕士研究生招生考试';
     plans = s.getList('plans', PlanItem.fromJson);
     flashcards = s.getList('flashcards', Flashcard.fromJson);
     pomodoroRecords = s.getList('pomodoroRecords', PomodoroRecord.fromJson);
@@ -69,6 +70,7 @@ class AppStore extends ChangeNotifier {
     pomodoroSettings = s.getObject('pomodoroSettings', PomodoroSettings.fromJson) ??
         const PomodoroSettings();
     appUsageMinutes = s.getInt('appUsageMinutes');
+    _customSubjects = s.getList('customSubjects', Subject.fromJson);
     final sp = s.getObject<Map<String, dynamic>>(
             'subjectProgress', (j) => Map<String, dynamic>.from(j)) ??
         {};
@@ -258,7 +260,7 @@ class AppStore extends ChangeNotifier {
   // ── 真题成绩 ──────────────────────────────────────────
 
   Future<void> addExamScore(
-      SubjectType subject, int year, int score, String remark) async {
+      String subject, int year, int score, String remark) async {
     examScores.insert(
       0,
       ExamScoreRecord(
@@ -266,7 +268,7 @@ class AppStore extends ChangeNotifier {
         subject: subject,
         year: year,
         score: score,
-        fullScore: subjectFullScore[subject]!,
+        fullScore: subjectById(subject).fullScore,
         remark: remark.isEmpty ? null : remark,
         createdAt: DateTime.now().toIso8601String(),
       ),
@@ -277,7 +279,7 @@ class AppStore extends ChangeNotifier {
 
   Future<void> updateExamScore(
     String id, {
-    required SubjectType subject,
+    required String subject,
     required int year,
     required int score,
     required String remark,
@@ -290,7 +292,7 @@ class AppStore extends ChangeNotifier {
       subject: subject,
       year: year,
       score: score,
-      fullScore: subjectFullScore[subject]!,
+      fullScore: subjectById(subject).fullScore,
       remark: remark.isEmpty ? null : remark,
       createdAt: r.createdAt,
     );
@@ -351,6 +353,43 @@ class AppStore extends ChangeNotifier {
     await StorageService.instance.setObject(
         'subjectProgress', {for (final e in subjectProgress.entries) e.key.id: e.value});
   }
+
+  // ── 自定义考试科目 ────────────────────────────────────
+
+  List<Subject> get customSubjects => _customSubjects;
+
+  /// 全部科目（内置 4 科 + 自定义）
+  List<Subject> get allSubjects =>
+      [...SubjectType.values.map((t) => t.toSubject()), ..._customSubjects];
+
+  Subject subjectById(String id) => allSubjects.firstWhere(
+      (s) => s.id == id,
+      orElse: () => SubjectType.math.toSubject());
+
+  bool isCustomSubject(String id) => _customSubjects.any((s) => s.id == id);
+
+  Future<void> addCustomSubject(Subject subject) async {
+    _customSubjects.add(subject);
+    notifyListeners();
+    await _saveCustomSubjects();
+  }
+
+  Future<void> updateCustomSubject(Subject subject) async {
+    final idx = _customSubjects.indexWhere((s) => s.id == subject.id);
+    if (idx == -1) return;
+    _customSubjects[idx] = subject;
+    notifyListeners();
+    await _saveCustomSubjects();
+  }
+
+  Future<void> removeCustomSubject(String id) async {
+    _customSubjects.removeWhere((s) => s.id == id);
+    notifyListeners();
+    await _saveCustomSubjects();
+  }
+
+  Future<void> _saveCustomSubjects() =>
+      StorageService.instance.setList('customSubjects', _customSubjects);
 
   Future<void> setExamDate(String date, {String? name}) async {
     examDate = date;

@@ -1,4 +1,4 @@
-# 11408 考研助手 · Flutter 全平台版
+# 考研助手 · Flutter 全平台版
 
 考研助手的 Flutter 重写版，采用 iOS 26「液态玻璃」（Liquid Glass）设计语言，一套代码构建 **Windows / Linux / Android** 三个平台。
 

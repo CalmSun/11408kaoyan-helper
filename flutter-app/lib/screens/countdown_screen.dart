@@ -21,7 +21,7 @@ class CountdownScreen extends StatefulWidget {
 
 class _CountdownScreenState extends State<CountdownScreen> {
   String _examDate = '2026-12-21';
-  String _examName = '2027年全国硕士研究生招生考试（11408）';
+  String _examName = '2027年全国硕士研究生招生考试';
   DateTime _now = DateTime.now();
   Timer? _timer;
 

@@ -15,7 +15,7 @@ class ExamScoresScreen extends StatefulWidget {
 }
 
 class _ExamScoresScreenState extends State<ExamScoresScreen> {
-  SubjectType? _filterSubject;
+  String? _filterSubject;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +57,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
       spacing: 12,
       runSpacing: 12,
       children: [
-        for (final s in SubjectType.values)
+        for (final s in store.allSubjects)
           SizedBox(width: _cardWidth(context), child: _summaryCard(store, s)),
       ],
     );
@@ -70,8 +70,9 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
     return (w - 32 - 12 * 3) / 4;
   }
 
-  ({String avg, int max, int count})? _stats(AppStore store, SubjectType s) {
-    final records = store.examScores.where((r) => r.subject == s).toList();
+  ({String avg, int max, int count})? _stats(AppStore store, Subject s) {
+    final records =
+        store.examScores.where((r) => r.subject == s.id).toList();
     if (records.isEmpty) return null;
     final scores = records.map((r) => r.score).toList();
     final avg = (scores.fold(0, (a, b) => a + b) / scores.length)
@@ -80,7 +81,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
     return (avg: avg, max: max, count: records.length);
   }
 
-  Widget _summaryCard(AppStore store, SubjectType s) {
+  Widget _summaryCard(AppStore store, Subject s) {
     final stats = _stats(store, s);
     return GlassContainer.card(
       child: Padding(
@@ -101,7 +102,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
                     color: s.color,
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: Text('满分 ${subjectFullScore[s]}',
+                  child: Text('满分 ${s.fullScore}',
                       style: const TextStyle(fontSize: 10, color: Colors.white)),
                 ),
               ],
@@ -151,9 +152,9 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
     const minYear = 2009, maxYear = 2026;
 
     final bars = <LineChartBarData>[];
-    for (final s in SubjectType.values) {
+    for (final s in store.allSubjects) {
       final records = store.examScores
-          .where((r) => r.subject == s)
+          .where((r) => r.subject == s.id)
           .toList()
         ..sort((a, b) => a.year.compareTo(b.year));
       if (records.isEmpty) continue;
@@ -246,16 +247,16 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
                     style:
                         TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
                 const Spacer(),
-                DropdownButton<SubjectType?>(
+                DropdownButton<String?>(
                   value: _filterSubject,
                   hint: const Text('按科目筛选', style: TextStyle(fontSize: 13)),
                   underline: const SizedBox.shrink(),
                   items: [
-                    const DropdownMenuItem<SubjectType?>(
+                    const DropdownMenuItem<String?>(
                         value: null, child: Text('全部科目')),
-                    for (final s in SubjectType.values)
-                      DropdownMenuItem<SubjectType?>(
-                          value: s, child: Text(s.name)),
+                    for (final s in store.allSubjects)
+                      DropdownMenuItem<String?>(
+                          value: s.id, child: Text(s.name)),
                   ],
                   onChanged: (v) => setState(() => _filterSubject = v),
                 ),
@@ -298,10 +299,10 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: r.subject.color,
+              color: AppStore.instance.subjectById(r.subject).color,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(r.subject.shortName,
+            child: Text(AppStore.instance.subjectById(r.subject).shortName,
                 style: const TextStyle(fontSize: 11, color: Colors.white)),
           ),
           const SizedBox(width: 10),
@@ -349,7 +350,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('删除确认'),
-        content: Text('确定删除 ${r.year} 年 ${r.subject.name} 的分数记录吗？'),
+        content: Text('确定删除 ${r.year} 年 ${AppStore.instance.subjectById(r.subject).name} 的分数记录吗？'),
         actions: [
           TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -371,7 +372,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
 
   void _showEditDialog({ExamScoreRecord? record}) {
     final isEditing = record != null;
-    var subject = record?.subject ?? SubjectType.politics;
+    var subject = record?.subject ?? 'politics';
     var year = record?.year ?? 2026;
     var score = (record?.score ?? 0).toDouble();
     final remarkCtl = TextEditingController(text: record?.remark ?? '');
@@ -386,20 +387,19 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                DropdownButtonFormField<SubjectType>(
+                DropdownButtonFormField<String>(
                   initialValue: subject,
                   decoration: const InputDecoration(labelText: '科目'),
                   items: [
-                    for (final s in SubjectType.values)
+                    for (final s in AppStore.instance.allSubjects)
                       DropdownMenuItem(
-                          value: s,
-                          child: Text('${s.name}（满分 ${subjectFullScore[s]}）')),
+                          value: s.id,
+                          child: Text('${s.name}（满分 ${s.fullScore}）')),
                   ],
                   onChanged: (v) => setDlg(() {
                     subject = v ?? subject;
-                    if (score > (subjectFullScore[subject] ?? 150)) {
-                      score = (subjectFullScore[subject] ?? 150).toDouble();
-                    }
+                    final fs = AppStore.instance.subjectById(subject).fullScore;
+                    if (score > fs) score = fs.toDouble();
                   }),
                 ),
                 const SizedBox(height: 12),
@@ -417,7 +417,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
                   keyboardType: TextInputType.number,
                   decoration: InputDecoration(
                     labelText:
-                        '得分（0-${subjectFullScore[subject]}）',
+                        '得分（0-${AppStore.instance.subjectById(subject).fullScore}）',
                   ),
                   controller: TextEditingController(text: score.toInt().toString())
                     ..selection = TextSelection.collapsed(
@@ -440,7 +440,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
                 child: const Text('取消')),
             FilledButton(
               onPressed: () async {
-                final max = subjectFullScore[subject] ?? 150;
+                final max = AppStore.instance.subjectById(subject).fullScore;
                 final s = score.round();
                 if (s < 0 || s > max) {
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -456,7 +456,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
                 if (duplicate) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                        content: Text('$year 年 ${subject.name} 已有记录，请直接编辑')),
+                        content: Text('$year 年 ${AppStore.instance.subjectById(subject).name} 已有记录，请直接编辑')),
                   );
                   return;
                 }
