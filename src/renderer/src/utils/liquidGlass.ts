@@ -40,24 +40,18 @@ type WarpEntry = {
 }
 
 /**
- * 参与液态玻璃的选择器。
- * 内容卡片 + 应用外壳（侧边栏 / 顶栏）+ 列表里的细节卡片，才成"全站玻璃"。
- * 这些细节卡一个列表可能上百条，因此视口外的必须真的不付 GPU 成本——
- * 由 IntersectionObserver 逐个开关（见 start()），不是滚动时逐个量尺寸。
+ * 参与液态玻璃的选择器 —— 只保留「浮在内容之上」的浮层。
+ *
+ * 依据苹果 HIG 的液态玻璃原则：玻璃是给浮层（工具栏/标签栏/浮层/控件）用的，
+ * 不是给内容本身用的；正文压在花哨背景上必然不可读，苹果自己都因此补了不透明开关。
+ * 因此内容卡片（.card/.glass-card/.stat-card/.algo-card/...）一律退出折射层，
+ * 保持实心玻璃拟态（--glass-bg + backdrop-filter blur），正文可读；
+ * 真正的折射只落在侧边栏 / 顶栏 / 番茄钟浮窗这几个浮层上。
  */
 const DEFAULT_SELECTOR = [
-  '.card',
-  '.glass-card',
-  '.glass-card--card',
-  '.glass-card--strong',
-  '.stat-card',
-  '.login-card',
   '.side-nav',
   '.titlebar',
-  '.pomodoro-mini',
-  '.algo-card',
-  '.word-card',
-  '.formula-card'
+  '.pomodoro-mini'
 ].join(',')
 
 const MAP_MAX = 72

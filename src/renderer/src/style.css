@@ -725,9 +725,10 @@ html.dark .el-textarea__inner:focus {
    - 大圆角 40px，柔和阴影
    ═══════════════════════════════════════════ */
 body.liquid-glass {
-  /* 玻璃变量：按 liquidglass 参数校准 */
-  --glass-bg: linear-gradient(135deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.10) 50%, rgba(255,255,255,0.06) 100%);
-  --glass-bg-strong: linear-gradient(135deg, rgba(255,255,255,0.30) 0%, rgba(255,255,255,0.18) 50%, rgba(255,255,255,0.12) 100%);
+  /* 玻璃变量：底色保持实心 —— 液态玻璃原则是「正文不能全透」，
+     玻璃感交给更强的 blur、大圆角与阴影，不靠降底色。降底色 = 文字压在壁纸上不可读。 */
+  --glass-bg: linear-gradient(135deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.60) 50%, rgba(255,255,255,0.52) 100%);
+  --glass-bg-strong: linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.84) 50%, rgba(255,255,255,0.78) 100%);
   --glass-border: rgba(255,255,255,0.35);
   --glass-blur: 25px;           /* Blur Amount 0.25 → 25px */
   --glass-blur-pop: 30px;
@@ -758,8 +759,8 @@ body.liquid-glass {
 
 /* 深色主题下的液态玻璃 */
 html.dark body.liquid-glass {
-  --glass-bg: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0.04) 50%, rgba(255,255,255,0.02) 100%);
-  --glass-bg-strong: linear-gradient(135deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.05) 100%);
+  --glass-bg: linear-gradient(135deg, rgba(38,50,74,0.72) 0%, rgba(26,35,54,0.60) 50%, rgba(19,26,40,0.54) 100%);
+  --glass-bg-strong: linear-gradient(135deg, rgba(30,40,60,0.92) 0%, rgba(20,27,42,0.86) 100%);
   --glass-border: rgba(255,255,255,0.15);
   --glass-edge-highlight: 0.08;
   --glass-highlight-top: 0.06;
