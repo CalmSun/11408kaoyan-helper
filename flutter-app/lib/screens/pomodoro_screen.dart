@@ -35,6 +35,8 @@ class PomodoroScreen extends StatelessWidget {
             _buildSubjectChips(ctrl),
             const SizedBox(height: 16),
             _buildTodayStats(context, ctrl),
+            const SizedBox(height: 16),
+            _buildTodayRecords(context, ctrl),
           ],
         );
       },
@@ -225,5 +227,80 @@ class PomodoroScreen extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  // ── 今日记录列表（对应 Electron todayRecords，倒序） ──
+  Widget _buildTodayRecords(BuildContext context, PomodoroController ctrl) {
+    final records = ctrl.todayRecords.reversed.toList();
+    return GlassContainer.card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(CupertinoIcons.list_bullet,
+                    size: 18, color: KaoyanColors.primary),
+                SizedBox(width: 8),
+                Text('今日记录',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (records.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: Text('今天还没有番茄记录，开始专注吧~',
+                      style: TextStyle(color: Theme.of(context).hintColor)),
+                ),
+              )
+            else
+              for (final r in records)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Text(
+                        _formatClock(r.completedAt),
+                        style: TextStyle(
+                            fontSize: 13,
+                            color: Theme.of(context).hintColor,
+                            fontFeatures: const [FontFeature.tabularFigures()]),
+                      ),
+                      const SizedBox(width: 12),
+                      if (r.subject != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: r.subject!.color,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(r.subject!.shortName,
+                              style: const TextStyle(
+                                  fontSize: 11, color: Colors.white)),
+                        ),
+                      const Spacer(),
+                      Text('${r.duration} 分钟',
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatClock(String iso) {
+    try {
+      final d = DateTime.parse(iso).toLocal();
+      return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    } catch (_) {
+      return '';
+    }
   }
 }

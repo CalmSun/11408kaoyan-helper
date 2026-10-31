@@ -230,20 +230,26 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
             children: [
               Row(
                 children: [
-                  Text(
-                    w['word'] as String? ?? '',
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold),
+                  Flexible(
+                    child: Text(
+                      w['word'] as String? ?? '',
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
                   ),
                   if (phonetic.isNotEmpty) ...[
                     const SizedBox(width: 8),
-                    Text('/$phonetic/',
-                        style: TextStyle(
-                            fontSize: 12,
-                            fontStyle: FontStyle.italic,
-                            color: Theme.of(context).hintColor)),
+                    Flexible(
+                      child: Text('/$phonetic/',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic,
+                              color: Theme.of(context).hintColor)),
+                    ),
                   ],
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   _levelTag(level),
                 ],
               ),

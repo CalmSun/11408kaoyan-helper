@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'navigation/app_navigator.dart';
 import 'screens/app_shell.dart';
 import 'services/theme_controller.dart';
 
@@ -20,6 +21,7 @@ class KaoyanApp extends StatelessWidget {
         return MaterialApp(
           title: '考研助手',
           debugShowCheckedModeBanner: false,
+          navigatorKey: appNavigatorKey,
           theme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.light,

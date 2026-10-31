@@ -332,6 +332,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           (v) => store.updatePomodoroSettings(s.copyWith(longBreakInterval: v))),
       _sliderTile('提醒音量', s.soundVolume, 0, 100, '%',
           (v) => store.updatePomodoroSettings(s.copyWith(soundVolume: v))),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading:
+            const Icon(CupertinoIcons.speaker_2, color: KaoyanColors.primary),
+        title: const Text('提示音'),
+        subtitle: const Text('完成与最后 5 秒预警提示音'),
+        trailing: Switch(
+          value: s.enableSound,
+          onChanged: (v) =>
+              store.updatePomodoroSettings(s.copyWith(enableSound: v)),
+        ),
+      ),
     ]);
   }
 
@@ -432,6 +444,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showLoginDialog({bool register = false}) {
     final userCtl = TextEditingController();
     final passCtl = TextEditingController();
+    final confirmCtl = TextEditingController();
     var isRegister = register;
     final migrate = ValueNotifier(true);
 
@@ -455,6 +468,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   obscureText: true,
                   decoration: const InputDecoration(labelText: '密码'),
                 ),
+                if (isRegister) ...[
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: confirmCtl,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: '确认密码'),
+                  ),
+                ],
                 if (!isRegister) ...[
                   const SizedBox(height: 10),
                   ValueListenableBuilder(
@@ -485,6 +506,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final u = userCtl.text.trim();
                 final p = passCtl.text;
                 final user = UserService.instance;
+                if (isRegister && p != confirmCtl.text) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('两次输入的密码不一致')));
+                  return;
+                }
                 final result = isRegister
                     ? user.register(u, p)
                     : user.login(u, p, migrate.value);

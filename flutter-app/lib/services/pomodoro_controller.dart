@@ -1,8 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 
 import '../models/models.dart';
+import '../navigation/app_navigator.dart';
 import '../utils/date_helper.dart';
 import 'app_store.dart';
 
@@ -28,12 +31,21 @@ class PomodoroController extends ChangeNotifier {
   bool _hasStarted = false;
   SubjectType _subject = SubjectType.cs408;
   int _completedPomodoros = 0;
-  int _remainingSeconds = workMinutes * 60;
-  int _totalSeconds = workMinutes * 60;
+  int _remainingSeconds = AppStore.instance.pomodoroSettings.workDuration * 60;
+  int _totalSeconds = AppStore.instance.pomodoroSettings.workDuration * 60;
 
   Timer? _timer;
   int _startAt = 0;
   int _remainingAtStart = 0;
+
+  // ── 完成提醒（对齐 Electron pomodoro.ts 的 completeTimer/sendNotification） ──
+  int completionEvent = 0; // 每次完成 +1，供 UI 层监听弹窗
+  String completionMessage = '';
+  bool completionIsWork = false;
+
+  final AudioPlayer _notifyPlayer = AudioPlayer();
+  final AudioPlayer _tickPlayer = AudioPlayer();
+  int _lastTickSecond = -1;
 
   PomodoroMode get mode => _mode;
   bool get isRunning => _isRunning;
@@ -112,15 +124,30 @@ class PomodoroController extends ChangeNotifier {
         _complete();
         return;
       }
+      // 最后 5 秒预警滴声（每秒一次）
+      if (_remainingSeconds <= 5 && _remainingSeconds != _lastTickSecond) {
+        _lastTickSecond = _remainingSeconds;
+        _playTick();
+      }
       notifyListeners();
     }
   }
 
   void _complete() {
     pause();
-    if (_mode == PomodoroMode.work) {
+    final wasWork = _mode == PomodoroMode.work;
+    if (wasWork) {
       _addRecord(totalSeconds ~/ 60);
       _completedPomodoros++;
+    }
+    completionIsWork = wasWork;
+    completionMessage = wasWork
+        ? _completionMessageFor(_completedPomodoros)
+        : '休息结束，开始下一个番茄吧！';
+    completionEvent++;
+    _playNotificationSound();
+    _showCompletionDialog();
+    if (wasWork) {
       if (_completedPomodoros %
               AppStore.instance.pomodoroSettings.longBreakInterval ==
           0) {
@@ -131,6 +158,59 @@ class PomodoroController extends ChangeNotifier {
     } else {
       switchMode(PomodoroMode.work);
     }
+  }
+
+  /// 个性化完成文案（对齐 Electron getCompletionMessage）
+  String _completionMessageFor(int n) {
+    if (n == 1) return '第一个番茄完成！好的开始是成功的一半 🎉';
+    if (n % 12 == 0) return '12 个番茄达成！今天状态爆棚，休息一下 🏆';
+    if (n % 8 == 0) return '8 个番茄达成！非常棒，注意劳逸结合 💪';
+    if (n % 4 == 0) return '4 个番茄达成！进入长休息，补充能量 ☕';
+    return '番茄完成！起来活动一下，休息一下吧 🌟';
+  }
+
+  Future<void> _playNotificationSound() async {
+    if (!AppStore.instance.pomodoroSettings.enableSound) return;
+    try {
+      await _notifyPlayer.stop();
+      await _notifyPlayer.play(AssetSource('sounds/notification.wav'));
+    } catch (_) {}
+  }
+
+  Future<void> _playTick() async {
+    if (!AppStore.instance.pomodoroSettings.enableSound) return;
+    try {
+      await _tickPlayer.stop();
+      await _tickPlayer.play(AssetSource('sounds/tick.wav'));
+    } catch (_) {}
+  }
+
+  /// 全局完成弹窗（无论用户停留在哪个页面都能弹出）。
+  void _showCompletionDialog() {
+    final ctx = appNavigatorKey.currentContext;
+    if (ctx == null) return;
+    final isWork = completionIsWork;
+    final msg = completionMessage;
+    showDialog<void>(
+      context: ctx,
+      builder: (context) => AlertDialog(
+        icon: Icon(
+          isWork
+              ? CupertinoIcons.checkmark_seal_fill
+              : CupertinoIcons.arrow_right_circle_fill,
+          size: 44,
+          color: isWork ? const Color(0xFF34D399) : const Color(0xFF3B82F6),
+        ),
+        title: Text(isWork ? '番茄完成' : '休息结束'),
+        content: Text(msg, textAlign: TextAlign.center),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(isWork ? '开始休息' : '开始专注'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _addRecord(int durationMinutes) async {

@@ -306,12 +306,13 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
                 style: const TextStyle(fontSize: 11, color: Colors.white)),
           ),
           const SizedBox(width: 10),
-          Text('${r.score}',
-              style: const TextStyle(
-                  fontSize: 15, fontWeight: FontWeight.bold)),
-          Text(' / ${r.fullScore}',
-              style:
-                  TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+          Flexible(
+            child: Text('${r.score} / ${r.fullScore}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.bold)),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: ClipRRect(
@@ -326,11 +327,7 @@ class _ExamScoresScreenState extends State<ExamScoresScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          SizedBox(
-            width: 34,
-            child: Text('$rate%',
-                style: TextStyle(fontSize: 11, color: rateColor)),
-          ),
+          Text('$rate%', style: TextStyle(fontSize: 11, color: rateColor)),
           IconButton(
             icon: const Icon(CupertinoIcons.pencil, size: 16),
             onPressed: () => _showEditDialog(record: r),

@@ -77,6 +77,7 @@ class _AppShellState extends State<AppShell> {
       body: GlassScaffold(
         background: KaoyanWallpaper(dark: dark),
         contentAwareBrightness: true,
+        extendBody: false,
         appBar: GlassAppBar(
           title: Text(navItems[_currentIndex].title),
           leading: Builder(
@@ -95,6 +96,10 @@ class _AppShellState extends State<AppShell> {
     return GlassScaffold(
       background: KaoyanWallpaper(dark: dark),
       contentAwareBrightness: true,
+      // 关键：extendBody 默认 true 时 body 用 Positioned.fill 铺满整个区域，
+      // appBar 覆盖在顶部（44px）拦截点击，导致页面顶部按钮/搜索框无法点击。
+      // 设为 false 让 body 精确排布在 appBar 之下。
+      extendBody: false,
       appBar: GlassAppBar(title: Text(navItems[_currentIndex].title)),
       body: _buildPage(),
     );

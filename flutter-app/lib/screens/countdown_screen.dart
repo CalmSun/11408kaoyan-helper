@@ -330,9 +330,13 @@ class _CountdownScreenState extends State<CountdownScreen> {
               ),
             ),
             const SizedBox(width: 8),
-            Text(s.name,
-                style: const TextStyle(
-                    fontSize: 15, fontWeight: FontWeight.w600)),
+            Flexible(
+              child: Text(s.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
           ]),
           const SizedBox(height: 8),
           Text(
