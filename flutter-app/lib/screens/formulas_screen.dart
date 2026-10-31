@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../data/knowledge_data.dart';
+import '../models/models.dart';
 import '../theme/kaoyan_theme.dart';
 
 /// 公式速查（对应 Electron Formulas.vue）。
@@ -36,8 +37,8 @@ class _FormulasScreenState extends State<FormulasScreen> {
       final kw = _keyword.toLowerCase();
       result = result.where((f) =>
           (f['name'] as String? ?? '').toLowerCase().contains(kw) ||
-          (f['category'] as String? ?? '').toLowerCase().contains(kw) ||
-          (f['content'] as String? ?? '').toLowerCase().contains(kw)).toList();
+          (f['description'] as String? ?? '').toLowerCase().contains(kw) ||
+          (f['category'] as String? ?? '').toLowerCase().contains(kw)).toList();
     }
     return result;
   }
@@ -108,6 +109,8 @@ class _FormulasScreenState extends State<FormulasScreen> {
 
   Widget _formulaCard(Map<String, dynamic> f) {
     final content = f['content'] as String? ?? '';
+    final subject = SubjectType.fromId(f['subject'] as String?);
+    final category = f['category'] as String? ?? '';
     return GlassContainer.card(
       child: InkWell(
         onTap: () => _showDetail(f),
@@ -126,21 +129,30 @@ class _FormulasScreenState extends State<FormulasScreen> {
                           fontSize: 15, fontWeight: FontWeight.w600),
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: KaoyanColors.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
+                  if (subject != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: subject.color,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        subject.shortName,
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.white),
+                      ),
                     ),
-                    child: Text(
-                      f['category'] as String? ?? '',
-                      style: const TextStyle(
-                          fontSize: 11, color: KaoyanColors.primary),
-                    ),
-                  ),
                 ],
               ),
+              if (category.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  category,
+                  style: TextStyle(
+                      fontSize: 11, color: Theme.of(context).hintColor),
+                ),
+              ],
               const SizedBox(height: 10),
               Text(
                 content,

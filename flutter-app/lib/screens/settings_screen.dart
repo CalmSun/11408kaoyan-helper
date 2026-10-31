@@ -10,6 +10,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../services/app_store.dart';
+import '../services/music_store.dart';
 import '../services/storage_service.dart';
 import '../services/theme_controller.dart';
 import '../services/user_service.dart';
@@ -65,6 +66,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(height: 14),
             _section('番茄钟设置'),
             _buildPomodoroCard(context),
+            const SizedBox(height: 14),
+            _section('音乐播放'),
+            _buildMusicCard(context),
             const SizedBox(height: 14),
             _section('账号'),
             _buildAccountCard(context),
@@ -353,6 +357,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ],
     );
+  }
+
+  // ── 音乐播放 ──
+  Widget _buildMusicCard(BuildContext context) {
+    final music = MusicStore.instance;
+    const levels = [
+      ('standard', '标准'),
+      ('higher', '较高'),
+      ('exhigh', '极高'),
+      ('lossless', '无损'),
+      ('hires', 'Hi-Res'),
+    ];
+    return _wrapCard([
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading:
+            const Icon(CupertinoIcons.music_note, color: KaoyanColors.primary),
+        title: const Text('在线音质'),
+        trailing: DropdownButton<String>(
+          value: levels.any((e) => e.$1 == music.qualityLevel)
+              ? music.qualityLevel
+              : 'exhigh',
+          underline: const SizedBox.shrink(),
+          items: [
+            for (final (v, label) in levels)
+              DropdownMenuItem(value: v, child: Text(label)),
+          ],
+          onChanged: (v) {
+            if (v != null) music.setQualityLevel(v);
+          },
+        ),
+      ),
+    ]);
   }
 
   // ── 账号 ──

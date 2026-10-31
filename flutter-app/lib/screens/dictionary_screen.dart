@@ -261,6 +261,16 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  if (w['level'] == '自定义')
+                    TextButton.icon(
+                      onPressed: () => _deleteCustomWord(w),
+                      icon: Icon(CupertinoIcons.trash,
+                          size: 14, color: Theme.of(context).colorScheme.error),
+                      label: Text('删除',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.error)),
+                    ),
                   TextButton.icon(
                     onPressed: () => _addToFlashcards(w),
                     icon: const Icon(CupertinoIcons.plus, size: 14),
@@ -511,5 +521,33 @@ class _DictionaryScreenState extends State<DictionaryScreen> {
         ..['level'] = '自定义');
       StorageService.instance.setList(_customKey, _customWords);
     }
+  }
+
+  Future<void> _deleteCustomWord(Map<String, dynamic> w) async {
+    final word = w['word'] as String? ?? '';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除单词'),
+        content: Text('确定删除「$word」吗？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _customWords.removeWhere((x) =>
+          (x['word'] as String? ?? '').toLowerCase() == word.toLowerCase());
+    });
+    StorageService.instance.setList(_customKey, _customWords);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已删除')));
   }
 }

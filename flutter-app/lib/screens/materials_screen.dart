@@ -234,7 +234,7 @@ class _MaterialsScreenState extends State<MaterialsScreen> {
   // ── 进度持久化 ────────────────────────────────────────────
 
   void _loadProgress() {
-    final raw = StorageService.instance.getString('materials_progress');
+    final raw = StorageService.instance.getString('materials-progress');
     if (raw == null || raw.isEmpty) return;
     try {
       final decoded = jsonDecode(raw);
@@ -248,7 +248,7 @@ class _MaterialsScreenState extends State<MaterialsScreen> {
   Future<void> _saveProgress(String path, int page) async {
     _progress[path] = page;
     await StorageService.instance
-        .setString('materials_progress', jsonEncode(_progress));
+        .setString('materials-progress', jsonEncode(_progress));
   }
 
   // ── 构建 ───────────────────────────────────────────────────

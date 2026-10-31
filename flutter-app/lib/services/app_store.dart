@@ -192,6 +192,18 @@ class AppStore extends ChangeNotifier {
     _recordSnapshot();
   }
 
+  /// 清除今天已完成的普通计划（非循环），对应 Electron clearCompleted。
+  Future<void> clearCompleted() async {
+    final today = todayLocal();
+    plans = plans.where((p) {
+      if (p.recurring) return true;
+      return !(p.completed && toLocalDate(p.createdAt) == today);
+    }).toList();
+    notifyListeners();
+    await _savePlans();
+    _recordSnapshot();
+  }
+
   Future<void> completeAllToday() async {
     final today = todayLocal();
     plans = plans.map((p) {

@@ -47,11 +47,14 @@ class _AlgorithmsScreenState extends State<AlgorithmsScreen> {
     }
     if (_keyword.isNotEmpty) {
       final kw = _keyword.toLowerCase();
-      result = result
-          .where((a) =>
-              (a['name'] as String? ?? '').toLowerCase().contains(kw) ||
-              (a['description'] as String? ?? '').toLowerCase().contains(kw))
-          .toList();
+      result = result.where((a) {
+        final name = (a['name'] as String? ?? '').toLowerCase();
+        final desc = (a['description'] as String? ?? '').toLowerCase();
+        final tags = (a['tags'] as List? ?? const [])
+            .map((t) => t.toString().toLowerCase())
+            .join(' ');
+        return name.contains(kw) || desc.contains(kw) || tags.contains(kw);
+      }).toList();
     }
     return result;
   }
@@ -242,6 +245,8 @@ class _AlgorithmsScreenState extends State<AlgorithmsScreen> {
                     _tag('分类：${a['category'] ?? '其他'}'),
                     _tag('时间：${a['timeComplexity'] ?? '-'}'),
                     _tag('空间：${a['spaceComplexity'] ?? '-'}'),
+                    for (final t in (a['tags'] as List? ?? const []))
+                      _tag(t.toString()),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -308,7 +313,7 @@ class _AlgorithmsScreenState extends State<AlgorithmsScreen> {
     final timeCtl = TextEditingController();
     final spaceCtl = TextEditingController();
     final codeCtl = TextEditingController();
-    String category = _categories.isNotEmpty ? _categories.first : '其他';
+    String category = '排序';
 
     showDialog(
       context: context,
@@ -330,7 +335,7 @@ class _AlgorithmsScreenState extends State<AlgorithmsScreen> {
                     initialValue: category,
                     decoration: const InputDecoration(labelText: '分类'),
                     items: [
-                      for (final c in _categories)
+                      for (final c in const ['排序', '查找', '链表', '树', '图', 'DP', '其他'])
                         DropdownMenuItem(value: c, child: Text(c)),
                     ],
                     onChanged: (v) => setDlg(() => category = v ?? category),
