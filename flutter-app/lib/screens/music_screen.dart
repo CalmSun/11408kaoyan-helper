@@ -42,6 +42,9 @@ class _MusicScreenState extends State<MusicScreen> {
 
   final _searchCtl = TextEditingController();
 
+  // 评论点赞状态（本地记录，评论接口不总是返回 liked）
+  final Set<int> _likedComments = {};
+
   @override
   void initState() {
     super.initState();
@@ -249,6 +252,41 @@ class _MusicScreenState extends State<MusicScreen> {
     );
   }
 
+  Widget _cloudList(List<Map<String, dynamic>> songs) {
+    return Column(
+      children: songs
+          .map((s) => GlassListTile(
+                leading: _cover(s['cover']?.toString(), size: 40),
+                title: Text(s['name']?.toString() ?? '',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(s['artist']?.toString() ?? '',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GlassButton(
+                      icon: const Icon(CupertinoIcons.play_fill, size: 16),
+                      onTap: () => store.playCloudSong(s),
+                    ),
+                    const SizedBox(width: 4),
+                    GlassButton(
+                      icon: const Icon(CupertinoIcons.delete, size: 16),
+                      onTap: () async {
+                        await store.deleteCloudSong(s['id']);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已从云盘删除')));
+                        }
+                      },
+                    ),
+                  ],
+                ),
+                onTap: () => store.playCloudSong(s),
+              ))
+          .toList(),
+    );
+  }
+
   Widget _songActions(Map<String, dynamic> s) {
     final id = s['id'];
     if (id == null) return const SizedBox.shrink();
@@ -263,6 +301,28 @@ class _MusicScreenState extends State<MusicScreen> {
             size: 16,
           ),
           onTap: () => store.toggleSongLike(id),
+        ),
+        const SizedBox(width: 4),
+        GlassButton(
+          icon: const Icon(CupertinoIcons.bubble_left, size: 16),
+          onTap: () => _showCommentsSheet(MusicTrack(
+            name: s['name']?.toString() ?? '',
+            url: '',
+            source: 'online',
+            id: id,
+            artist: s['artist']?.toString() ?? '',
+          )),
+        ),
+        const SizedBox(width: 4),
+        GlassButton(
+          icon: const Icon(CupertinoIcons.arrow_down_circle, size: 16),
+          onTap: () => _downloadSong(MusicTrack(
+            name: s['name']?.toString() ?? '',
+            url: '',
+            source: 'online',
+            id: id,
+            artist: s['artist']?.toString() ?? '',
+          )),
         ),
         const SizedBox(width: 4),
         GlassButton(
@@ -581,8 +641,13 @@ class _MusicScreenState extends State<MusicScreen> {
         _sectionTitle('我的云盘', action: '刷新', onAction: () => store.fetchCloudDrive()),
         if (store.cloudDriveLoading)
           const Center(child: CircularProgressIndicator())
+        else if (store.cloudDriveList.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(12),
+            child: Text('云盘为空', style: TextStyle(color: Colors.grey)),
+          )
         else
-          _songList(store.cloudDriveList),
+          _cloudList(store.cloudDriveList),
         const SizedBox(height: 16),
         _sectionTitle('我喜欢的音乐', action: '加载',
             onAction: () => _loadLikedSongs()),
@@ -664,11 +729,16 @@ class _MusicScreenState extends State<MusicScreen> {
                 CupertinoIcons.forward_end_fill,
                 store.next,
               ),
-              _playerIconBtn(
-                store.shuffle ? CupertinoIcons.shuffle : CupertinoIcons.arrow_2_circlepath,
-                store.toggleShuffle,
-                highlight: store.shuffle,
-              ),
+              if (track != null && track.source == 'online' && track.id != null) ...[
+                _playerIconBtn(
+                  CupertinoIcons.bubble_left_bubble_right,
+                  () => _showCommentsSheet(track),
+                ),
+                _playerIconBtn(
+                  CupertinoIcons.arrow_down_circle,
+                  () => _downloadSong(track),
+                ),
+              ],
               _playerIconBtn(
                 CupertinoIcons.text_quote,
                 store.toggleShowLyrics,
@@ -764,6 +834,7 @@ class _MusicScreenState extends State<MusicScreen> {
   void _showPlaylistSheet() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       builder: (ctx) => ListenableBuilder(
         listenable: store,
         builder: (context, _) {
@@ -772,30 +843,68 @@ class _MusicScreenState extends State<MusicScreen> {
                 height: 200,
                 child: Center(child: Text('播放列表为空')));
           }
-          return ListView.builder(
-            itemCount: store.playlist.length,
-            itemBuilder: (context, i) {
-              final t = store.playlist[i];
-              final isCur = i == store.currentIndex;
-              return ListTile(
-                leading: Icon(
-                  isCur ? CupertinoIcons.music_note_2 : CupertinoIcons.music_note,
-                  color: isCur ? KaoyanColors.primary : null,
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                child: Row(
+                  children: [
+                    Text('播放列表（${store.playlist.length}）',
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    IconButton(
+                      tooltip: '随机播放',
+                      icon: Icon(
+                        store.shuffle
+                            ? CupertinoIcons.shuffle
+                            : CupertinoIcons.arrow_2_circlepath,
+                        color: store.shuffle ? KaoyanColors.primary : null,
+                      ),
+                      onPressed: store.toggleShuffle,
+                    ),
+                    IconButton(
+                      tooltip: '清空列表',
+                      icon: const Icon(CupertinoIcons.trash, size: 20),
+                      onPressed: () {
+                        store.clearPlaylist();
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                  ],
                 ),
-                title: Text(t.name,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(t.artist,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                trailing: IconButton(
-                  icon: const Icon(CupertinoIcons.delete, size: 18),
-                  onPressed: () => store.removeTrack(i),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: store.playlist.length,
+                  itemBuilder: (context, i) {
+                    final t = store.playlist[i];
+                    final isCur = i == store.currentIndex;
+                    return ListTile(
+                      leading: Icon(
+                        isCur
+                            ? CupertinoIcons.music_note_2
+                            : CupertinoIcons.music_note,
+                        color: isCur ? KaoyanColors.primary : null,
+                      ),
+                      title: Text(t.name,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      subtitle: Text(t.artist,
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      trailing: IconButton(
+                        icon: const Icon(CupertinoIcons.delete, size: 18),
+                        onPressed: () => store.removeTrack(i),
+                      ),
+                      onTap: () {
+                        store.playIndex(i);
+                        Navigator.pop(ctx);
+                      },
+                    );
+                  },
                 ),
-                onTap: () {
-                  store.playIndex(i);
-                  Navigator.pop(ctx);
-                },
-              );
-            },
+              ),
+            ],
           );
         },
       ),
@@ -865,6 +974,204 @@ class _MusicScreenState extends State<MusicScreen> {
         ),
       ),
     );
+  }
+
+  // ── 评论 / 下载 ───────────────────────────────────────────
+
+  Future<void> _downloadSong(MusicTrack track) async {
+    final name = track.name;
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('正在下载《$name》…')));
+    final path = await store.downloadSong({
+      'id': track.id,
+      'name': track.name,
+      'artist': track.artist,
+    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(path != null ? '下载完成：$path' : '下载失败（可能需登录 / 版权限制）'),
+    ));
+  }
+
+  void _showCommentsSheet(MusicTrack track) {
+    final songId = track.id;
+    if (songId == null) return;
+    store.fetchComments(songId);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (context, scrollCtl) => ListenableBuilder(
+          listenable: store,
+          builder: (context, _) {
+            final hasMore =
+                store.comments.length < store.commentTotal;
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('评论 · ${track.name}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700)),
+                            Text('共 ${store.commentTotal} 条',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context).hintColor)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(CupertinoIcons.arrow_clockwise,
+                            size: 18),
+                        onPressed: () => store.fetchComments(songId),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: store.commentsLoading && store.comments.isEmpty
+                      ? const Center(child: CircularProgressIndicator())
+                      : ListView(
+                          controller: scrollCtl,
+                          padding: const EdgeInsets.only(bottom: 24),
+                          children: [
+                            if (store.hotComments.isNotEmpty) ...[
+                              _commentSectionHeader('精彩评论'),
+                              ...store.hotComments
+                                  .map((c) => _commentTile(c, songId)),
+                            ],
+                            if (store.hotComments.isNotEmpty)
+                              _commentSectionHeader('最新评论'),
+                            ...store.comments
+                                .map((c) => _commentTile(c, songId)),
+                            Center(
+                              child: TextButton(
+                                onPressed: hasMore
+                                    ? store.loadMoreComments
+                                    : null,
+                                child: Text(hasMore ? '加载更多' : '已加载全部'),
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _commentSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      child: Text(title,
+          style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: KaoyanColors.primary)),
+    );
+  }
+
+  Widget _commentTile(Map<String, dynamic> c, int songId) {
+    final cid = (c['commentId'] as num?)?.toInt() ?? 0;
+    final liked = c['liked'] == true || _likedComments.contains(cid);
+    final replied = c['repliedContent']?.toString() ?? '';
+    final time = (c['time'] as num?)?.toInt() ?? 0;
+    return ListTile(
+      leading: ClipOval(
+        child: Image.network(
+          c['avatar']?.toString() ?? '',
+          width: 36,
+          height: 36,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            width: 36,
+            height: 36,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Icon(Icons.person, size: 20, color: Colors.grey),
+          ),
+        ),
+      ),
+      title: Text(c['nickname']?.toString() ?? '匿名用户',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(c['content']?.toString() ?? '',
+              style: const TextStyle(fontSize: 13, height: 1.4)),
+          if (replied.isNotEmpty)
+            Text(
+              '回复 @${c['repliedNickname'] ?? ''}：$replied',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).hintColor,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest),
+            ),
+          Text(_fmtTime(time),
+              style: TextStyle(
+                  fontSize: 11, color: Theme.of(context).hintColor)),
+        ],
+      ),
+      isThreeLine: true,
+      trailing: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            icon: Icon(
+              liked ? CupertinoIcons.heart_fill : CupertinoIcons.heart,
+              size: 16,
+              color: liked ? Colors.redAccent : null,
+            ),
+            onPressed: () async {
+              final target = !liked;
+              final ok =
+                  await store.toggleCommentLike(songId, cid, liked);
+              if (!ok || !mounted) return;
+              setState(() {
+                if (target) {
+                  _likedComments.add(cid);
+                } else {
+                  _likedComments.remove(cid);
+                }
+              });
+            },
+          ),
+          Text('${c['likedCount'] ?? 0}',
+              style: TextStyle(
+                  fontSize: 10, color: Theme.of(context).hintColor)),
+        ],
+      ),
+    );
+  }
+
+  String _fmtTime(int ms) {
+    if (ms <= 0) return '';
+    final t = DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    final diff = now.difference(t);
+    if (diff.inMinutes < 1) return '刚刚';
+    if (diff.inHours < 1) return '${diff.inMinutes} 分钟前';
+    if (diff.inDays < 1) return '${diff.inHours} 小时前';
+    if (diff.inDays < 30) return '${diff.inDays} 天前';
+    return '${t.year}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')}';
   }
 
   // ── 登录对话框 ─────────────────────────────────────────────

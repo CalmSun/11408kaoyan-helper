@@ -850,6 +850,7 @@ class NeteaseApi {
           'content': m['content']?.toString() ?? '',
           'time': m['time'] ?? 0,
           'likedCount': m['likedCount'] ?? 0,
+          'liked': m['liked'] ?? false,
           'nickname': _jsonMap(m['user'])['nickname']?.toString() ?? '匿名用户',
           'avatar': _jsonMap(m['user'])['avatarUrl']?.toString() ?? '',
           'userId': _jsonMap(m['user'])['userId'] ?? 0,
@@ -893,8 +894,7 @@ class NeteaseApi {
 
   // ── 云盘 ───────────────────────────────────────────────────
 
-  Future<Map<String, dynamic>> cloudDrive({int pageSize = 100, int pageNo = 0}) async {
-    try {
+  Future<Map<String, dynamic>> cloudDrive({int pageSize = 100, int pageNo = 0}) async {    try {
       final data = await _smart('/v1/cloud/get',
           {'limit': pageSize, 'offset': pageNo * pageSize});
       final count = int.tryParse('${data['count'] ?? 0}') ?? 0;
@@ -922,6 +922,30 @@ class NeteaseApi {
       return {'success': true, 'songs': songs, 'count': count};
     } catch (e) {
       return {'success': false, 'songs': [], 'count': 0, 'message': '$e'};
+    }
+  }
+
+  /// 删除云盘歌曲
+  Future<Map<String, dynamic>> cloudDelete(List<dynamic> songIds) async {
+    try {
+      await _smart('/cloud/del', {'songIds': songIds});
+      return {'success': true};
+    } catch (e) {
+      return {'success': false, 'message': '$e'};
+    }
+  }
+
+  /// 云盘歌曲播放地址
+  Future<Map<String, dynamic>> cloudSongUrl(int songId) async {
+    try {
+      final data = await _smart('/cloud/song/url', {'id': songId});
+      final raw = data['data'] is List
+          ? ((data['data'] as List).isNotEmpty ? data['data'][0] : null)
+          : data['data'];
+      final url = _jsonMap(raw)['url']?.toString() ?? '';
+      return {'success': url.isNotEmpty, 'url': url};
+    } catch (e) {
+      return {'success': false, 'url': '', 'message': '$e'};
     }
   }
 
@@ -960,6 +984,42 @@ class NeteaseApi {
 
   /// 当前是否已登录（供 UI 快速判断）
   bool get hasCookie => _cookies.containsKey('MUSIC_U');
+
+  // ── 下载（字节流） ─────────────────────────────────────────
+
+  /// 获取歌曲可下载 URL 并拉取字节（需登录，受版权/音质限制）。
+  Future<Map<String, dynamic>> downloadSong(int songId,
+      {String level = 'exhigh'}) async {
+    try {
+      final info = await downloadUrl(songId, level: level);
+      if (info['success'] != true) return info;
+      final url = info['url']?.toString() ?? '';
+      if (url.isEmpty) return {'success': false, 'message': '下载链接为空'};
+      final resp = await _dio.get<List<int>>(
+        url,
+        options: Options(
+          responseType: ResponseType.bytes,
+          followRedirects: true,
+          headers: {
+            ..._baseHeaders(_webUa),
+            'Cookie': _buildCookieHeader(''),
+            'Accept': '*/*',
+          },
+        ),
+      );
+      final bytes = resp.data ?? <int>[];
+      if (bytes.isEmpty) return {'success': false, 'message': '下载内容为空'};
+      return {
+        'success': true,
+        'bytes': bytes,
+        'type': info['type']?.toString() ?? 'mp3',
+        'br': info['br'] ?? 0,
+        'url': url,
+      };
+    } catch (e) {
+      return {'success': false, 'message': '$e'};
+    }
+  }
 }
 
 /// dynamic 安全转 Map，避免 dynamic 上 [] 的空安全检查报错

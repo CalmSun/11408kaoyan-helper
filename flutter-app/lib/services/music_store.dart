@@ -636,6 +636,41 @@ class MusicStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 删除云盘歌曲
+  Future<bool> deleteCloudSong(dynamic songId) async {
+    final res = await _api.cloudDelete([songId]);
+    if (res['success'] == true) {
+      cloudDriveList.removeWhere((s) => '${s['id']}' == '$songId');
+      notifyListeners();
+      return true;
+    }
+    return false;
+  }
+
+  /// 播放云盘歌曲（用云盘专用 URL 接口）
+  Future<bool> playCloudSong(Map<String, dynamic> song) async {
+    final id = song['id'];
+    if (id == null) return false;
+    final res = await _api.cloudSongUrl(int.tryParse('$id') ?? 0);
+    if (res['success'] != true || (res['url'] as String?)?.isEmpty == true) {
+      return false;
+    }
+    final track = MusicTrack(
+      name: song['name']?.toString() ?? '',
+      url: res['url'] as String,
+      source: 'online',
+      id: int.tryParse('$id'),
+      artist: song['artist']?.toString() ?? '',
+      album: song['album']?.toString() ?? '',
+      cover: song['cover']?.toString() ?? '',
+    );
+    playlist.add(track);
+    currentIndex = playlist.length - 1;
+    notifyListeners();
+    await playIndex(currentIndex);
+    return true;
+  }
+
   // ── 喜欢 ───────────────────────────────────────────────────
 
   Future<void> fetchLikelist({bool force = false}) async {
@@ -683,5 +718,76 @@ class MusicStore extends ChangeNotifier {
   Future<bool> toggleSongLike(int songId) async {
     final wasLiked = likedSongIds.contains(songId);
     return toggleLikeSong(songId, currentState: wasLiked);
+  }
+
+  // ── 评论 ───────────────────────────────────────────────────
+
+  List<Map<String, dynamic>> hotComments = [];
+  List<Map<String, dynamic>> comments = [];
+  int commentTotal = 0;
+  int commentPage = 1;
+  bool commentsLoading = false;
+  int? _commentSongId;
+
+  Future<void> fetchComments(int songId, {int pageNo = 1}) async {
+    if (songId <= 0) return;
+    commentsLoading = true;
+    notifyListeners();
+    final res = await _api.comments(songId, pageNo: pageNo);
+    if (res['success'] == true) {
+      _commentSongId = songId;
+      hotComments = (res['hotComments'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
+      comments = (res['comments'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
+      commentTotal = (res['total'] as num?)?.toInt() ?? 0;
+      commentPage = pageNo;
+    }
+    commentsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> loadMoreComments() async {
+    final sid = _commentSongId;
+    if (sid == null || commentsLoading) return;
+    await fetchComments(sid, pageNo: commentPage + 1);
+  }
+
+  Future<bool> toggleCommentLike(
+      int songId, int commentId, bool currentState) async {
+    final res = await _api.commentLike(songId, commentId, !currentState);
+    return res['success'] == true;
+  }
+
+  // ── 下载 ───────────────────────────────────────────────────
+
+  /// 下载一首在线歌曲到本地目录，返回保存路径（失败返回 null）。
+  Future<String?> downloadSong(Map<String, dynamic> song) async {
+    final id = song['id'];
+    if (id == null) return null;
+    final res = await _api.downloadSong(id as int, level: qualityLevel);
+    if (res['success'] != true || res['bytes'] == null) return null;
+
+    final dir = await FilePicker.getDirectoryPath(dialogTitle: '选择保存目录');
+    if (dir == null) return null;
+
+    final bytes = res['bytes'] as List<int>;
+    final ext = res['type']?.toString() == 'flac' ? 'flac' : 'mp3';
+    final artist = song['artist']?.toString() ?? '';
+    final base = _sanitizeFileName(
+        '${song['name'] ?? id}${artist.isNotEmpty ? ' - $artist' : ''}');
+    final path = '$dir${Platform.pathSeparator}$base.$ext';
+    try {
+      await File(path).writeAsBytes(bytes, flush: true);
+      return path;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _sanitizeFileName(String name) {
+    var s = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
+    if (s.length > 120) s = s.substring(0, 120);
+    return s.isEmpty ? 'song' : s;
   }
 }

@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../models/models.dart';
 import '../services/app_store.dart';
+import '../services/report_service.dart';
 import '../theme/kaoyan_theme.dart';
 
 /// 数据统计页面（对应 Electron Statistics.vue，echarts → fl_chart）。
@@ -20,6 +22,7 @@ class StatisticsScreen extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
+            _buildExportBar(context, store),
             _buildOverview(store, context),
             const SizedBox(height: 16),
             _chartCard('近 7 天学习时长（分钟）', _buildStudyChart(store, context)),
@@ -35,6 +38,41 @@ class StatisticsScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  // ── 导出学习报告 ──
+  Widget _buildExportBar(BuildContext context, AppStore store) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        TextButton.icon(
+          onPressed: () => _exportReport(context, store),
+          icon: const Icon(CupertinoIcons.arrow_down_circle, size: 16),
+          label: const Text('导出学习报告'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _exportReport(BuildContext context, AppStore store) async {
+    try {
+      final bytes = await ReportService.generateLearningReport(store);
+      final date = DateTime.now().toIso8601String().substring(0, 10);
+      final uri = await FilePicker.saveFile(
+        dialogTitle: '导出学习报告',
+        fileName: '考研助手学习报告_$date.pdf',
+        bytes: bytes,
+      );
+      if (uri != null && context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('学习报告已导出')));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      }
+    }
   }
 
   // ── 总览三卡 ──

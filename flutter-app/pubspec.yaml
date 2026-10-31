@@ -28,7 +28,7 @@ dependencies:
   # 机器上不稳定；2.6.6 只下载预编译 pdfium 二进制，规避了该 C 编译步骤）
   pdfrx: 2.6.6
   dio: ^5.11.1
-
+  pdf: ^3.13.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
