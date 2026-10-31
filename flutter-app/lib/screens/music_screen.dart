@@ -66,6 +66,7 @@ class _MusicScreenState extends State<MusicScreen> {
       api.newAlbum(limit: 20),
       api.highQualityPlaylist(limit: 20),
     ]);
+    if (!mounted) return;
     setState(() {
       _dailySongs = _list(results[0]['songs']);
       _newSongs = _list(results[1]['songs']);

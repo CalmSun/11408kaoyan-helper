@@ -44,14 +44,20 @@ class _AppShellState extends State<AppShell> {
   // ── 桌面：固定侧边栏 + 内容区 ──
   Widget _buildDesktop() {
     final dark = Theme.of(context).brightness == Brightness.dark;
-    return Row(
-      children: [
-        _SideNav(
-          currentIndex: _currentIndex,
-          onSelect: (i) => setState(() => _currentIndex = i),
-        ),
-        Expanded(child: _buildContentScaffold(dark)),
-      ],
+    // GlassScaffold 不提供 Material 祖先，桌面端无外层 Scaffold，
+    // 必须包一层透明 Material，否则 TextField / Chip / Switch 等会报
+    // "No Material widget found"。
+    return Material(
+      type: MaterialType.transparency,
+      child: Row(
+        children: [
+          _SideNav(
+            currentIndex: _currentIndex,
+            onSelect: (i) => setState(() => _currentIndex = i),
+          ),
+          Expanded(child: _buildContentScaffold(dark)),
+        ],
+      ),
     );
   }
 
