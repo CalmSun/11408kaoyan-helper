@@ -17,6 +17,10 @@
 
 > 2026 版全功能跨平台桌面备考工具。Vue 3 + Electron 打造的液态玻璃拟态原生界面，所有学习数据本地双备份存储，离线可用、隐私可控。
 
+## 全平台版（Flutter）
+
+桌面版之外，正在用 **Flutter** 重构全平台版本（Windows / Linux / Android），采用 iOS 26「液态玻璃」设计语言，折射效果三端一致（Impeller 自绘渲染，不依赖系统 WebView）。代码在 [`flutter-app/`](./flutter-app/)，CI 随 tag 自动构建 Android APK + Windows + Linux 三端安装包。详见 [flutter-app/README.md](./flutter-app/README.md)。
+
 ---
 
 ## 📑 目录

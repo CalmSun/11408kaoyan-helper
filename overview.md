@@ -1,3 +1,32 @@
+# v3.6.5 更新（全平台重构）：新增 Flutter 版骨架 + 三端 CI 自动构建
+
+## 本轮做了什么
+
+决定采用 **Flutter** 重构为全平台应用（Windows / Linux / Android）。此前评估过 Tauri 2 与 Compose Multiplatform，均因本机无工具链 + Linux 端折射受限而放弃。
+
+### 为什么是 Flutter
+
+- **折射全平台一致**：`liquid_glass_widgets`（iOS 26 液态玻璃的 Flutter 官方实现）用 Impeller 自绘渲染 + fragment shader，不依赖系统 WebView——彻底绕开 Tauri 2 在 Linux WebKitGTK 上折射失效的死穴（这正是之前反复换方案的核心原因）。
+- **现成组件库**：`liquid_glass_widgets ^1.16.1`（MIT），折射 / 色散 / 高光 / 动态光照开箱即用。
+- **桌面端成熟**：Flutter Desktop（Windows/Linux）稳定多年。
+
+### 交付内容（骨架阶段）
+
+- `flutter-app/`：可运行的液态玻璃骨架（`GlassScaffold` 导航 + `GlassTabBar` + 玻璃卡片 + 光斑壁纸）
+- API 严格对齐官方 SKILL（premium 不进滚动列表、玻璃控件不嵌套玻璃容器、`GlassButton` 用 `onTap` 等）
+- CI 三端构建：Android APK + Windows x64 + Linux x64（`flutter create` 生成原生脚手架，与 CI Flutter 版本严格匹配）
+- Electron 桌面版完整保留，零改动
+
+### 环境约束（已核实）
+
+本机无 Flutter / Dart / Android SDK / JDK，无法本地构建，唯一构建路径是 GitHub Actions CI（tag 触发三端出包）。
+
+### 迁移进度
+
+骨架 + 首页仪表盘完成；学习计划 / 资料 / 统计 / 单词 / 公式 / 真题 / 音乐 / 番茄钟等模块待逐页迁移。
+
+---
+
 # v3.6.5 更新：液态玻璃重构为真实折射（参照 liquid-glass-vue）+ 全站统一 + 无用代码清理
 
 ## 本轮做了什么
