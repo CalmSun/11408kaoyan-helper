@@ -23,7 +23,10 @@ dependencies:
   encrypt: ^5.0.3
   pointycastle: ^3.9.1
   crypto: ^3.0.8
-  pdfrx: ^2.11.0
+  # 2.6.6：最后一个不需要「原生 C 门闩编译」的版本（2.7.0 起 pdfium_dart 0.4.x
+  # 需在构建时用 cl.exe 编译 pdfrx_pdfium_gate，依赖 vcvars64 环境解析，在部分
+  # 机器上不稳定；2.6.6 只下载预编译 pdfium 二进制，规避了该 C 编译步骤）
+  pdfrx: 2.6.6
   dio: ^5.11.1
 
 dev_dependencies:
