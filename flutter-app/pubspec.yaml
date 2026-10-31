@@ -12,6 +12,8 @@ dependencies:
   # iOS 26 液态玻璃组件库（折射 / 色散 / 高光 / 动态光照，Impeller fragment shader）
   liquid_glass_widgets: ^1.16.1
   cupertino_icons: ^1.0.8
+  # 本地存储（跨 Windows / Linux / Android，对应 Electron 的 localStorage）
+  shared_preferences: ^2.3.0
 
 dev_dependencies:
   flutter_test:
