@@ -48,13 +48,27 @@ class StorageService {
   Future<void> setString(String key, String value) =>
       _prefs!.setString(_key(key), value);
 
-  bool getBool(String key, {bool defaultValue = false}) =>
-      _prefs?.getBool(_key(key)) ?? defaultValue;
+  /// 读取 bool。旧数据可能以字符串 "true"/"false"/"1"/"0" 或 int 存储，
+  /// shared_preferences 的 getBool 遇到非 bool 会抛
+  /// "type 'String' is not a subtype of type 'bool?'"，这里做容错。
+  bool getBool(String key, {bool defaultValue = false}) {
+    final raw = _prefs?.get(_key(key));
+    if (raw is bool) return raw;
+    if (raw is String) return raw == 'true' || raw == '1';
+    if (raw is int) return raw != 0;
+    return defaultValue;
+  }
 
   Future<void> setBool(String key, bool value) =>
       _prefs!.setBool(_key(key), value);
 
-  int getInt(String key) => _prefs?.getInt(_key(key)) ?? 0;
+  int getInt(String key) {
+    final raw = _prefs?.get(_key(key));
+    if (raw is int) return raw;
+    if (raw is String) return int.tryParse(raw) ?? 0;
+    if (raw is bool) return raw ? 1 : 0;
+    return 0;
+  }
 
   Future<void> setInt(String key, int value) =>
       _prefs!.setInt(_key(key), value);
