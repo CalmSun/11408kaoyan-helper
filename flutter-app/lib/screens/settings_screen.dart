@@ -13,6 +13,7 @@ import '../services/app_store.dart';
 import '../services/music_store.dart';
 import '../services/storage_service.dart';
 import '../services/theme_controller.dart';
+import '../services/update_service.dart';
 import '../services/user_service.dart';
 import '../theme/kaoyan_theme.dart';
 
@@ -682,7 +683,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
         contentPadding: EdgeInsets.zero,
         leading: Icon(CupertinoIcons.info_circle, color: KaoyanColors.primary),
         title: Text('版本'),
-        trailing: Text('v3.6.5'),
+        trailing: Text('v${UpdateService.currentVersion}'),
+      ),
+      ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(CupertinoIcons.arrow_down_circle,
+            color: KaoyanColors.primary),
+        title: const Text('检查更新'),
+        subtitle: const Text('从 GitHub Releases 获取最新版本'),
+        trailing: const Icon(CupertinoIcons.chevron_right, size: 16),
+        onTap: _checkUpdate,
       ),
       ListTile(
         contentPadding: EdgeInsets.zero,
@@ -701,5 +711,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
         subtitle: Text('Windows / Linux / Android'),
       ),
     ]);
+  }
+
+  Future<void> _checkUpdate() async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('正在检查更新…')),
+    );
+    final info = await UpdateService.instance.checkUpdate();
+    if (!mounted) return;
+    if (info == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('检查更新失败，请检查网络后重试')),
+      );
+      return;
+    }
+    final cmp = UpdateService.compareVersion(
+        info.version, UpdateService.currentVersion);
+    if (cmp <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已是最新版本')),
+      );
+      return;
+    }
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('发现新版本'),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('当前 v${UpdateService.currentVersion} → 最新 v${info.version}',
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                if (info.notes.isNotEmpty)
+                  Text(info.notes,
+                      style: TextStyle(
+                          fontSize: 13,
+                          height: 1.5,
+                          color: Theme.of(ctx).hintColor),
+                      maxLines: 10,
+                      overflow: TextOverflow.ellipsis),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('稍后')),
+          FilledButton.icon(
+            icon: const Icon(CupertinoIcons.arrow_down_circle, size: 16),
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              final url = info.downloadUrl.isNotEmpty
+                  ? info.downloadUrl
+                  : info.releaseUrl;
+              if (url.isNotEmpty) {
+                launchUrl(Uri.parse(url),
+                    mode: LaunchMode.externalApplication);
+              }
+            },
+            label: const Text('下载更新'),
+          ),
+        ],
+      ),
+    );
   }
 }
