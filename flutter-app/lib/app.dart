@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/home_screen.dart';
+import 'screens/app_shell.dart';
 
 /// 应用根组件。
 ///
@@ -27,7 +27,7 @@ class KaoyanApp extends StatelessWidget {
         colorSchemeSeed: const Color(0xFF4A6CF7),
       ),
       themeMode: ThemeMode.system,
-      home: const HomeScreen(),
+      home: const AppShell(),
     );
   }
 }
