@@ -8,6 +8,16 @@ import 'home_screen.dart';
 import 'countdown_screen.dart';
 import 'daily_plan_screen.dart';
 import 'pomodoro_screen.dart';
+import 'statistics_screen.dart';
+import 'outline_screen.dart';
+import 'algorithms_screen.dart';
+import 'formulas_screen.dart';
+import 'exam_scores_screen.dart';
+import 'flashcards_screen.dart';
+import 'dictionary_screen.dart';
+import 'music_screen.dart';
+import 'materials_screen.dart';
+import 'settings_screen.dart';
 import 'placeholder_screen.dart';
 
 /// 应用外壳：响应式导航（桌面侧边栏 / 移动抽屉）+ 内容区。
@@ -87,13 +97,33 @@ class _AppShellState extends State<AppShell> {
   Widget _buildPage() {
     switch (_currentIndex) {
       case 0:
-        return const HomeScreen();
+        return HomeScreen(onNavigate: (i) => setState(() => _currentIndex = i));
       case 1:
         return const CountdownScreen();
       case 2:
         return const DailyPlanScreen();
       case 3:
         return const PomodoroScreen();
+      case 4:
+        return const StatisticsScreen();
+      case 5:
+        return const OutlineScreen();
+      case 6:
+        return const AlgorithmsScreen();
+      case 7:
+        return const FormulasScreen();
+      case 8:
+        return const ExamScoresScreen();
+      case 9:
+        return const FlashcardsScreen();
+      case 10:
+        return const DictionaryScreen();
+      case 11:
+        return const MusicScreen();
+      case 12:
+        return const MaterialsScreen();
+      case 13:
+        return const SettingsScreen();
       default:
         return PlaceholderScreen(title: navItems[_currentIndex].title);
     }

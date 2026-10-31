@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/models.dart';
 import '../utils/date_helper.dart';
-import 'storage_service.dart';
+import 'app_store.dart';
 
 /// 番茄钟模式
 enum PomodoroMode { work, shortBreak, longBreak }
@@ -52,11 +52,14 @@ class PomodoroController extends ChangeNotifier {
   double get progress =>
       _totalSeconds == 0 ? 0 : (_totalSeconds - _remainingSeconds) / _totalSeconds;
 
-  int _durationOf(PomodoroMode m) => switch (m) {
-        PomodoroMode.work => workMinutes * 60,
-        PomodoroMode.shortBreak => shortBreakMinutes * 60,
-        PomodoroMode.longBreak => longBreakMinutes * 60,
-      };
+  int _durationOf(PomodoroMode m) {
+    final s = AppStore.instance.pomodoroSettings;
+    return switch (m) {
+      PomodoroMode.work => s.workDuration * 60,
+      PomodoroMode.shortBreak => s.breakDuration * 60,
+      PomodoroMode.longBreak => s.longBreakDuration * 60,
+    };
+  }
 
   void switchMode(PomodoroMode m) {
     if (_isRunning) pause();
@@ -118,7 +121,9 @@ class PomodoroController extends ChangeNotifier {
     if (_mode == PomodoroMode.work) {
       _addRecord(totalSeconds ~/ 60);
       _completedPomodoros++;
-      if (_completedPomodoros % longBreakInterval == 0) {
+      if (_completedPomodoros %
+              AppStore.instance.pomodoroSettings.longBreakInterval ==
+          0) {
         switchMode(PomodoroMode.longBreak);
       } else {
         switchMode(PomodoroMode.shortBreak);
@@ -129,24 +134,14 @@ class PomodoroController extends ChangeNotifier {
   }
 
   Future<void> _addRecord(int durationMinutes) async {
-    final records = StorageService.instance
-        .getList<PomodoroRecord>('pomodoroRecords', PomodoroRecord.fromJson);
-    final record = PomodoroRecord(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      date: todayLocal(),
-      duration: durationMinutes,
-      subject: _subject,
-      completedAt: DateTime.now().toIso8601String(),
-    );
-    records.add(record);
-    await StorageService.instance.setList('pomodoroRecords', records);
+    // 统一走 AppStore，保证 Dashboard / 统计实时响应且持久化口径一致
+    await AppStore.instance.addPomodoroRecord(durationMinutes, _subject);
   }
 
   /// 今日番茄数与学习时长（供页面显示）
   List<PomodoroRecord> get todayRecords {
     final today = todayLocal();
-    return StorageService.instance
-        .getList<PomodoroRecord>('pomodoroRecords', PomodoroRecord.fromJson)
+    return AppStore.instance.pomodoroRecords
         .where((r) => r.date == today)
         .toList();
   }

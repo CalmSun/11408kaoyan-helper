@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'screens/app_shell.dart';
+import 'services/theme_controller.dart';
 
 /// 应用根组件。
 ///
@@ -13,21 +14,26 @@ class KaoyanApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: '11408 考研助手',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.light,
-        colorSchemeSeed: const Color(0xFF4A6CF7),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        colorSchemeSeed: const Color(0xFF4A6CF7),
-      ),
-      themeMode: ThemeMode.system,
-      home: const AppShell(),
+    return ListenableBuilder(
+      listenable: ThemeController.instance,
+      builder: (context, _) {
+        return MaterialApp(
+          title: '11408 考研助手',
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.light,
+            colorSchemeSeed: const Color(0xFF4A6CF7),
+          ),
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            brightness: Brightness.dark,
+            colorSchemeSeed: const Color(0xFF4A6CF7),
+          ),
+          themeMode: ThemeController.instance.mode,
+          home: const AppShell(),
+        );
+      },
     );
   }
 }

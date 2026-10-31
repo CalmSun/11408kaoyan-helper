@@ -23,7 +23,7 @@ jobs:
       - name: Generate scaffolding
         run: |
           cd flutter-app
-          flutter create --platforms=linux --org com.kaoyan --project-name kaoyan_helper .
+          flutter create --empty --platforms=linux --org com.kaoyan --project-name kaoyan_helper .
 
       - name: Pub get + Analyze
         run: |
@@ -50,7 +50,7 @@ jobs:
       - name: Generate Android scaffolding
         run: |
           cd flutter-app
-          flutter create --platforms=android --org com.kaoyan --project-name kaoyan_helper .
+          flutter create --empty --platforms=android --org com.kaoyan --project-name kaoyan_helper .
 
       - name: Build APK
         run: |
@@ -85,7 +85,7 @@ jobs:
         shell: bash
         run: |
           cd flutter-app
-          flutter create --platforms=windows --org com.kaoyan --project-name kaoyan_helper .
+          flutter create --empty --platforms=windows --org com.kaoyan --project-name kaoyan_helper .
 
       - name: Build Windows
         shell: bash
@@ -131,7 +131,7 @@ jobs:
       - name: Generate Linux scaffolding
         run: |
           cd flutter-app
-          flutter create --platforms=linux --org com.kaoyan --project-name kaoyan_helper .
+          flutter create --empty --platforms=linux --org com.kaoyan --project-name kaoyan_helper .
 
       - name: Build Linux
         run: |

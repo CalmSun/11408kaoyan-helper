@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'app.dart';
+import 'data/knowledge_data.dart';
+import 'services/app_store.dart';
 import 'services/storage_service.dart';
+import 'services/theme_controller.dart';
 
 /// 应用入口。
 ///
@@ -15,6 +18,12 @@ void main() async {
   await LiquidGlassWidgets.initialize();
   // 本地存储（shared_preferences）初始化，供各模块读写学习数据
   await StorageService.instance.init();
+  // 静态知识库（大纲 / 公式 / 算法 / 单词）
+  await KnowledgeData.instance.load();
+  // 全局状态（计划 / 闪卡 / 番茄钟 / 进度 / 设置）
+  await AppStore.instance.init();
+  // 主题模式
+  ThemeController.instance.load();
 
   runApp(
     LiquidGlassWidgets.wrap(
@@ -34,3 +43,4 @@ void main() async {
     ),
   );
 }
+

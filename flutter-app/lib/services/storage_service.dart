@@ -13,50 +13,57 @@ class StorageService {
 
   static const String guestPrefix = 'kaoyan_helper_';
   static const String userPrefix = 'kaoyan_user_';
+  static const String accountsKey = 'kaoyan_accounts';
+  static const String currentUserKey = 'kaoyan_current_user';
 
   SharedPreferences? _prefs;
+  String _currentUser = '';
 
   bool get isReady => _prefs != null;
+  String get currentUser => _currentUser;
 
   Future<void> init() async {
     _prefs ??= await SharedPreferences.getInstance();
+    _currentUser = _prefs?.getString(currentUserKey) ?? '';
   }
 
-  String _key(String key, {bool forUser = false}) =>
-      '${forUser ? userPrefix : guestPrefix}$key';
+  /// 设置当前用户（'' 表示游客模式）。写入 global key，并立即切换前缀。
+  Future<void> setCurrentUser(String username) async {
+    _currentUser = username;
+    if (username.isEmpty) {
+      await _prefs?.remove(currentUserKey);
+    } else {
+      await _prefs?.setString(currentUserKey, username);
+    }
+  }
+
+  String _key(String key) => _currentUser.isEmpty
+      ? '$guestPrefix$key'
+      : '$userPrefix${_currentUser}_$key';
 
   // ── 基础类型 ──────────────────────────────────────────────
 
-  String? getString(String key, {bool forUser = false}) =>
-      _prefs?.getString(_key(key, forUser: forUser));
+  String? getString(String key) => _prefs?.getString(_key(key));
 
-  Future<void> setString(String key, String value, {bool forUser = false}) =>
-      _prefs!.setString(_key(key, forUser: forUser), value);
+  Future<void> setString(String key, String value) =>
+      _prefs!.setString(_key(key), value);
 
-  bool getBool(String key, {bool forUser = false}) =>
-      _prefs?.getBool(_key(key, forUser: forUser)) ?? false;
+  bool getBool(String key) => _prefs?.getBool(_key(key)) ?? false;
 
-  Future<void> setBool(String key, bool value, {bool forUser = false}) =>
-      _prefs!.setBool(_key(key, forUser: forUser), value);
+  Future<void> setBool(String key, bool value) =>
+      _prefs!.setBool(_key(key), value);
 
-  int getInt(String key, {bool forUser = false}) =>
-      _prefs?.getInt(_key(key, forUser: forUser)) ?? 0;
+  int getInt(String key) => _prefs?.getInt(_key(key)) ?? 0;
 
-  Future<void> setInt(String key, int value, {bool forUser = false}) =>
-      _prefs!.setInt(_key(key, forUser: forUser), value);
+  Future<void> setInt(String key, int value) =>
+      _prefs!.setInt(_key(key), value);
 
-  Future<void> remove(String key, {bool forUser = false}) =>
-      _prefs!.remove(_key(key, forUser: forUser));
+  Future<void> remove(String key) => _prefs!.remove(_key(key));
 
   // ── JSON 对象 ─────────────────────────────────────────────
 
-  /// 读取单个 JSON 对象（不存在或解析失败返回 null）
-  T? getObject<T>(
-    String key,
-    T Function(Map<String, dynamic>) fromJson, {
-    bool forUser = false,
-  }) {
-    final raw = _prefs?.getString(_key(key, forUser: forUser));
+  T? getObject<T>(String key, T Function(Map<String, dynamic>) fromJson) {
+    final raw = _prefs?.getString(_key(key));
     if (raw == null || raw.isEmpty) return null;
     try {
       return fromJson(jsonDecode(raw) as Map<String, dynamic>);
@@ -65,20 +72,13 @@ class StorageService {
     }
   }
 
-  /// 写入单个 JSON 对象（对象的 toJson 返回 Map）
-  Future<void> setObject(String key, Object value, {bool forUser = false}) {
-    return _prefs!.setString(_key(key, forUser: forUser), jsonEncode(value));
-  }
+  Future<void> setObject(String key, Object value) =>
+      _prefs!.setString(_key(key), jsonEncode(value));
 
   // ── JSON 列表 ─────────────────────────────────────────────
 
-  /// 读取 JSON 列表（不存在或解析失败返回空列表）
-  List<T> getList<T>(
-    String key,
-    T Function(Map<String, dynamic>) fromJson, {
-    bool forUser = false,
-  }) {
-    final raw = _prefs?.getString(_key(key, forUser: forUser));
+  List<T> getList<T>(String key, T Function(Map<String, dynamic>) fromJson) {
+    final raw = _prefs?.getString(_key(key));
     if (raw == null || raw.isEmpty) return [];
     try {
       final list = jsonDecode(raw) as List;
@@ -90,8 +90,43 @@ class StorageService {
     }
   }
 
-  /// 写入 JSON 列表（元素需实现 toJson()，jsonEncode 会递归调用）
-  Future<void> setList(String key, List<Object> items, {bool forUser = false}) {
-    return _prefs!.setString(_key(key, forUser: forUser), jsonEncode(items));
+  Future<void> setList(String key, List<Object> items) =>
+      _prefs!.setString(_key(key), jsonEncode(items));
+
+  // ── 全局 key（不带用户前缀，用于账号列表 / 当前用户） ─────
+
+  String? getGlobalString(String key) => _prefs?.getString(key);
+
+  Future<void> setGlobalString(String key, String value) =>
+      _prefs!.setString(key, value);
+
+  Future<void> removeGlobal(String key) => _prefs!.remove(key);
+
+  List<T> getGlobalList<T>(String key, T Function(Map<String, dynamic>) fromJson) {
+    final raw = _prefs?.getString(key);
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final list = jsonDecode(raw) as List;
+      return list
+          .map((e) => fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> setGlobalList(String key, List<Object> items) =>
+      _prefs!.setString(key, jsonEncode(items));
+
+  /// 所有已存储的原始 key（跨用户前缀遍历用）
+  Set<String> rawKeys() => _prefs!.getKeys();
+
+  /// 删除当前用户前缀下的所有数据（清除全部数据 / 删除账号）
+  Future<void> clearCurrentPrefix() async {
+    final keys = _prefs!.getKeys().toList();
+    final prefix = _currentUser.isEmpty ? guestPrefix : '$userPrefix${_currentUser}_';
+    for (final k in keys) {
+      if (k.startsWith(prefix)) await _prefs!.remove(k);
+    }
   }
 }

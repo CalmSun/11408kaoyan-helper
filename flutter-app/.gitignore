@@ -5,6 +5,7 @@ build/
 .flutter-plugins-dependencies
 .packages
 pubspec.lock
+.metadata
 
 # 本机生成的平台脚手架（android/windows/linux 由 CI 的 flutter create 生成，
 # 不入库；本地 clone 后如需本地构建，运行 flutter create --platforms=... . 重新生成）

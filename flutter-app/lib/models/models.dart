@@ -430,3 +430,76 @@ class ExamScoreRecord {
         createdAt: j['createdAt'] as String? ?? '',
       );
 }
+
+/// 番茄钟设置（对应 Electron pomodoroSettings）
+class PomodoroSettings {
+  const PomodoroSettings({
+    this.workDuration = 25,
+    this.breakDuration = 5,
+    this.longBreakDuration = 15,
+    this.longBreakInterval = 4,
+    this.enableNotification = true,
+    this.enableSound = true,
+    this.enableTitleFlash = true,
+    this.forceFullscreen = false,
+    this.soundVolume = 85,
+  });
+
+  final int workDuration;
+  final int breakDuration;
+  final int longBreakDuration;
+  final int longBreakInterval;
+  final bool enableNotification;
+  final bool enableSound;
+  final bool enableTitleFlash;
+  final bool forceFullscreen;
+  final int soundVolume;
+
+  PomodoroSettings copyWith({
+    int? workDuration,
+    int? breakDuration,
+    int? longBreakDuration,
+    int? longBreakInterval,
+    bool? enableNotification,
+    bool? enableSound,
+    bool? enableTitleFlash,
+    bool? forceFullscreen,
+    int? soundVolume,
+  }) {
+    return PomodoroSettings(
+      workDuration: workDuration ?? this.workDuration,
+      breakDuration: breakDuration ?? this.breakDuration,
+      longBreakDuration: longBreakDuration ?? this.longBreakDuration,
+      longBreakInterval: longBreakInterval ?? this.longBreakInterval,
+      enableNotification: enableNotification ?? this.enableNotification,
+      enableSound: enableSound ?? this.enableSound,
+      enableTitleFlash: enableTitleFlash ?? this.enableTitleFlash,
+      forceFullscreen: forceFullscreen ?? this.forceFullscreen,
+      soundVolume: soundVolume ?? this.soundVolume,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'workDuration': workDuration,
+        'breakDuration': breakDuration,
+        'longBreakDuration': longBreakDuration,
+        'longBreakInterval': longBreakInterval,
+        'enableNotification': enableNotification,
+        'enableSound': enableSound,
+        'enableTitleFlash': enableTitleFlash,
+        'forceFullscreen': forceFullscreen,
+        'soundVolume': soundVolume,
+      };
+
+  factory PomodoroSettings.fromJson(Map<String, dynamic> j) => PomodoroSettings(
+        workDuration: j['workDuration'] as int? ?? 25,
+        breakDuration: j['breakDuration'] as int? ?? 5,
+        longBreakDuration: j['longBreakDuration'] as int? ?? 15,
+        longBreakInterval: j['longBreakInterval'] as int? ?? 4,
+        enableNotification: j['enableNotification'] as bool? ?? true,
+        enableSound: j['enableSound'] as bool? ?? true,
+        enableTitleFlash: j['enableTitleFlash'] as bool? ?? true,
+        forceFullscreen: j['forceFullscreen'] as bool? ?? false,
+        soundVolume: j['soundVolume'] as int? ?? 85,
+      );
+}
