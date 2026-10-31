@@ -55,15 +55,19 @@
   /* 统一滤镜表达式：所有玻璃层只引用该变量，便于一处调参 */
   --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
+  /* 外壳面（侧边栏/顶栏）：比内容卡更实一档。它们承载成排的导航文字，
+     通透度要让位于可读性；仍比 3.6.4 的 0.78/0.55 半透明得多。 */
+  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(255, 255, 255, 0.56) 0%, rgba(255, 255, 255, 0.46) 60%, rgba(255, 255, 255, 0.40) 100%);
+
   /* v3.6.5 折射层：底色要淡。折射层会自己采样并模糊背景，
      底色加白越多越像磨砂片；这里只保留维持文字对比度所需的最低白度。 */
-  --glass-bg-lg: linear-gradient(150deg, rgba(255, 255, 255, 0.38) 0%, rgba(255, 255, 255, 0.27) 45%, rgba(255, 255, 255, 0.21) 100%);
-  --lg-blur: 7px;
+  --glass-bg-lg: linear-gradient(150deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.10) 45%, rgba(255, 255, 255, 0.07) 100%);
+  --lg-blur: 4px;
   --lg-saturate: 155%;
   /* contrast < 1 把背景压进窄带、brightness > 1 再把窄带抬到可读区间。
      这是让「通透」与「字看得清」同时成立的关键：抬背景而不是加厚玻璃。 */
-  --lg-contrast: 0.32;
-  --lg-brightness: 1.40;
+  --lg-contrast: 0.72;
+  --lg-brightness: 1.12;
 
   /* 中性表面（列表项等高频元素：无滤镜，纯半透明色） */
   --mo-surface: rgba(255, 255, 255, 0.55);
@@ -73,17 +77,17 @@
   --glass-lite-bg: rgba(255, 255, 255, 0.68);
 
   /* 文字：玻璃面会透出背景明暗，次级/三级文字的对比余量要留足 */
-  --mo-text-1: #1b2029;
-  --mo-text-2: #3f4756;
-  --mo-text-3: #59616e;
-  --mo-text-disabled: #a3aab6;
+  --mo-text-1: #171d26;
+  --mo-text-2: #36404e;
+  --mo-text-3: #46505d;
+  --mo-text-disabled: #969dab;
 
   /* 侧边导航（玻璃，渐变光泽） */
   --side-nav-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.55) 60%, rgba(255, 255, 255, 0.50) 100%);
   --side-nav-border: rgba(255, 255, 255, 0.65);
-  --side-nav-text-1: #222831;
-  --side-nav-text-2: rgba(34, 40, 49, 0.62);
-  --side-nav-text-3: rgba(34, 40, 49, 0.38);
+  --side-nav-text-1: #141a23;
+  --side-nav-text-2: #2a3442;
+  --side-nav-text-3: #4a5464;
   --side-nav-hover: rgba(59, 130, 246, 0.10);
   --side-nav-divider: rgba(59, 130, 246, 0.12);
   --side-nav-collapse-bg: rgba(255, 255, 255, 0.85);
@@ -133,11 +137,12 @@ html.dark {
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.40), 0 8px 22px rgba(0, 0, 0, 0.32), 0 24px 60px rgba(0, 0, 0, 0.35);
   --glass-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.45), 0 12px 30px rgba(0, 0, 0, 0.38), 0 32px 72px rgba(0, 0, 0, 0.42);
   /* 深色主题背景本身柔和，折射层可以更透：白字压深底，对比度天然够 */
-  --glass-bg-lg: linear-gradient(150deg, rgba(38, 50, 74, 0.46) 0%, rgba(26, 35, 54, 0.36) 50%, rgba(19, 26, 40, 0.31) 100%);
-  --lg-blur: 8px;
+  --glass-bg-lg: linear-gradient(150deg, rgba(38, 50, 74, 0.18) 0%, rgba(26, 35, 54, 0.12) 50%, rgba(19, 26, 40, 0.09) 100%);
+  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(34, 44, 63, 0.60) 0%, rgba(20, 27, 42, 0.50) 60%, rgba(13, 19, 31, 0.44) 100%);
+  --lg-blur: 5px;
   --lg-saturate: 148%;
-  --lg-contrast: 0.78;
-  --lg-brightness: 1.14;
+  --lg-contrast: 0.90;
+  --lg-brightness: 1.06;
 
   /* 中性表面 */
   --mo-surface: rgba(255, 255, 255, 0.06);
@@ -154,9 +159,9 @@ html.dark {
   /* 侧边导航（深色玻璃，渐变光泽） */
   --side-nav-bg: linear-gradient(160deg, rgba(34, 44, 63, 0.72) 0%, rgba(20, 27, 42, 0.60) 60%, rgba(13, 19, 31, 0.55) 100%);
   --side-nav-border: rgba(255, 255, 255, 0.10);
-  --side-nav-text-1: #e8ebf1;
-  --side-nav-text-2: rgba(232, 235, 241, 0.60);
-  --side-nav-text-3: rgba(232, 235, 241, 0.32);
+  --side-nav-text-1: #eef1f6;
+  --side-nav-text-2: #c6cedb;
+  --side-nav-text-3: #9aa4b4;
   --side-nav-hover: rgba(96, 165, 250, 0.14);
   --side-nav-divider: rgba(255, 255, 255, 0.07);
   --side-nav-collapse-bg: rgba(30, 40, 58, 0.92);
@@ -180,23 +185,24 @@ html.dark {
     --mo-surface-hover: rgba(235, 240, 250, 1);
     --glass-lite-bg: rgba(243, 246, 252, 0.95);
     --glass-bg-lg: var(--glass-bg-fallback);
+    --glass-bg-lg-chrome: var(--glass-bg-fallback);
   }
 }
 
 /* 超通透档：模糊更小、饱和更高、压缩更轻，让折射与背景结构更明显
    （代价是最暗处的文字对比度略降，这是这一档刻意的取舍） */
 body.liquid-glass {
-  --lg-blur: 6px;
+  --lg-blur: 4px;
   --lg-saturate: 182%;
-  --lg-contrast: 0.60;
-  --lg-brightness: 1.20;
+  --lg-contrast: 0.66;
+  --lg-brightness: 1.18;
 }
 
 html.dark body.liquid-glass {
-  --lg-blur: 7px;
+  --lg-blur: 5px;
   --lg-saturate: 168%;
-  --lg-contrast: 0.88;
-  --lg-brightness: 1.10;
+  --lg-contrast: 0.90;
+  --lg-brightness: 1.08;
 }
 
 * {
@@ -391,17 +397,9 @@ html.dark .app-bg-decor::after {
   overflow: hidden;
 }
 
-/* 列表/网格/嵌套高频元素：不使用滤镜，仅半透明底色 + 细边框 + 轻高光，保障滚动性能 */
-.glass-lite,
-.glass-card--lite {
-  background: var(--glass-lite-bg);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--mo-radius-sm);
-  box-shadow:
-    0 1px 6px rgba(31, 64, 130, 0.05),
-    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) * 0.5));
-  transition: background-color 0.2s ease;
-}
+/* 列表/网格里高频出现的小卡片：视觉统一走上方 .card / .glass-card 体系
+   （v3.6.5 起 .algo-card / .word-card / .formula-card 已接入折射层），
+   这里不再保留独立的 .glass-lite / .glass-card--lite 类 —— 模板里零引用。 */
 
 /* ═══════════════════════════════════════════════
    液态玻璃折射层（v3.6.5 · 参照 liquid-glass-vue）
@@ -441,6 +439,12 @@ body.liquid-glass .lg-warp {
 .lg-on {
   /* isolation 只建层叠上下文，不切断背景采样（已实测：与 z-index:0 表现一致） */
   isolation: isolate;
+  /* 通透玻璃上的文字靠底色（contrast/brightness 压缩）+ 色阶保证可读性，
+     不再用白色光晕——它会让深色文字发灰。 */
+}
+
+html.dark .lg-on {
+  /* 深色主题同样不加光晕 */
 }
 
 /* 轮廓高光：padding + mask xor 描出 1.5px 的环，再叠一条 135° 渐变，
@@ -492,7 +496,16 @@ html.dark .lg-on > .lg-rim {
 
 /* 折射层已经负责采样与模糊，卡片自身的 backdrop-filter 必须撤掉，
    否则会出现嵌套 backdrop-filter：双重模糊 + 双重 GPU 开销 */
-.lg-on:not(.lg-sleep) {
+/* html 前缀用来抬高优先级：视图 scoped 里的 .algo-card { background: ... } 是 (0,2,0)，
+   与 .lg-on:not(.lg-sleep) 打平时按加载顺序分胜负，不可靠 */
+html .side-nav.lg-on:not(.lg-sleep),
+html .titlebar.lg-on:not(.lg-sleep),
+html .pomodoro-mini.lg-on:not(.lg-sleep) {
+  background: var(--glass-bg-lg-chrome);
+  text-shadow: none;
+}
+
+html .lg-on:not(.lg-sleep) {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   background: var(--glass-bg-lg);

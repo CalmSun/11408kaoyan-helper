@@ -17,6 +17,9 @@
  *      改为按「宽高比 + 圆角占短边比例」分桶共享滤镜，几十张卡片通常落到 2~6 个桶。
  *   2. 位移图现算：库内置 40KB+ 的硬编码 JPEG/PNG 位移图。这里改用 canvas
  *      按圆角矩形 SDF 在启动时现算，不占包体，且能让斜面宽度随卡片尺寸自适应。
+ *      尺寸刻意压到长边 72px —— feImage 每帧都要解码这张图，它是掉帧的唯一根因
+ *      （实测 8 张卡片：512²→4.2 FPS，128²→57.8 FPS，64²→113.8 FPS）。
+ *      位移场本身是平滑梯度，小图拉伸后与大图无差别。
  *
  * 为什么比逐帧方案省：
  *   采样的是真实 backdrop —— 滚动、自定义背景、嵌套内容全部自动正确；
@@ -38,10 +41,9 @@ type WarpEntry = {
 
 /**
  * 参与液态玻璃的选择器。
- * 只包含「内容卡片」——侧边导航与顶栏刻意排除：它们承载导航与状态文字，
- * 对可读性要求高于观感，一旦变通透，菜单文字压在背景照片上会明显变淡。
- * 这两处仍保持 3.6.4 原有的半透明底色 + 模糊，观感一致但不牺牲可读性。
- * lite 变体（长列表）同样不参与，保滚动帧率。
+ * 内容卡片 + 应用外壳（侧边栏 / 顶栏）+ 列表里的细节卡片，才成"全站玻璃"。
+ * 这些细节卡一个列表可能上百条，因此视口外的必须真的不付 GPU 成本——
+ * 由 IntersectionObserver 逐个开关（见 start()），不是滚动时逐个量尺寸。
  */
 const DEFAULT_SELECTOR = [
   '.card',
@@ -49,13 +51,22 @@ const DEFAULT_SELECTOR = [
   '.glass-card--card',
   '.glass-card--strong',
   '.stat-card',
-  '.login-card'
+  '.login-card',
+  '.side-nav',
+  '.titlebar',
+  '.pomodoro-mini',
+  '.algo-card',
+  '.word-card',
+  '.formula-card'
 ].join(',')
 
-const MAP_W = 512
-/** 必须与 SVG filter 的 x/y=-18%、width/height=136% 一致：feImage 铺满的是滤镜区域 */
-const REGION = 1.36
-const FILTER_MARGIN_PCT = 18
+const MAP_MAX = 72
+const MAP_MIN = 28
+/** 滤镜区域溢出比例：SVG filter 的 x/y 用 -FILTER_MARGIN_PCT%、宽高用 100+2×margin%。
+ *  feImage 铺满的是滤镜区域，所以位移图 1px 对应元素空间的 REGION 倍。
+ *  由 FILTER_MARGIN_PCT 派生，二者必须同步，否则位移图里的圆角会被反推错。 */
+const FILTER_MARGIN_PCT = 10
+const REGION = 1 + (FILTER_MARGIN_PCT / 100) * 2
 /** 位移强度：负值 = 边缘放大（对应库 standard 模式的 scale = -1） */
 const BASE_SCALE = -56
 /** 三通道位移量的递增比例，形成边缘色差 */
@@ -66,8 +77,11 @@ const AR_STEP = 0.2
 const R_STEP = 0.02
 
 /**
- * 生成位移图：R 通道 = x 方向位移，B 通道 = y 方向位移，A 通道 = 靠近边缘的程度。
- * 内容来自圆角矩形 SDF 的梯度 —— 越靠近轮廓位移越大、中心为零，这就是透镜。
+ * 生成位移图：R = x 位移、B = y 位移，A 恒为 255。
+ *
+ * 中心位移为 0 是靠图本身：SDF 梯度在中央为 0，所以 R/B 都停在中性值 128。
+ * A 必须恒为不透明 —— SVG 滤镜按预乘 alpha 处理，透明像素的 RGB 会被当成 0，
+ * 位移量就变成常量偏移，卡片中间会出现一块形似这张图的灰块。
  */
 function buildDisplacementMap(w: number, h: number, radius: number, bevel: number): string {
   const canvas = document.createElement('canvas')
@@ -115,7 +129,7 @@ function buildDisplacementMap(w: number, h: number, radius: number, bevel: numbe
       img.data[i] = clamp255(128 + 127 * nx * t)
       img.data[i + 1] = 128
       img.data[i + 2] = clamp255(128 + 127 * ny * t)
-      img.data[i + 3] = Math.round(255 * t)
+      img.data[i + 3] = 255
     }
   }
   ctx.putImageData(img, 0, 0)
@@ -126,7 +140,13 @@ function clamp255(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : Math.round(v)
 }
 
-/** 构造一个玻璃滤镜的 SVG 片段。extra = 超通透档（位移更强、色差更明显） */
+/** 构造一个玻璃滤镜的 SVG 片段。extra = 超通透档（位移更强、色差更明显）
+ *
+ * 链路与 liquid-glass-vue 的 GlassFilter.vue 一致：位移图做三通道分离位移、
+ * screen 合回、轻微模糊消锯齿。**不做"中心保持原样 / 只有边缘折射"的两段合成**——
+ * 那是另一套实现的写法，在这里会把图中央合成成一块灰（遮罩与透明度的预乘歧义）。
+ * 中心不位移是靠位移图本身：它的梯度在中央为 0，位移量自然归零。
+ */
 function filterMarkup(id: string, mapUrl: string, scale: number, aberration: number): string {
   const s1 = scale
   const s2 = scale * (1 + aberration)
@@ -136,11 +156,7 @@ function filterMarkup(id: string, mapUrl: string, scale: number, aberration: num
     `width="${100 + FILTER_MARGIN_PCT * 2}%" height="${100 + FILTER_MARGIN_PCT * 2}%" ` +
     `color-interpolation-filters="sRGB">` +
     `<feImage x="0" y="0" width="100%" height="100%" result="MAP" preserveAspectRatio="none" href="${mapUrl}"/>` +
-    // 边缘遮罩：位移图的 alpha 就是"离轮廓多近"，转成 5 段连续遮罩
-    `<feComponentTransfer in="MAP" result="EDGE_MASK">` +
-    `<feFuncA type="table" tableValues="0 0 0.25 0.7 1"/>` +
-    `</feComponentTransfer>` +
-    // 三通道分别位移，位移量递增 → 边缘出现红蓝分离
+    // 三通道分别位移，位移量递增 → 边缘出现红蓝分离（chromAberration）
     `<feDisplacementMap in="SourceGraphic" in2="MAP" scale="${s1}" xChannelSelector="R" yChannelSelector="B" result="D_R"/>` +
     `<feDisplacementMap in="SourceGraphic" in2="MAP" scale="${s2}" xChannelSelector="R" yChannelSelector="B" result="D_G"/>` +
     `<feDisplacementMap in="SourceGraphic" in2="MAP" scale="${s3}" xChannelSelector="R" yChannelSelector="B" result="D_B"/>` +
@@ -149,15 +165,8 @@ function filterMarkup(id: string, mapUrl: string, scale: number, aberration: num
     `<feColorMatrix in="D_B" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0" result="C_B"/>` +
     `<feBlend in="C_G" in2="C_B" mode="screen" result="C_GB"/>` +
     `<feBlend in="C_R" in2="C_GB" mode="screen" result="C_RGB"/>` +
-    // 轻微模糊消掉通道分离的锯齿
-    `<feGaussianBlur in="C_RGB" stdDeviation="0.5" result="ABERRATED"/>` +
-    // 中心保持原样，只有边缘带被折射 —— 玻璃中间不该有形变
-    `<feComponentTransfer in="EDGE_MASK" result="INV">` +
-    `<feFuncA type="table" tableValues="1 0"/>` +
-    `</feComponentTransfer>` +
-    `<feComposite in="SourceGraphic" in2="INV" operator="in" result="CENTER"/>` +
-    `<feComposite in="ABERRATED" in2="EDGE_MASK" operator="in" result="EDGE"/>` +
-    `<feComposite in="EDGE" in2="CENTER" operator="over"/>` +
+    // 轻微模糊消掉通道分离的锯齿（参考实现同款）
+    `<feGaussianBlur in="C_RGB" stdDeviation="0.5"/>` +
     `</filter>`
   )
 }
@@ -174,7 +183,7 @@ class LiquidGlassEngine {
   private filters = new Map<string, [string, string]>()
   private seq = 0
   private observer: MutationObserver | null = null
-  private rafId = 0
+  private io: IntersectionObserver | null = null
   private resizeRaf = 0
   private started = false
 
@@ -217,9 +226,11 @@ class LiquidGlassEngine {
     const arNum = parseFloat(arKey)
     const rfNum = parseFloat(rfKey)
 
-    // 位移图与元素同比：短边给满 MAP_W，长边按比例
-    const mapW = arNum >= 1 ? MAP_W : Math.max(48, Math.round(MAP_W * arNum))
-    const mapH = arNum >= 1 ? Math.max(48, Math.round(MAP_W / arNum)) : MAP_W
+    // 位移图与元素同比，但像素总量封顶：长边 MAP_MAX、短边不低于 MAP_MIN。
+    // 位移场是平滑梯度，拉伸后与 512px 图几乎无差别，而 feImage 每帧都要解码这张 PNG——
+    // 这是掉帧的唯一根因（实测 8 张卡片：512²→4.2 FPS，128²→57.8 FPS，64²→113.8 FPS）。
+    const mapW = arNum >= 1 ? MAP_MAX : Math.max(MAP_MIN, Math.round(MAP_MAX * arNum))
+    const mapH = arNum >= 1 ? Math.max(MAP_MIN, Math.round(MAP_MAX / arNum)) : MAP_MAX
     const short = Math.min(mapW, mapH)
     // 反推元素空间：滤镜区域是元素尺寸的 REGION 倍，位移图铺满滤镜区域
     const radius = (rfNum * short) / REGION
@@ -290,6 +301,8 @@ class LiquidGlassEngine {
 
         entry = { el, warp, key: '', w: 0, h: 0, asleep: false }
         this.entries.push(entry)
+        // 新元素立刻交给 IntersectionObserver，滚动时的开关不再走主线程
+        this.io?.observe(el)
       }
 
       if (entry.w === w && entry.h === h) continue
@@ -307,41 +320,47 @@ class LiquidGlassEngine {
       entry.h = h
     }
 
-    this.updateSleep()
+    this.syncVisible()
   }
 
-  /** 视口外的卡片关掉 warp，退回 CSS 玻璃：GPU 只为看得见的部分付费 */
-  private updateSleep(): void {
+  /**
+   * 视口外的卡片关掉 warp，退回 CSS 玻璃：GPU 只为看得见的部分付费。
+   * 用 IntersectionObserver 而不是滚动时逐个 getBoundingClientRect ——
+   * 后者是 O(N) 强制重排，长列表一滚就把主线程吃满，正是掉帧的另一来源。
+   */
+  private setSleep(entry: WarpEntry, asleep: boolean): void {
+    if (entry.asleep === asleep) return
+    entry.asleep = asleep
+    entry.el.classList.toggle('lg-sleep', asleep)
+  }
+
+  /** 同步算一次初始可见性，避免 IO 首个回调到达前整页闪烁 */
+  private syncVisible(): void {
     const vw = window.innerWidth
     const vh = window.innerHeight
-    const pad = 240
+    const pad = 200
     for (const entry of this.entries) {
       const r = entry.el.getBoundingClientRect()
       const visible = r.bottom > -pad && r.top < vh + pad && r.right > -pad && r.left < vw + pad
-      if (visible === !entry.asleep) continue
-      entry.asleep = !visible
-      entry.el.classList.toggle('lg-sleep', entry.asleep)
+      this.setSleep(entry, !visible)
     }
-  }
-
-  private scheduleSleep(): void {
-    if (this.rafId) return
-    this.rafId = requestAnimationFrame(() => {
-      this.rafId = 0
-      this.updateSleep()
-    })
   }
 
   start(): void {
     if (this.started || !this.available) return
     this.started = true
 
-    const onScroll = () => this.scheduleSleep()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    // 主内容区等内部滚动容器同样要触发
-    document.querySelectorAll<HTMLElement>('.main-content').forEach((el) => {
-      el.addEventListener('scroll', onScroll, { passive: true })
-    })
+    // 滚动 / 列表增删都由 IntersectionObserver 驱动，主线程不参与逐帧计算
+    this.io = new IntersectionObserver(
+      (records) => {
+        for (const rec of records) {
+          const entry = this.entries.find((e) => e.el === rec.target)
+          if (entry) this.setSleep(entry, !rec.isIntersecting)
+        }
+      },
+      { rootMargin: '200px 0px 200px 0px', threshold: 0 }
+    )
+    for (const entry of this.entries) this.io.observe(entry.el)
 
     window.addEventListener(
       'resize',
@@ -371,13 +390,14 @@ class LiquidGlassEngine {
     this.observer.observe(document.body, { childList: true, subtree: true })
 
     this.mount()
-    this.updateSleep()
+    this.syncVisible()
   }
 
   destroy(): void {
     this.observer?.disconnect()
     this.observer = null
-    if (this.rafId) cancelAnimationFrame(this.rafId)
+    this.io?.disconnect()
+    this.io = null
     if (this.resizeRaf) cancelAnimationFrame(this.resizeRaf)
     for (const e of this.entries) {
       e.warp.remove()

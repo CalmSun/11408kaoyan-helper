@@ -21,8 +21,8 @@ git tag -d %TAG% >nul 2>&1
 git tag -a %TAG% -F .git-msg.txt
 if errorlevel 1 goto fail
 
-echo [5/5] push main (force: history rewound to v3.6.4 base) and tag
-git push --force-with-lease origin main
+echo [5/5] push main (fast-forward) and tag
+git push origin main
 if errorlevel 1 goto fail
 git push origin %TAG%
 if errorlevel 1 goto fail
