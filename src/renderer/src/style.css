@@ -66,8 +66,8 @@
   --lg-saturate: 155%;
   /* contrast < 1 把背景压进窄带、brightness > 1 再把窄带抬到可读区间。
      这是让「通透」与「字看得清」同时成立的关键：抬背景而不是加厚玻璃。 */
-  --lg-contrast: 0.72;
-  --lg-brightness: 1.12;
+  --lg-contrast: 0.85;
+  --lg-brightness: 1.08;
 
   /* 中性表面（列表项等高频元素：无滤镜，纯半透明色） */
   --mo-surface: rgba(255, 255, 255, 0.55);

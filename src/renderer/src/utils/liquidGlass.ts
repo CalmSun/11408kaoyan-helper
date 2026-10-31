@@ -73,7 +73,8 @@ const R_STEP = 0.02
 /**
  * 生成位移图：R = x 位移、B = y 位移，A 恒为 255。
  *
- * 中心位移为 0 是靠图本身：SDF 梯度在中央为 0，所以 R/B 都停在中性值 128。
+ * 位移强度只在「边缘窄带」内衰减（轮廓最大、向内/向外都归零），中心与外部恒为
+ * 128（无位移）——这就是边缘透镜：玻璃边缘折射、中心保持清晰。
  * A 必须恒为不透明 —— SVG 滤镜按预乘 alpha 处理，透明像素的 RGB 会被当成 0，
  * 位移量就变成常量偏移，卡片中间会出现一块形似这张图的灰块。
  */
@@ -114,10 +115,16 @@ function buildDisplacementMap(w: number, h: number, radius: number, bevel: numbe
       const nx = gx / gl
       const ny = gy / gl
 
-      // 衰减：中心 0、轮廓 1，smoothstep 让弯曲更接近真实玻璃的曲率
-      let t = -d / bw
-      t = t < 0 ? 0 : t > 1 ? 1 : t
-      t = t * t * (3 - 2 * t)
+      // 位移强度：边缘(d=0)最强=1，向内部递减到 0，外部恒为 0 —— 这才是「边缘透镜」。
+      // SDF 约定：内部为负(d<0)、边缘为 0、外部为正(d>0)。
+      // 旧写法 -d/bw 得到「中心 1、边缘 0」的反向结果：玻璃中心被整片大幅位移，
+      // 采样错位 → 黑块/黑影；三通道 scale 差在中心被放大 → 色差异常；中心变形 → 失真不通透。
+      let t = 0
+      if (d <= 0) {
+        t = 1 + d / bw // 边缘 d=0 → 1；向内 d=-bw → 0
+        if (t < 0) t = 0
+        t = t * t * (3 - 2 * t)
+      }
 
       const i = (y * w + x) * 4
       img.data[i] = clamp255(128 + 127 * nx * t)
@@ -139,7 +146,7 @@ function clamp255(v: number): number {
  * 链路与 liquid-glass-vue 的 GlassFilter.vue 一致：位移图做三通道分离位移、
  * screen 合回、轻微模糊消锯齿。**不做"中心保持原样 / 只有边缘折射"的两段合成**——
  * 那是另一套实现的写法，在这里会把图中央合成成一块灰（遮罩与透明度的预乘歧义）。
- * 中心不位移是靠位移图本身：它的梯度在中央为 0，位移量自然归零。
+ * 中心不位移是靠位移图的强度衰减：轮廓处强度最大、向内/向外都归零，位移量自然只在边缘生效。
  */
 function filterMarkup(id: string, mapUrl: string, scale: number, aberration: number): string {
   const s1 = scale
