@@ -301,15 +301,7 @@ function onDragEnd(e: PointerEvent) {
   dragState = null
 }
 
-// 侧边栏右缘的屏幕 x（含外层 wrap 的内边距）。取不到时退回 0，不影响无侧边栏的场景。
-function sideNavRight() {
-  const wrap = document.querySelector('.side-nav-wrap')
-  if (!wrap) return 0
-  const r = wrap.getBoundingClientRect()
-  return r.right
-}
-
-// 限制位置，确保浮窗不超出可视区域，并避让左侧导航栏
+// 限制位置，确保浮窗不超出可视区域
 function clampPos() {
   const el = rootRef.value
   if (!el) return
@@ -317,39 +309,32 @@ function clampPos() {
   const h = el.offsetHeight
   const vw = window.innerWidth
   const vh = window.innerHeight
-  // 浮窗在侧边栏右侧但放不下时，至少不要盖住导航项
-  const navRight = sideNavRight()
-  const minX = navRight > 0 && vw - w > navRight ? navRight + 8 : 0
-  if (pos.x < minX) pos.x = minX
+  if (pos.x < 0) pos.x = 0
   if (pos.y < 0) pos.y = 0
   if (pos.x + w > vw) pos.x = vw - w
   if (pos.y + h > vh) pos.y = vh - h
 }
 
-// 首次挂载：恢复位置；若没有历史位置则默认右下角。
-// 存档点若在当前视口之外（换过分辨率/接过外接屏）视为失效，重新取默认值，
-// 否则浮窗会停在一个看不见的位置且再也拖不回来。
+// 首次挂载：恢复位置；若没有历史位置则默认左下角
+// （v3.4.1 由右下角改为左下角；与侧边栏重叠是既定设计，见 m02265）
 function initPos() {
   const saved = loadPos()
   const el = rootRef.value
   if (!el) return
-  const margin = 24
+  // offsetWidth/offsetHeight 在首次挂载时可能还是 0（组件刚插入、尚未布局），
+  // 那样会算出 x=24、y=innerHeight-24 这种落不出来的位置，随后被 clampPos
+  // 夹到 x=0 —— 浮窗左半截跑到窗口外。宽度有固定值兜底。
   const w = el.offsetWidth || 280
-  const h = el.offsetHeight || 377
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const usable =
-    !!saved && saved.x >= 0 && saved.y >= 0 && saved.x + w <= vw && saved.y + h <= vh
-  if (usable) {
+  const h = el.offsetHeight || 380
+  const margin = 24
+  if (saved) {
     pos.x = saved.x
     pos.y = saved.y
   } else {
-    // 默认落右下角空白区：左下角会压住侧边栏导航项，右侧中部会压住内容卡片。
-    pos.x = vw - w - margin
-    pos.y = vh - h - margin
+    pos.x = margin
+    pos.y = window.innerHeight - h - margin
   }
   clampPos()
-  savePos()
 }
 
 // 窗口尺寸变化时重新约束位置
@@ -385,9 +370,8 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 9990; /* 低于全局 alert-overlay(9999)，高于其他内容 */
   width: 280px;
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-filter-pop);
-  -webkit-backdrop-filter: var(--glass-filter-pop);
+  /* 底色与模糊交给引擎的玻璃层（.lg-glass）—— 全站只有一档玻璃，
+     自绘 --glass-bg-strong 会让浮窗比卡片更白、破坏统一 */
   border: 1px solid var(--glass-border);
   border-radius: 18px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.22);

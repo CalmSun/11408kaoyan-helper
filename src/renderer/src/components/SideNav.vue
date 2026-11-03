@@ -189,9 +189,11 @@ function toggleCollapse() {
   align-items: baseline;
   gap: 4px;
   padding: 10px 14px;
-  background: var(--mo-surface);
+  /* 用玻璃体系的内层表面token，而不是 --mo-surface：后者是不透明底，
+     压在白玻璃上会形成一块与周围割裂的实心块 */
+  background: var(--lg-inset-bg);
   border-radius: var(--mo-radius-sm);
-  border: 1px solid var(--glass-border);
+  border: 1px solid var(--lg-inset-border);
 }
 
 .countdown-number {

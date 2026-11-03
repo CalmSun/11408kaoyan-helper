@@ -36,6 +36,7 @@ import {
   FILTER_ID,
   applyGlassStyle,
   createFilterDefs,
+  scaleBucket,
   type GlassTier,
   type LiquidGlassOptions
 } from './glassFilter'
@@ -131,7 +132,8 @@ class LiquidGlassEngine {
     const layer = document.createElement('div')
     layer.className = 'lg-glass'
     layer.setAttribute('aria-hidden', 'true')
-    applyGlassStyle(layer, tier, this.options)
+    const bucket = scaleBucket(Math.min(el.clientWidth, el.clientHeight))
+    applyGlassStyle(layer, tier, this.options, bucket)
 
     // 玻璃层必须是第一个子节点：它带 z-index:-1，配合元素的 isolation
     // 会落在元素背景之上、内容之下。若追加到末尾，它自己也会参与内容的层叠顺序。

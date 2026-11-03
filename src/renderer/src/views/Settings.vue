@@ -105,6 +105,19 @@
           <el-button :disabled="!customBgOn || bgBusy" @click="resetCustomBg">恢复默认</el-button>
           <span class="unit-desc">自定义浅色模式的全屏背景图（深色模式不受影响）</span>
         </el-form-item>
+        <!-- v3.6.6：背景模糊度自由调节 -->
+        <el-form-item label="背景模糊">
+          <el-slider
+            v-model="bgBlurValue"
+            :min="BG_BLUR_MIN"
+            :max="BG_BLUR_MAX"
+            :step="1"
+            :show-tooltip="true"
+            style="width: 260px; margin-right: 12px;"
+            @input="handleBgBlurInput"
+          />
+          <span class="unit-desc">{{ bgBlurValue === 0 ? '不模糊（壁纸保持原始清晰度）' : `模糊 ${bgBlurValue}px` }}</span>
+        </el-form-item>
         <!-- v3.0.0：增强液态玻璃模式 -->
         <el-form-item label="液态玻璃">
           <el-switch v-model="liquidGlassOn" @change="handleLiquidGlassChange" />
@@ -338,7 +351,7 @@ import { useMainStore } from '@/stores'
 import { useUserStore } from '@/stores/user'
 import { useMusicStore } from '@/stores/music'
 import { exportAllData, importAllData, clearAllStorage } from '@/utils/storage'
-import { themeMode, setThemeMode, applyCustomBg, initCustomBg, CUSTOM_BG_URL, type ThemeMode, liquidGlass, setLiquidGlass } from '@/utils/theme'
+import { themeMode, setThemeMode, applyCustomBg, initCustomBg, CUSTOM_BG_URL, type ThemeMode, liquidGlass, setLiquidGlass, bgBlur, setBgBlur, BG_BLUR_MIN, BG_BLUR_MAX } from '@/utils/theme'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   AlarmClock,
@@ -402,6 +415,18 @@ const liquidGlassOn = computed({
 
 function handleLiquidGlassChange(on: boolean) {
   ElMessage.success(on ? '已开启液态玻璃效果' : '已关闭液态玻璃效果')
+}
+
+// v3.6.6：背景模糊度。与 theme.ts 的 bgBlur 双向绑定，
+// 拖动时实时写 --mo-bg-blur，松手/每次变化都持久化。
+const bgBlurValue = computed({
+  get: () => bgBlur.value,
+  set: (v: number) => setBgBlur(v)
+})
+
+function handleBgBlurInput(v: number | number[]) {
+  const n = Array.isArray(v) ? v[0] : v
+  setBgBlur(n)
 }
 
 // ── 项目与更新（v2.6.7） ──

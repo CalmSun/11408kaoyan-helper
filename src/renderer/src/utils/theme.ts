@@ -48,9 +48,11 @@ export function initTheme(): void {
   themeMode.value = loadMode()
   eyeCare.value = loadEyeCare()
   liquidGlass.value = loadLiquidGlass()
+  bgBlur.value = loadBgBlur()
   applyTheme()
   applyEyeCare()
   applyLiquidGlass()
+  applyBgBlur()
   mediaQuery.addEventListener('change', (e) => {
     systemDark.value = e.matches
     applyTheme()
@@ -141,3 +143,45 @@ export async function initCustomBg(): Promise<void> {
 
 /** 自定义背景协议地址（主进程以 kaoyan-bg:// 协议提供文件） */
 export const CUSTOM_BG_URL = 'kaoyan-bg://background/custom-bg.jpg'
+
+// ── v3.6.6：背景模糊度自由调节 ──
+const BG_BLUR_KEY = 'kaoyan_bg_blur'
+
+/** 可调范围（px）。0 = 壁纸保持原始清晰度 */
+export const BG_BLUR_MIN = 0
+export const BG_BLUR_MAX = 30
+export const BG_BLUR_DEFAULT = 0
+
+function loadBgBlur(): number {
+  const raw = getGlobalStorage<string>(BG_BLUR_KEY, String(BG_BLUR_DEFAULT))
+  const n = Number(raw)
+  if (!Number.isFinite(n)) return BG_BLUR_DEFAULT
+  return Math.min(Math.max(n, BG_BLUR_MIN), BG_BLUR_MAX)
+}
+
+/** 背景模糊度（px），0 表示不模糊壁纸本身 */
+export const bgBlur = ref<number>(loadBgBlur())
+
+/**
+ * 把模糊度写到根元素的自定义属性上，由 style.css 的 #app::before 消费。
+ * 只作用于壁纸层：#app::before 是壁纸唯一的绘制位置，
+ * 玻璃面自身的 backdrop-filter 与它互不影响。
+ */
+export function applyBgBlur(): void {
+  const v = Math.min(Math.max(bgBlur.value, BG_BLUR_MIN), BG_BLUR_MAX)
+  document.documentElement.style.setProperty('--mo-bg-blur', `${v}px`)
+}
+
+/** 设置背景模糊度并持久化 */
+export function setBgBlur(px: number): void {
+  const n = Math.min(Math.max(Number(px) || 0, BG_BLUR_MIN), BG_BLUR_MAX)
+  bgBlur.value = n
+  setGlobalStorage(BG_BLUR_KEY, String(n))
+  applyBgBlur()
+}
+
+/** 初始化：存储层就绪后重新读取并应用（与 initTheme 同一时机） */
+export function initBgBlur(): void {
+  bgBlur.value = loadBgBlur()
+  applyBgBlur()
+}

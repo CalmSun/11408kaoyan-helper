@@ -40,6 +40,11 @@
   --glass-bg-fallback: #f3f6fc;          /* 无滤镜降级：近似不透明底色 */
   --glass-bg-strong-fallback: #fbfcff;
   --glass-border: rgba(255, 255, 255, 0.82);
+  /* 内层小面板（倒计时数字块、番茄钟页签等）的底色。原先直接用 --mo-surface，
+     在深色下压在白玻璃上的内层会形成一块不透明灰斑；这里改成随主题走的
+     细白描边式内表面，与外壳同一套玻璃语汇 */
+  --lg-inset-bg: rgba(255, 255, 255, 0.16);
+  --lg-inset-border: rgba(255, 255, 255, 0.34);
   --glass-blur: 11px;
   --glass-blur-pop: 14px;                /* 浮层专用模糊 */
   --glass-saturate: 1.05;                /* ybouane Saturation=0 → 不额外增饱和 */
@@ -62,6 +67,11 @@
   /* v3.7.0：玻璃层接管后，元素自身底色只作为「滤镜不可用」时的兜底。
      取极淡的一层，让失败态看起来仍是通透玻璃而不是裸壁纸。 */
   --glass-bg-lg-fallback: rgba(255, 255, 255, 0.46);
+  /* 玻璃层的底色与高光强度：深色主题必须整套压暗，否则白玻璃在暗背景上
+     会把面洗成灰白、文字随之发灰 */
+  /* 与 --glass-bg-strong 同源：番茄钟用的就是这组，卡片与之对齐 */
+  --lg-tint: rgba(255, 255, 255, 0.12);
+  --lg-inner-shadow: rgba(255, 255, 255, 0.45);
   /* 文本密集的弹层（下拉/日期/轻提示）：折射保留，但提高白度与模糊守住可读性，
      对应 ybouane 文档里的 "Frosted Panel"（blurAmount 0.25）用法 */
   --glass-bg-lg-pop: linear-gradient(150deg, rgba(255, 255, 255, 0.46) 0%, rgba(255, 255, 255, 0.36) 45%, rgba(255, 255, 255, 0.30) 100%);
@@ -122,6 +132,8 @@ html.dark {
   --glass-bg-fallback: #151c2b;
   --glass-bg-strong-fallback: #141b2a;
   --glass-border: rgba(255, 255, 255, 0.16);
+  --lg-inset-bg: rgba(255, 255, 255, 0.07);
+  --lg-inset-border: rgba(255, 255, 255, 0.15);
   --glass-blur: 11px;
   --glass-blur-pop: 14px;
   --glass-saturate: 1.05;
@@ -135,6 +147,8 @@ html.dark {
   --glass-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.45), 0 12px 30px rgba(0, 0, 0, 0.38), 0 32px 72px rgba(0, 0, 0, 0.42);
   /* 深色主题背景本身柔和，折射层可以更透：白字压深底，对比度天然够 */
   --glass-bg-lg-fallback: rgba(24, 32, 48, 0.42);
+  --lg-tint: rgba(255, 255, 255, 0.06);
+  --lg-inner-shadow: rgba(255, 255, 255, 0.22);
   /* 深色下的文本密集弹层：比浅色更透一点即可守住对比（白字压深底天然够） */
   --glass-bg-lg-pop: linear-gradient(150deg, rgba(30, 40, 58, 0.52) 0%, rgba(20, 27, 42, 0.44) 45%, rgba(13, 19, 31, 0.38) 100%);
 
@@ -218,21 +232,22 @@ html, body, #app {
   letter-spacing: 0.01em;
 }
 
-/* 壁纸层（v3.7.0）：壁纸从 html/body 的背景移到这个固定伪元素上，
-   以便对它单独做轻微模糊 —— background-image 本身无法应用 filter。
-   模糊让壁纸退为远景，玻璃的折射/亮边才读得出来（参考站的背景也是柔和的远山竹林，
-   而本应用壁纸含强烈建筑线条，不柔化时玻璃透出后视觉极吵）。
+/* 壁纸层（v3.7.0）：壁纸从 html/body 的背景移到这个固定伪元素上，纯粹为了
+   给玻璃层一个可预测的采样源。
+   模糊度由「设置 → 浅色背景 → 背景模糊」自由调节：theme.ts 把 --mo-bg-blur
+   写到根元素上，默认 0 即原始清晰度，想柔化可以自己拉高。
+   该变量只作用于壁纸本身；玻璃面的 backdrop-filter 是另一套，互不影响。
    z-index:-1 + pointer-events:none：纯装饰层，不参与命中测试、不遮挡交互。 */
 #app::before {
   content: '';
   position: fixed;
-  inset: -8px;
+  inset: 0;
   z-index: -1;
   pointer-events: none;
   background-image: var(--mo-bg-image);
   background-size: cover;
   background-position: center;
-  filter: blur(7px) saturate(1.04);
+  filter: blur(var(--mo-bg-blur, 0px));
 }
 
 /* 深色背景：渐变夜色 + 细噪点纹理（多层背景实现，零额外渲染层）
@@ -443,15 +458,26 @@ html .lg-on:not(.lg-sleep)::before {
   z-index: 0;
   border-radius: inherit;
   pointer-events: none;
+  --lg-edge-top: 0.55;
+  --lg-edge-line: 0.78;
+  --lg-edge-ring: 0.30;
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.55) 0%,
-    rgba(255, 255, 255, 0.10) 16%,
+    rgba(255, 255, 255, var(--lg-edge-top)) 0%,
+    rgba(255, 255, 255, calc(var(--lg-edge-top) * 0.18)) 16%,
     rgba(255, 255, 255, 0) 40%
   );
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.78),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.30);
+    inset 0 1px 0 rgba(255, 255, 255, var(--lg-edge-line)),
+    inset 0 0 0 1px rgba(255, 255, 255, var(--lg-edge-ring));
+}
+
+/* 深色主题：白底高光在暗背景上会把玻璃面洗成灰白，且让文字发灰。
+   压暗高光、把内阴影换成极淡的白（而非 92% 白），玻璃才像暗色玻璃。 */
+html.dark .lg-on:not(.lg-sleep)::before {
+  --lg-edge-top: 0.20;
+  --lg-edge-line: 0.30;
+  --lg-edge-ring: 0.14;
 }
 
 /* 内容必须抬到亮边之上 */
@@ -460,15 +486,18 @@ html .lg-on:not(.lg-sleep) > *:not(.lg-glass) {
   z-index: 1;
 }
 
-/* 撤掉元素自身的模糊与白底：观感完全由 .lg-glass 决定。
-   保留一层极淡底色作为兜底 —— 滤镜不被支持时，
-   页面退回「略带通透的浅色玻璃」而不是裸壁纸。
+/* 撤掉元素自身的模糊与底色：观感完全由 .lg-glass 决定。
+   这里必须写 transparent 而不是留一层兜底色 —— 之前留的
+   var(--glass-bg-lg-fallback)(0.46 白) 会让内容卡片比外壳面多叠一层白，
+   即使两边玻璃层参数完全相同，看起来也明显不是一个东西
+   （用户 m02658 报的「卡片与顶栏侧边栏番茄钟不统一」就是这个）。
+   真不支持 backdrop-filter 时引擎根本不会挂 .lg-on，走 @supports 回退块。
    html 前缀抬高优先级：视图 scoped 里的 .card { background: ... } 是 (0,2,0)，
    与其打平时按加载顺序分胜负，不可靠。 */
 html .lg-on:not(.lg-sleep) {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  background: var(--glass-bg-lg-fallback);
+  background: transparent;
 }
 
 /* 外壳面与内容卡片都不再自绘底色，统一交给玻璃层 */
@@ -581,8 +610,8 @@ html.eyecare #app {
 /* 输入框/选择器玻璃质感（浅色） */
 :root:not(.dark) .el-input__wrapper,
 :root:not(.dark) .el-textarea__inner {
-  background-color: rgba(255, 255, 255, 0.7) !important;
-  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.12) inset !important;
+  background-color: var(--lg-inset-bg) !important;
+  box-shadow: 0 0 0 1px var(--lg-inset-border) inset !important;
   transition: box-shadow 0.25s ease, background-color 0.25s ease;
 }
 
@@ -599,8 +628,8 @@ html.eyecare #app {
 /* 输入框/选择器玻璃质感（深色） */
 html.dark .el-input__wrapper,
 html.dark .el-textarea__inner {
-  background-color: rgba(255, 255, 255, 0.06) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10) inset !important;
+  background-color: var(--lg-inset-bg) !important;
+  box-shadow: 0 0 0 1px var(--lg-inset-border) inset !important;
 }
 
 html.dark .el-input__wrapper:hover,
