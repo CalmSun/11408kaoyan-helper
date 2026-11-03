@@ -59,18 +59,9 @@
   --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
   /* 外壳面（侧边栏/顶栏）：通透玻璃。底色只给到维持文字对比的最低白度，
      玻璃感交给「更实的 blur + 高饱和」，而不是靠加白——加白越多越像磨砂/白雾。 */
-  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.12) 60%, rgba(255, 255, 255, 0.09) 100%);
-
-  /* v3.6.5 折射层：底色要淡。折射层会自己采样并模糊背景，
-     底色加白越多越像磨砂片；这里只保留维持文字对比度所需的最低白度。 */
-  --glass-bg-lg: linear-gradient(150deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.09) 45%, rgba(255, 255, 255, 0.06) 100%);
-  /* v3.7.0 折射层：对齐 ybouane Blur Amount=0 —— 近无模糊，玻璃感交给真实折射，
-     模糊只留到「抵消边缘采样锯齿」的最低量 */
-  --lg-blur: 4px;
-  --lg-saturate: 105%;
-  /* 通透关键：不压对比、不提亮。压对比会把背景拍成灰、提亮会糊成白雾 */
-  --lg-contrast: 1.0;
-  --lg-brightness: 1.0;
+  /* v3.7.0：玻璃层接管后，元素自身底色只作为「滤镜不可用」时的兜底。
+     取极淡的一层，让失败态看起来仍是通透玻璃而不是裸壁纸。 */
+  --glass-bg-lg-fallback: rgba(255, 255, 255, 0.46);
   /* 文本密集的弹层（下拉/日期/轻提示）：折射保留，但提高白度与模糊守住可读性，
      对应 ybouane 文档里的 "Frosted Panel"（blurAmount 0.25）用法 */
   --glass-bg-lg-pop: linear-gradient(150deg, rgba(255, 255, 255, 0.46) 0%, rgba(255, 255, 255, 0.36) 45%, rgba(255, 255, 255, 0.30) 100%);
@@ -143,12 +134,7 @@ html.dark {
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.40), 0 8px 22px rgba(0, 0, 0, 0.32), 0 24px 60px rgba(0, 0, 0, 0.35);
   --glass-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.45), 0 12px 30px rgba(0, 0, 0, 0.38), 0 32px 72px rgba(0, 0, 0, 0.42);
   /* 深色主题背景本身柔和，折射层可以更透：白字压深底，对比度天然够 */
-  --glass-bg-lg: linear-gradient(150deg, rgba(38, 50, 74, 0.18) 0%, rgba(26, 35, 54, 0.12) 50%, rgba(19, 26, 40, 0.09) 100%);
-  --glass-bg-lg-chrome: linear-gradient(160deg, rgba(30, 40, 58, 0.36) 0%, rgba(20, 27, 42, 0.28) 60%, rgba(13, 19, 31, 0.24) 100%);
-  --lg-blur: 4px;
-  --lg-saturate: 105%;
-  --lg-contrast: 1.0;
-  --lg-brightness: 1.0;
+  --glass-bg-lg-fallback: rgba(24, 32, 48, 0.42);
   /* 深色下的文本密集弹层：比浅色更透一点即可守住对比（白字压深底天然够） */
   --glass-bg-lg-pop: linear-gradient(150deg, rgba(30, 40, 58, 0.52) 0%, rgba(20, 27, 42, 0.44) 45%, rgba(13, 19, 31, 0.38) 100%);
 
@@ -192,26 +178,19 @@ html.dark {
     --mo-surface: rgba(243, 246, 252, 0.95);
     --mo-surface-hover: rgba(235, 240, 250, 1);
     --glass-lite-bg: rgba(243, 246, 252, 0.95);
-    --glass-bg-lg: var(--glass-bg-fallback);
-    --glass-bg-lg-chrome: var(--glass-bg-fallback);
+    --glass-bg-lg-fallback: var(--glass-bg-fallback);
   }
 }
 
-/* v3.7.0：液态玻璃已是全站默认观感，本档从「开关」变为**更强的折射档**——
-   模糊再降到 2px，并把 .lg-warp 的位移滤镜切到 1.35× 的 --lg-fx，
-   让边缘折射与色差更明显（代价是最暗处文字对比略降，属这一档刻意的取舍） */
+/* v3.7.0：body.liquid-glass 曾是「开启更强折射」的开关，现在折射由玻璃层常驻渲染，
+   本档改为「增强档」—— 仅加深兜底底色，让外壳面更实（滤镜失效时也更耐看）。
+   保留该类名是因为 theme.ts 与设置页仍用它做双向绑定。 */
 body.liquid-glass {
-  --lg-blur: 2px;
-  --lg-saturate: 115%;
-  --lg-contrast: 1.0;
-  --lg-brightness: 1.0;
+  --glass-bg-lg-fallback: rgba(255, 255, 255, 0.52);
 }
 
 html.dark body.liquid-glass {
-  --lg-blur: 2px;
-  --lg-saturate: 115%;
-  --lg-contrast: 1.0;
-  --lg-brightness: 1.0;
+  --glass-bg-lg-fallback: rgba(20, 27, 42, 0.62);
 }
 
 * {
@@ -220,15 +199,16 @@ html.dark body.liquid-glass {
   box-sizing: border-box;
 }
 
+html {
+  background-color: var(--mo-bg-fallback);
+}
+
 html, body, #app {
   width: 100%;
   height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Microsoft YaHei', sans-serif;
-  background-color: var(--mo-bg-fallback);
-  background-image: var(--mo-bg-image);
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
+  /* 底色移到 html 上（见下），#app 保持透明，否则会盖住 #app::before 的壁纸层 */
+  background-color: transparent;
   color: var(--mo-text-1);
   transition: color 0.3s ease;
   /* 字体渲染优化：浅色磨砂面上文字更清晰 */
@@ -238,8 +218,27 @@ html, body, #app {
   letter-spacing: 0.01em;
 }
 
-/* 深色背景：渐变夜色 + 细噪点纹理（多层背景实现，零额外渲染层） */
-html.dark, html.dark body, html.dark #app {
+/* 壁纸层（v3.7.0）：壁纸从 html/body 的背景移到这个固定伪元素上，
+   以便对它单独做轻微模糊 —— background-image 本身无法应用 filter。
+   模糊让壁纸退为远景，玻璃的折射/亮边才读得出来（参考站的背景也是柔和的远山竹林，
+   而本应用壁纸含强烈建筑线条，不柔化时玻璃透出后视觉极吵）。
+   z-index:-1 + pointer-events:none：纯装饰层，不参与命中测试、不遮挡交互。 */
+#app::before {
+  content: '';
+  position: fixed;
+  inset: -8px;
+  z-index: -1;
+  pointer-events: none;
+  background-image: var(--mo-bg-image);
+  background-size: cover;
+  background-position: center;
+  filter: blur(7px) saturate(1.04);
+}
+
+/* 深色背景：渐变夜色 + 细噪点纹理（多层背景实现，零额外渲染层）
+   壁纸层 #app::before 在深色主题下拿到 --mo-bg-image: none（等效透明），
+   因此这里只需给 html 铺底色 + 噪点；body/#app 保持透明让该层可见。 */
+html.dark {
   background-color: #0b1220;
   background-image:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E"),
@@ -410,122 +409,94 @@ html.dark .app-bg-decor::after {
    （v3.6.5 起 .algo-card / .word-card / .formula-card 已接入折射层），
    这里不再保留独立的 .glass-lite / .glass-card--lite 类 —— 模板里零引用。 */
 
-/* ═══════════════════════════════════════════════
-   液态玻璃折射层（v3.6.5 · 参照 liquid-glass-vue）
-   ───────────────────────────────────────────────
-   由 utils/liquidGlass.ts 运行时注入：给玻璃面插一个铺满的 warp 层，
-   它同时带 backdrop-filter（采样并霜化真实背景）和 filter: url(#...)
-   （用位移图折射）。两者叠在同一元素上时，Chromium 会把 backdrop-filter
-   的结果当作 filter 的输入，于是背景先被真实采到、再被边缘折射。
+/* 液态玻璃层（v3.7.0 · SVG 位移方案）
+   ═══════════════════════════════════════════════
+   每个玻璃面由引擎插入一个**空的** `div.lg-glass`（引擎在 liquidGlass.ts 的 setup() 里
+   用内联样式设好 backdrop-filter / filter:url(#…) / 底色 / 内阴影）。
 
-   注意不是 backdrop-filter: url(...) —— 那样拿不到位移图，只能得到模糊，
-   看起来是磨砂而不是玻璃。
+   它必须是空层：实测（.lgshot/probe-turb.js）把滤镜挂在有内容的容器上时，
+   按钮和文字会一起被撕成波浪形；挂到空层后文字完全清晰（probe-split.js）。
 
-   .lg-on    卡片已接管：建立层叠上下文，warp 的 z-index:-1 才会停在卡片内部
-   .lg-sleep 卡片滚出视口：撤掉 warp、退回普通 CSS 玻璃，GPU 只为可见区域付费
+   .lg-on      玻璃面已接管：建立层叠上下文，让 .lg-glass 的 z-index:-1 停在元素内部
+   .lg-refract 外壳面（侧边栏/顶栏/浮窗/弹层）：折射更强、底色更透
+   .lg-sleep   滚出视口：玻璃层隐藏，合成器不再为它做 backdrop 采样
    ═══════════════════════════════════════════════ */
 
-/* warp 必须是卡片的首个子节点，但 .card > * 会把它抬到 z-index:1，这里压回去 */
-.lg-on > .lg-warp {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  display: block;
-  border-radius: inherit;
-  pointer-events: none;
-  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast))
-    brightness(var(--lg-brightness));
-  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate)) contrast(var(--lg-contrast))
-    brightness(var(--lg-brightness));
-  filter: var(--lg-f);
-}
-
-/* 超通透档：换用位移更强的滤镜（两个 id 都由 JS 写在 --lg-f / --lg-fx 上） */
-body.liquid-glass .lg-warp {
-  filter: var(--lg-fx);
-}
-
 .lg-on {
-  /* isolation 只建层叠上下文，不切断背景采样（已实测：与 z-index:0 表现一致） */
   isolation: isolate;
-  /* 通透玻璃上的文字靠底色（contrast/brightness 压缩）+ 色阶保证可读性，
-     不再用白色光晕——它会让深色文字发灰。 */
 }
 
-html.dark .lg-on {
-  /* 深色主题同样不加光晕 */
+/* 参考站的签名边缘特征：顶部一条锐利亮线 + 一圈宽柔光弧。
+   柔光弧由玻璃层的内阴影给（见 glassFilter.ts 的 innerShadow*），
+   这里补的是那条 1px 的顶部硬亮线 —— 内阴影做不出这种锐度。 */
+.lg-glass {
+  overflow: hidden;
 }
 
-/* 光照层（v3.7.0）：由 utils/liquidGlass.ts 按 @ybouane/liquidglass 的 FS_GLASS
-   物理模型烘焙出的静态贴图 —— 真实菲涅尔 pow(1-|N.z|,4)、四光源 Blinn-Phong 镜面
-   （指数 90/50/6/120）、1.5px 顶部偏置内描边、rim/innerGlow/envRefl。
-   它是 CSS background-image，只在 GPU 上传一次、不参与逐帧解码，
-   因此比旧的「mask xor 描边 + 135° 渐变」近似层锐利得多。
-   --lg-light 由 JS 按分桶写在元素上（同桶共享同一张 data URL）。 */
-.lg-on > .lg-light {
+/* 亮边不能画在 .lg-glass 自己身上 —— 那个层带 filter:url()，
+   伪元素会和它一起被位移，边界就糊了。改挂在元素自身的 ::before 上，
+   它处在玻璃层之上、内容之下（z-index:0），完全不受滤镜影响。 */
+html .lg-on:not(.lg-sleep)::before {
+  content: '';
   position: absolute;
   inset: 0;
   z-index: 0;
-  display: block;
   border-radius: inherit;
   pointer-events: none;
-  background-image: var(--lg-light);
-  background-size: 100% 100%;
-  background-repeat: no-repeat;
-  opacity: 0.8;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.55) 0%,
+    rgba(255, 255, 255, 0.10) 16%,
+    rgba(255, 255, 255, 0) 40%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.30);
 }
 
-/* 折射浮层：高光按加性叠加（对应着色器的加法合成 fin += spec/rim/stroke），
-   玻璃质感最强。只有少数外壳面走这一支，开销可控 */
-.lg-refract > .lg-light {
-  mix-blend-mode: plus-lighter;
-  opacity: 1;
+/* 内容必须抬到亮边之上 */
+html .lg-on:not(.lg-sleep) > *:not(.lg-glass) {
+  position: relative;
+  z-index: 1;
 }
 
-/* 深色主题：白字深底，亮边是主要形态线索，整体略收一点避免发灰 */
-html.dark .lg-on > .lg-light {
-  opacity: 0.7;
+/* 撤掉元素自身的模糊与白底：观感完全由 .lg-glass 决定。
+   保留一层极淡底色作为兜底 —— 滤镜不被支持时，
+   页面退回「略带通透的浅色玻璃」而不是裸壁纸。
+   html 前缀抬高优先级：视图 scoped 里的 .card { background: ... } 是 (0,2,0)，
+   与其打平时按加载顺序分胜负，不可靠。 */
+html .lg-on:not(.lg-sleep) {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--glass-bg-lg-fallback);
 }
 
-html.dark .lg-refract > .lg-light {
-  opacity: 0.95;
-}
-
-/* 折射层已经负责采样与模糊，卡片自身的 backdrop-filter 必须撤掉，
-   否则会出现嵌套 backdrop-filter：双重模糊 + 双重 GPU 开销 */
-/* html 前缀用来抬高优先级：视图 scoped 里的 .algo-card { background: ... } 是 (0,2,0)，
-   与 .lg-on:not(.lg-sleep) 打平时按加载顺序分胜负，不可靠 */
-/* 外壳面（侧边栏/顶栏/番茄钟浮窗）：通透底色，模糊由 .lg-warp 承担，折射直接读背景 */
+/* 外壳面与内容卡片都不再自绘底色，统一交给玻璃层 */
 html .side-nav.lg-refract:not(.lg-sleep),
 html .titlebar.lg-refract:not(.lg-sleep),
 html .pomodoro-mini.lg-refract:not(.lg-sleep) {
-  background: var(--glass-bg-lg-chrome);
+  background: transparent;
   text-shadow: none;
 }
 
-/* v3.7.0 关键分层：只有**折射层**才能撤掉自身 backdrop-filter（由 .lg-warp 代偿）。
-   光照层（内容卡片等）必须保留自身底色与模糊，否则正文直接压在壁纸上不可读。 */
 html .lg-refract:not(.lg-sleep) {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  background: var(--glass-bg-lg);
+  background: transparent;
 }
 
-/* 文本密集弹层（下拉/日期/轻提示）：走 ybouane 文档里的 "Frosted Panel" 用法 ——
-   折射保留，但提高白度并单独放缓模糊，守住可读性。
-   它们各自带 !important 背景，需用更高优先级同步覆盖，否则折射会被白底盖住。 */
+/* 文本密集弹层（下拉/日期/提示）：玻璃层之上仍需一层浅底保证正文可读。
+   .el-popper 自带 !important 背景，必须用同权重 !important 覆盖。 */
 html .el-popper.is-light.lg-refract:not(.lg-sleep),
 html .el-message.lg-refract:not(.lg-sleep) {
   background: var(--glass-bg-lg-pop) !important;
   border-color: var(--glass-border) !important;
-  --lg-blur: 10px;
 }
 
 html .el-popper.is-light.lg-refract:not(.lg-sleep) .el-popper__arrow::before {
   background: var(--glass-bg-lg-pop) !important;
 }
 
-.lg-sleep > .lg-warp {
+/* 视口外：玻璃层不显示，省掉 backdrop 采样 */
+.lg-sleep > .lg-glass {
   display: none;
 }
 
@@ -727,29 +698,11 @@ html.dark .el-textarea__inner:focus {
   border-color: var(--mo-primary);
 }
 
-/* ═══════════════════════════════════════════
-   v3.7.0：液态玻璃（Liquid Glass）= 全站默认观感
-   ───────────────────────────────────────────────
-   物理模型逐项对齐参考实现 @ybouane/liquidglass 的 FS_GLASS 片元着色器：
-     Refraction=0.69, Chrom.Aberration=0.05, Edge Highlight=0.05,
-     Fresnel=pow(1-|N.z|,4), Specular=四光源 Blinn-Phong（指数 90/50/6/120）,
-     Z-Radius=0.4×半短边（半圆 bevel 高度场）, Corner Radius 大圆角,
-     Blur Amount=0 → 近无模糊, Saturation=0 → 不增饱和, Brightness=0,
-     Shadow Opacity=0.3, Distortion=0（无噪声层、无动画）
-
-   实现方式：**不引入该库**。它要求玻璃元素必须是 root 的直接子节点、用
-   html-to-image 逐帧栅格化 DOM、且每个实例占用一个 WebGL 上下文（浏览器上限约 16），
-   在 Electron 多页面应用里会明显掉帧。这里改由 utils/liquidGlass.ts 把上述模型
-   烘焙成两张静态贴图：
-     · 位移图（72px 上限）—— 它在 SVG filter 内、feImage 逐帧解码，必须小
-       → 承担真实折射（边缘弯折 + 向心放大）与真实三通道色差
-     · 光照图（256px）—— 作为 CSS background-image 只在 GPU 上传一次
-       → 承担真实菲涅尔 / 四光源镜面 / 1.5px 顶部偏置内描边 / rim / innerGlow
-   于是观感对齐参考实现，而逐帧 JS 开销为零。
-
-   本档（body.liquid-glass，顶栏与设置页可切）已从「开关」变为**更强折射档**：
-   模糊再降到 2px，并把 .lg-warp 的位移滤镜切到 1.35× 的 --lg-fx。
-   其余 token 一律继承 :root 的 ybouane 对齐值，不再各自覆盖（避免两处配置漂移）。
+/* ── strong（超通透）档：v3.6.6 起保留类名做设置页双向绑定 ──
+   历史：v3.6.6 用静态贴图、v3.7.0 早先改用自写 WebGL 渲染器，两者都被替换掉了。
+   现行实现见上方「液态玻璃层（SVG 位移方案）」段：玻璃层由 utils/glassFilter.ts
+   生成，走 backdrop-filter + feTurbulence 位移。
+   本档只调整底衬 token（更白、圆角更大），不参与玻璃渲染本身。
    ═══════════════════════════════════════════ */
 body.liquid-glass {
   /* 更强折射档下模糊更低，底色略提白以补偿可读性（正文不能全透是硬约束） */

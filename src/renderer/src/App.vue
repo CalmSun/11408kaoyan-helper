@@ -94,8 +94,13 @@ function todayLocal(): string {
 }
 
 onMounted(() => {
-  // v3.6.5：液态玻璃折射层。DOM 挂载后再启动，路由切换由内部 MutationObserver 补挂载
-  initLiquidGlass()
+  // v3.7.0：液态玻璃层（SVG 位移方案）。DOM 挂载后再启动，
+  // 路由切换由内部 MutationObserver 补挂载。环境不支持时内部已降级为普通卡片。
+  try {
+    initLiquidGlass()
+  } catch (err) {
+    console.warn('[liquidGlass] 初始化失败，退回 CSS 玻璃:', err)
+  }
 
   // 每60秒记录一次使用时长，并检测是否跨天（跨天时自动固化新一天快照）
   usageTimer = window.setInterval(() => {

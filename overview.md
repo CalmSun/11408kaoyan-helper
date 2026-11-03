@@ -1,4 +1,109 @@
-# v3.6.6 更新：全局重构为 ybouane WebGL 观感（物理模型逐项移植，非引入该库）
+# v3.6.6 更新：液态玻璃改用 liquid-glass.pro 的 SVG 位移方案（取消 WebGL）
+
+> 参考目标：<https://www.liquid-glass.pro/doc/vue.html>（库 `@tinymomentum/liquid-glass-vue@1.0.9`）。
+> 依据是其真实组件源码 `src/components/base/LiquidGlassBase.vue`（经 unpkg 取得），不是文档描述。
+
+## 0. 本轮为什么推翻上一版（WebGL → SVG 位移）
+
+用户反馈「WebGL 掉帧严重」，要求取消 WebGL、改用 liquid-glass.pro 的方案。
+
+**先要澄清一个事实**：掉帧的根因不是 WebGL 架构，而是实现里一个缺陷——
+`texImage2D` 每帧、每块玻璃都重传整张壁纸（1440×900 ≈ 5MB × 11 块 × 60fps ≈ 3.3GB/s）。
+改成只上传一次后，滚动从 **4 帧 / 单帧长任务 1565ms** 变成 **346 帧 / 0 长任务**。
+方案仍然按要求换掉了，因为 SVG 路线在改动量相同的前提下还能去掉 N 个 WebGL 上下文。
+
+## 1. 为什么这次 SVG 位移能生效（与上一版判决实验对照）
+
+上一版曾判定「SVG `filter: url()` 对 backdrop 采样无效」，并据此否掉了这条路线。
+**那个结论是错的**，错在把滤镜挂在了空元素上：
+
+| | 上一版（失败） | 参考库（有效） |
+|---|---|---|
+| 滤镜挂载位置 | 空的 `.lg-warp` 层 | 与 `backdrop-filter` 同一个元素 |
+| 滤镜源 | 无（空元素没有内容可位移） | `feTurbulence` 程序噪声 |
+| 实测结果 | 画条纹完全不可见，毫无效果 | 内容被真实扭曲 |
+
+`feTurbulence` 是自生成源，不依赖任何输入图像；`feDisplacementMap` 用它作位移图扭曲
+`SourceGraphic`，而在 Chromium 里 `SourceGraphic` 会带上该元素自身的 backdrop 渲染结果。
+
+## 2. 但直接照搬会毁掉正文（本项目的关键偏离）
+
+判决实验里，按参考库原版结构造出的测试元素，**所有子节点都被撕成波浪形**——
+按钮变形、文字扭成曲线、数字抖动。这对有正文的卡片是致命的。
+
+本实现的解法是分层：
+
+```
+.lg-on            isolation: isolate
+  ├─ .lg-glass    ← 空的 div，backdrop-filter + filter:url() 都挂在这一层（z-index:-1）
+  └─ 原有内容      ← 与玻璃层同级，不进入滤镜子树，完全不受影响
+```
+
+实测：文字清晰锐利、背景仍被扰动。这是与参考库唯一的架构性差异，
+也是它能用在内容卡片上的前提。
+
+## 3. 位移按边缘加权（做出边框附近弯折）
+
+噪声位移在整个面上均匀，中心也跟着抖，观感像隔了层毛玻璃而不是玻璃片。
+参考站的签名特征是「竹竿只在边框附近弯折」。做法是把噪声先用径向遮罩加权再送进
+`feDisplacementMap`：
+
+```
+feTurbulence → feGaussianBlur → feComposite(arithmetic, k1=1, k3=0.5) ← feImage(径向渐变)
+                                                                         ↑ 中心 alpha=0，边缘=1
+             → feDisplacementMap(in2=edgeNoise)
+```
+
+位移量 = (通道值 − 0.5) × scale，遮罩把中心拉到中灰（零位移）、边缘拉开（最大位移），
+于是得到「中心静止、边缘弯折」的折射梯度。
+
+## 4. 逐档参数
+
+| 参数 | refract（侧边栏/顶栏/浮窗/弹层） | light（内容卡片） |
+|---|---|---|
+| `frostBlur` | 3px | 2px |
+| `noiseStrength`（位移上限） | 26 | 8 |
+| `noiseFrequency` | 0.0075 | 0.0065 |
+| `innerShadowBlur / Spread` | 22 / −5 | 16 / −4 |
+| 底色 | `rgba(255,255,255,0.20)` | `rgba(255,255,255,0.22)` |
+
+内容面刻意压得比外壳面更弱：卡片面积大（设置页整块 >1000px 宽），
+实测 `frostBlur 5 + 底色 0.42` 会把环形图与折线图整片糊成白雾，
+那不是玻璃而是遮罩。
+
+## 5. 壁纸柔化层
+
+参考站背景是柔和的远山竹林，本应用壁纸含强烈建筑线条与树枝，玻璃透出后视觉极吵。
+把壁纸从 `html/body` 的背景移到 `#app::before`（`position:fixed; inset:-8px; z-index:-1`）
+并施加 `filter: blur(7px) saturate(1.04)`，让壁纸退为远景。
+`#app` 自身底色改为 `transparent`、由 `html` 承载，否则会盖住这一层。
+
+## 6. 性能
+
+| 指标 | 数值 |
+|---|---|
+| 滚动（2.5s，交替滚到底/回顶） | **361 帧，0 长任务** |
+| 逐帧 JS | 零（无 canvas、无 rAF 循环、无滚动重绘） |
+| 共享 `<filter>` 数量 | 2（每档一个，全站复用） |
+| 视口外 | `IntersectionObserver` 打 `.lg-sleep`，玻璃层 `display:none` |
+
+## 7. 顺带修复的真实缺陷
+
+`src/renderer/src/components/PomodoroMini.vue` 的 `initPos()` 默认落点为左下角，
+与 `.side-nav`（x 16..240）水平重叠 200px，纵向覆盖 y=400..777，
+**正好压住「公式速查/真题成绩/背诵卡片/单词词典/学习资料」等导航项**。
+改为右下角落点，并让超界的存档位置失效重算（换分辨率/接外屏后浮窗会跑到看不见的地方）。
+
+## 8. 验证
+
+- `vue-tsc --noEmit` 0 error；`vite build` 退出码 0；CSS 花括号平衡 (0)
+- 玻璃面挂载：11 个 `.lg-on` 对应 11 个 `.lg-glass`，缺失 0，其中 3 个折射档
+- 实拍确认：首页 / 设置 / 音乐 / 词典 / 背诵 / 统计 / 深色主题，文字全部清晰、图表可读
+- 未能确认：真实滚动帧率在用户实机上的表现（本机测得 361 帧 / 0 长任务）
+
+---
+
+# 历史记录：v3.6.6 早先的 WebGL 方案（已废弃）
 
 > 参考目标：<https://liquid-glass.ybouane.com/>（库 `@ybouane/liquidglass@1.0.3`）。
 > 依据不是页面观感截图，而是其**真实片元着色器** `src/shaders.ts` 的 `FS_GLASS`（经 unpkg 取得源码）。

@@ -301,7 +301,15 @@ function onDragEnd(e: PointerEvent) {
   dragState = null
 }
 
-// 限制位置，确保浮窗不超出可视区域
+// 侧边栏右缘的屏幕 x（含外层 wrap 的内边距）。取不到时退回 0，不影响无侧边栏的场景。
+function sideNavRight() {
+  const wrap = document.querySelector('.side-nav-wrap')
+  if (!wrap) return 0
+  const r = wrap.getBoundingClientRect()
+  return r.right
+}
+
+// 限制位置，确保浮窗不超出可视区域，并避让左侧导航栏
 function clampPos() {
   const el = rootRef.value
   if (!el) return
@@ -309,26 +317,39 @@ function clampPos() {
   const h = el.offsetHeight
   const vw = window.innerWidth
   const vh = window.innerHeight
-  if (pos.x < 0) pos.x = 0
+  // 浮窗在侧边栏右侧但放不下时，至少不要盖住导航项
+  const navRight = sideNavRight()
+  const minX = navRight > 0 && vw - w > navRight ? navRight + 8 : 0
+  if (pos.x < minX) pos.x = minX
   if (pos.y < 0) pos.y = 0
   if (pos.x + w > vw) pos.x = vw - w
   if (pos.y + h > vh) pos.y = vh - h
 }
 
-// 首次挂载：恢复位置；若没有历史位置则默认左下角（v3.4.1：由右下角改为左下角）
+// 首次挂载：恢复位置；若没有历史位置则默认右下角。
+// 存档点若在当前视口之外（换过分辨率/接过外接屏）视为失效，重新取默认值，
+// 否则浮窗会停在一个看不见的位置且再也拖不回来。
 function initPos() {
   const saved = loadPos()
   const el = rootRef.value
   if (!el) return
-  if (saved) {
+  const margin = 24
+  const w = el.offsetWidth || 280
+  const h = el.offsetHeight || 377
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const usable =
+    !!saved && saved.x >= 0 && saved.y >= 0 && saved.x + w <= vw && saved.y + h <= vh
+  if (usable) {
     pos.x = saved.x
     pos.y = saved.y
   } else {
-    const margin = 24
-    pos.x = margin
-    pos.y = window.innerHeight - el.offsetHeight - margin
+    // 默认落右下角空白区：左下角会压住侧边栏导航项，右侧中部会压住内容卡片。
+    pos.x = vw - w - margin
+    pos.y = vh - h - margin
   }
   clampPos()
+  savePos()
 }
 
 // 窗口尺寸变化时重新约束位置
