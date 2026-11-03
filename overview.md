@@ -1,3 +1,98 @@
+# v3.6.6 更新：全局重构为 ybouane WebGL 观感（物理模型逐项移植，非引入该库）
+
+> 参考目标：<https://liquid-glass.ybouane.com/>（库 `@ybouane/liquidglass@1.0.3`）。
+> 依据不是页面观感截图，而是其**真实片元着色器** `src/shaders.ts` 的 `FS_GLASS`（经 unpkg 取得源码）。
+
+## 1. 为什么不直接引入该库（性能取舍）
+
+| 该库的硬性要求 | 对本项目的后果 |
+|---|---|
+| 玻璃元素必须是 root 的**直接子节点**（嵌套玻璃 init 时直接告警拒绝） | 本应用卡片深层嵌套、跨路由复用 → 需重排整个 DOM |
+| 用 `html-to-image` 把非玻璃包裹层**逐帧栅格化**再做 WebGL 合成 | 其文档自述"capturing DOM into a canvas is expensive" |
+| 每个实例一个 WebGL 上下文（浏览器上限约 16） | 多页面应用极易耗尽 |
+| `init()` 异步，需字体预取 + 预栅格化，100–500ms | 启动可感知变慢 |
+
+结论：**移植其物理模型，而非其运行时**。由 `utils/liquidGlass.ts` 把模型烘焙成两张静态贴图，
+复用既有分桶共享 / `IntersectionObserver` 视口外休眠 / `MutationObserver` 补挂载机制，
+逐帧 JS 开销为零。
+
+## 2. 从着色器逐项移植的量
+
+| 着色器符号 | 含义 | 落点 |
+|---|---|---|
+| `rrSDF` | 圆角矩形有符号距离 | 位移图 + 光照图 |
+| `bevelHeight(d,zR)=√(d(2zR−d))` | 半圆 bevel 高度场，`zR=0.4×半短边` | 两张图 |
+| `N=normalize(vec3(−hGrad,1))` | 由高度梯度求法线 | 光照图 |
+| `exitRefr=entryRefr=hGrad(1−1/1.5)`、`throughRefr=entry·thickNorm·0.5` | 双凸双面折射 | 位移图 R/B |
+| `centerDir·refract·4·depth` | 向心放大（透镜放大的真正来源） | 位移图 R/B |
+| `caS=chroma·18·(edge·0.7+0.3)·2` | 沿法线的三通道色差 | 位移图 + 三路 `feDisplacementMap` |
+| `fres=pow(1−|N.z|,4)` | 菲涅尔 | 光照图 alpha |
+| 四光源 Blinn-Phong（指数 90/50/6/120，权重 1.0/0.3/0.1/0.6） | 镜面 | 光照图 alpha |
+| `innerStroke`（1.5px，`topBias=0.5+0.5(−y/halfY)`） | 内描边 | 光照图 alpha |
+| `rim=edge·edgeHL·0.22`、`innerGlow`、`envRefl`、`whiten=fres·0.2` | 边缘高光族 | 光照图 alpha |
+| `Corner Radius` / `Saturation=0` / `Brightness=0` / `Shadow Opacity=0.3` / `Distortion=0` | 形态与色调 | `style.css` token（已提到 `:root` 成为全站默认） |
+
+**两张贴图的分辨率差异是刻意的**：位移图在 SVG filter 内，`feImage` **逐帧解码**，故仍压到长边 72px
+（既有实测：512²→4.2 FPS、128²→57.8 FPS、64²→113.8 FPS）；光照图是 CSS `background-image`，
+**只在 GPU 上传一次**，故用 256px 把 1.5px 内描边与镜面光斑画锐利。
+
+## 3. 唯一刻意偏离参考实现之处：几何相似缩放
+
+着色器的折射量是**绝对像素**（`hGrad·…·30`），因为其演示面板都很大。
+本应用的外壳面从 44px 顶栏到整块侧边栏不等，绝对像素会让小浮层比例失真
+（既有版本正是在此踩过坑：位移 28px→15px 才让小浮层不再"剧烈透镜"）。
+
+处理：引入 `REF_SIZE=200`，折射场按 `短边/200` 线性缩放 —— **在 200px 处与参考实现逐值一致**。
+同时把梯度差分步长从 `max(k,1)` 改为 `e=k`：前者会让小尺寸元素的梯度估计偏离同一形状的相似解，
+破坏"同一形状各处观感一致"。改后 200px 与 400px 的归一化位移场**逐像素一致**（已断言）。
+
+## 4. 验证中发现并修正的两处真实缺陷
+
+| # | 缺陷 | 发现方式 | 修正 |
+|---|---|---|---|
+| 1 | 宽面柔光 `spB` 误用半程向量 `H3` | 独立复算中心 alpha：按 `H3`=23.2、按 `L3`=20.3，实测 24 → 锁定为 `H3` | 着色器里 `spB = pow(max(dot(N, L3),0),6)*0.1` 用的是**光源向量 L3 本身**；为四个光源分别标注 `useH` |
+| 2 | `e=max(k,1)` 破坏相似性 | 推导 200/400 归一化位移场应一致时发现 | 改为 `e=k` |
+
+## 5. 分层：什么折射、什么只吃光照（可读性是硬约束）
+
+| 层 | 成员 | 处理 |
+|---|---|---|
+| 折射层 `lg-refract` | `.side-nav` / `.titlebar` / `.pomodoro-mini` / `.el-popper` / `.el-message` | 位移图 + 光照图；模糊降到 4px（对齐 `Blur Amount=0`） |
+| 光照层 `lg-on` | `.card` / `.glass-card` / `.stat-card` / `.algo-card` / `.word-card` / `.formula-card` / `.el-dialog` / `.el-drawer` / `.el-message-box` | 只吃光照贴图（菲涅尔/镜面/内描边），**不吃折射**，正文可读 |
+
+**一处必须修的隐患**：原规则 `html .lg-on:not(.lg-sleep)` 会撤掉元素自身 `backdrop-filter` 并改成极淡底色。
+此前只挂载 3 个外壳面所以安全；一旦内容卡片进入光照层，这会让**正文直接压在壁纸上不可读**。
+已按层拆分为 `html .lg-refract:not(.lg-sleep)`。
+文本密集弹层（下拉/日期/轻提示）走 ybouane 文档里的 "Frosted Panel" 用法（`--glass-bg-lg-pop` + 单独放缓的 10px 模糊）守住可读性。
+
+## 6. 一并清除的"CSS 近似模拟"与自创效果
+
+| 项 | 原做法 | 现状 |
+|---|---|---|
+| 菲涅尔近似 | `::before` 三条线性渐变拼"边缘亮" | 引擎按 `pow(1−|N.z|,4)` 逐像素计算，边缘过渡连续 |
+| 色差近似 | `inset 1px 0 0 rgba(255,100,100,0.02)` 彩色内阴影 | 三路 `feDisplacementMap` 真实 RGB 分离 |
+| 噪声纹理 | SVG `feTurbulence` 贴图（每张卡片一张全尺寸背景图） | 删除：参考实现 `Distortion=0` **本身没有噪声层**，属本项目自创 |
+| 旧描边层 `.lg-rim` / `.lg-rim-2` | mask xor + 135° 渐变 | 由烘焙光照层取代；引擎与 CSS 中引用均已归零 |
+
+## 7. 验证（可复现）
+
+- `npx vue-tsc --noEmit` 退出码 0；`npm run build` 退出码 0
+- **18 项数值断言全 PASS**，对象是 esbuild 打包出的**真实产物**（Node 中以 canvas 桩执行实际像素计算）：
+  面板外位移为零 / 中心位移为零 / A 通道恒 255（预乘 alpha 陷阱守卫）/ 位移被 `MAX_DISP_RATIO` 夹住 /
+  位移随离边界距离单调增强 / 确定性 / **200px 与 400px 归一化位移场逐像素一致** /
+  面板外 alpha=0 / 边界存在锐利亮边（rim=27）且内侧有低谷（trough=3，证明是"环"而非填充）/
+  **中心 alpha 与着色器公式独立复算一致（实测 15，复算 15.11）** / 镜面强度分档生效
+- 契约静态核查：引擎注入的 `.lg-warp/.lg-light/.lg-on/.lg-refract/.lg-sleep` 与 CSS 定义一一对应，
+  引擎设置的 `--lg-f/--lg-fx/--lg-light/--lg-blur/...` 全部有消费者，`.lg-rim` 残留为 0
+
+## 8. 版本号为何是 3.6.6 而不是继续覆盖 3.6.5
+
+应用内置 `electron-updater`，它比较的是 `package.json` 的 `version`。
+若继续发布 3.6.5，已安装 3.6.5 的用户**永远收不到这次更新**；故本次升到 **3.6.6**。
+（此前几轮"覆盖 tag"的做法适用于同一版本内的修补，本次是观感基线变更，语义上应升版。）
+
+---
+
 # v3.6.5 补丁：两处类型错误根治（番茄钟设置 / 错误提示）+ 死依赖与重复资源清理
 
 > 本文档上方为最新一轮。液态玻璃重构本身已完成并上线，本轮**不改动任何视觉实现**（重做风格属高风险低收益），只做「检查项目 + 清除无用代码」并根治前述两处预存错误。

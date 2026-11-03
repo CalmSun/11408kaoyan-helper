@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-3.6.5-blue">
+  <img alt="版本" src="https://img.shields.io/badge/version-3.6.6-blue">
   <img alt="平台" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
   <img alt="技术栈" src="https://img.shields.io/badge/stack-Vue3%20%2B%20Electron28-9cf">
   <img alt="协议" src="https://img.shields.io/badge/license-MIT-green">
@@ -41,7 +41,7 @@
 | # | 亮点 | 说明 |
 | - | ---- | ---- |
 | 1 | **一站式考研全流程** | 倒计时、番茄专注、每日计划、真题统计、背诵、词库、视频播放、网易云听歌全部内置，无需多开软件 |
-| 2 | **液态玻璃拟态原生 UI** | 全站统一折射玻璃卡片、双主题 + 护眼模式，长列表无滤镜分批渲染防掉帧，低卡顿轻量化 |
+| 2 | **液态玻璃拟态原生 UI** | 物理模型对齐 `@ybouane/liquidglass` 的 WebGL 着色器（真实折射 / 三通道色差 / 菲涅尔 / 四光源镜面 / 内描边），逐项烘焙为静态贴图——观感一致而零逐帧 JS，长列表分桶共享贴图 + 视口外休眠防掉帧 |
 | 3 | **完整离线可用** | 所有学习数据本地双备份存储（IndexedDB + 文件快照），不上传云端，隐私可控 |
 | 4 | **深度整合网易云音乐** | 云盘、歌单、心动模式、评论、三种登录方式，全局顶栏悬浮播放器 |
 | 5 | **多格式内置播放器** | 支持 MP4 / MKV / AVI 等主流视频，倍速、快捷键、音量增益、快进退；PDF 本地渲染、中文无乱码 |

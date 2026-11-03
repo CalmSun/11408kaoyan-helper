@@ -40,18 +40,20 @@
   --glass-bg-fallback: #f3f6fc;          /* 无滤镜降级：近似不透明底色 */
   --glass-bg-strong-fallback: #fbfcff;
   --glass-border: rgba(255, 255, 255, 0.82);
-  --glass-blur: 18px;
-  --glass-blur-pop: 22px;                /* 浮层专用模糊 */
-  --glass-saturate: 1.8;                 /* 液态感：提高饱和度让背景色彩折射更明显 */
+  --glass-blur: 11px;
+  --glass-blur-pop: 14px;                /* 浮层专用模糊 */
+  --glass-saturate: 1.05;                /* ybouane Saturation=0 → 不额外增饱和 */
   --glass-highlight: 0.85;
-  /* 液态高光参数（浅色主题） */
-  --glass-edge-highlight: 0.55;          /* 顶部内亮线强度 */
-  --glass-highlight-top: 0.30;           /* 顶部渐变高光强度 */
-  --glass-highlight-corner: 0.22;        /* 左上角镜面光斑强度 */
-  --glass-highlight-bottom: 0.06;        /* 底部反射微光 */
+  /* v3.7.0：高光交给引擎烘焙的光照贴图（真实菲涅尔+四光源镜面+内描边），
+     这里的 CSS 内嵌高光只留最低量，避免与烘焙层重复叠加成白雾 */
+  --glass-edge-highlight: 0.10;          /* 顶部内亮线强度 */
+  --glass-highlight-top: 0.10;           /* 顶部渐变高光强度 */
+  --glass-highlight-corner: 0.08;        /* 左上角镜面光斑强度 */
+  --glass-highlight-bottom: 0.03;        /* 底部反射微光 */
   /* 多层弥散外阴影：近距小阴影 + 中距 + 远距大范围柔光 */
-  --glass-shadow: 0 1px 3px rgba(31, 64, 130, 0.10), 0 8px 22px rgba(31, 64, 130, 0.10), 0 24px 60px rgba(31, 64, 130, 0.12);
-  --glass-shadow-hover: 0 2px 6px rgba(31, 64, 130, 0.12), 0 12px 30px rgba(31, 64, 130, 0.13), 0 32px 72px rgba(31, 64, 130, 0.15);
+  /* v3.7.0：阴影对齐 ybouane Shadow Opacity=0.3 / Spread=10 / Z-Radius=40 */
+  --glass-shadow: 0 8px 32px rgba(12, 24, 48, 0.14), 0 20px 60px rgba(12, 24, 48, 0.10);
+  --glass-shadow-hover: 0 12px 40px rgba(12, 24, 48, 0.18), 0 28px 72px rgba(12, 24, 48, 0.13);
   /* 统一滤镜表达式：所有玻璃层只引用该变量，便于一处调参 */
   --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
@@ -62,12 +64,16 @@
   /* v3.6.5 折射层：底色要淡。折射层会自己采样并模糊背景，
      底色加白越多越像磨砂片；这里只保留维持文字对比度所需的最低白度。 */
   --glass-bg-lg: linear-gradient(150deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.09) 45%, rgba(255, 255, 255, 0.06) 100%);
-  --lg-blur: 13px;
-  --lg-saturate: 170%;
-  /* 通透关键：不压对比、不提亮。压对比会把背景拍成灰、提亮会糊成白雾；
-     文字可读性交给「更实的 blur + 极淡白底」保证，而非拉伸背景亮度。 */
+  /* v3.7.0 折射层：对齐 ybouane Blur Amount=0 —— 近无模糊，玻璃感交给真实折射，
+     模糊只留到「抵消边缘采样锯齿」的最低量 */
+  --lg-blur: 4px;
+  --lg-saturate: 105%;
+  /* 通透关键：不压对比、不提亮。压对比会把背景拍成灰、提亮会糊成白雾 */
   --lg-contrast: 1.0;
   --lg-brightness: 1.0;
+  /* 文本密集的弹层（下拉/日期/轻提示）：折射保留，但提高白度与模糊守住可读性，
+     对应 ybouane 文档里的 "Frosted Panel"（blurAmount 0.25）用法 */
+  --glass-bg-lg-pop: linear-gradient(150deg, rgba(255, 255, 255, 0.46) 0%, rgba(255, 255, 255, 0.36) 45%, rgba(255, 255, 255, 0.30) 100%);
 
   /* 中性表面（列表项等高频元素：无滤镜，纯半透明色） */
   --mo-surface: rgba(255, 255, 255, 0.55);
@@ -92,10 +98,10 @@
   --side-nav-divider: rgba(59, 130, 246, 0.12);
   --side-nav-collapse-bg: rgba(255, 255, 255, 0.85);
 
-  /* 圆角（v2.6.7：统一回 14px，与知识大纲/模板库卡片一致） */
-  --mo-radius: 14px;
-  --mo-radius-lg: 20px;
-  --mo-radius-sm: 10px;
+  /* 圆角（v3.7.0：对齐 ybouane 的大圆角柔化观感，Corner Radius 是其签名特征之一） */
+  --mo-radius: 18px;
+  --mo-radius-lg: 26px;
+  --mo-radius-sm: 12px;
 
   /* 自定义顶栏（无边框窗口） */
   --titlebar-bg: rgba(255, 255, 255, 0.55);
@@ -125,24 +131,26 @@ html.dark {
   --glass-bg-fallback: #151c2b;
   --glass-bg-strong-fallback: #141b2a;
   --glass-border: rgba(255, 255, 255, 0.16);
-  --glass-blur: 18px;
-  --glass-blur-pop: 22px;
-  --glass-saturate: 1.6;
+  --glass-blur: 11px;
+  --glass-blur-pop: 14px;
+  --glass-saturate: 1.05;
   --glass-highlight: 0.16;
-  /* 液态高光参数（深色主题：高光更收敛） */
-  --glass-edge-highlight: 0.16;
-  --glass-highlight-top: 0.10;
-  --glass-highlight-corner: 0.08;
+  /* v3.7.0：高光交给引擎烘焙的光照贴图（深色主题同样收敛 CSS 内嵌高光） */
+  --glass-edge-highlight: 0.09;
+  --glass-highlight-top: 0.07;
+  --glass-highlight-corner: 0.06;
   --glass-highlight-bottom: 0.03;
   --glass-shadow: 0 1px 3px rgba(0, 0, 0, 0.40), 0 8px 22px rgba(0, 0, 0, 0.32), 0 24px 60px rgba(0, 0, 0, 0.35);
   --glass-shadow-hover: 0 2px 6px rgba(0, 0, 0, 0.45), 0 12px 30px rgba(0, 0, 0, 0.38), 0 32px 72px rgba(0, 0, 0, 0.42);
   /* 深色主题背景本身柔和，折射层可以更透：白字压深底，对比度天然够 */
   --glass-bg-lg: linear-gradient(150deg, rgba(38, 50, 74, 0.18) 0%, rgba(26, 35, 54, 0.12) 50%, rgba(19, 26, 40, 0.09) 100%);
   --glass-bg-lg-chrome: linear-gradient(160deg, rgba(30, 40, 58, 0.36) 0%, rgba(20, 27, 42, 0.28) 60%, rgba(13, 19, 31, 0.24) 100%);
-  --lg-blur: 14px;
-  --lg-saturate: 155%;
+  --lg-blur: 4px;
+  --lg-saturate: 105%;
   --lg-contrast: 1.0;
   --lg-brightness: 1.0;
+  /* 深色下的文本密集弹层：比浅色更透一点即可守住对比（白字压深底天然够） */
+  --glass-bg-lg-pop: linear-gradient(150deg, rgba(30, 40, 58, 0.52) 0%, rgba(20, 27, 42, 0.44) 45%, rgba(13, 19, 31, 0.38) 100%);
 
   /* 中性表面 */
   --mo-surface: rgba(255, 255, 255, 0.06);
@@ -189,18 +197,19 @@ html.dark {
   }
 }
 
-/* 超通透档：模糊更小、饱和更高、压缩更轻，让折射与背景结构更明显
-   （代价是最暗处的文字对比度略降，这是这一档刻意的取舍） */
+/* v3.7.0：液态玻璃已是全站默认观感，本档从「开关」变为**更强的折射档**——
+   模糊再降到 2px，并把 .lg-warp 的位移滤镜切到 1.35× 的 --lg-fx，
+   让边缘折射与色差更明显（代价是最暗处文字对比略降，属这一档刻意的取舍） */
 body.liquid-glass {
-  --lg-blur: 12px;
-  --lg-saturate: 190%;
+  --lg-blur: 2px;
+  --lg-saturate: 115%;
   --lg-contrast: 1.0;
   --lg-brightness: 1.0;
 }
 
 html.dark body.liquid-glass {
-  --lg-blur: 13px;
-  --lg-saturate: 175%;
+  --lg-blur: 2px;
+  --lg-saturate: 115%;
   --lg-contrast: 1.0;
   --lg-brightness: 1.0;
 }
@@ -447,67 +456,73 @@ html.dark .lg-on {
   /* 深色主题同样不加光晕 */
 }
 
-/* 轮廓高光：padding + mask xor 描出 1.5px 的环，再叠一条 135° 渐变，
-   模拟光从左上方掠过玻璃边缘。两层叠加（screen 打底 + overlay 提亮）
-   对应参考项目的 Border layer 1 / 2 —— 这是玻璃质感最主要的线索。 */
-.lg-on > .lg-rim {
+/* 光照层（v3.7.0）：由 utils/liquidGlass.ts 按 @ybouane/liquidglass 的 FS_GLASS
+   物理模型烘焙出的静态贴图 —— 真实菲涅尔 pow(1-|N.z|,4)、四光源 Blinn-Phong 镜面
+   （指数 90/50/6/120）、1.5px 顶部偏置内描边、rim/innerGlow/envRefl。
+   它是 CSS background-image，只在 GPU 上传一次、不参与逐帧解码，
+   因此比旧的「mask xor 描边 + 135° 渐变」近似层锐利得多。
+   --lg-light 由 JS 按分桶写在元素上（同桶共享同一张 data URL）。 */
+.lg-on > .lg-light {
   position: absolute;
   inset: 0;
   z-index: 0;
   display: block;
   border-radius: inherit;
   pointer-events: none;
-  padding: 1.5px;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  box-shadow:
-    0 0 0 0.5px rgba(255, 255, 255, 0.6) inset,
-    0 1px 3px rgba(255, 255, 255, 0.3) inset,
-    /* 底边折射微光：厚玻璃的下缘会聚光，没有它玻璃会薄得像一张纸 */
-    0 -1px 0 rgba(255, 255, 255, 0.28) inset;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.42) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  opacity: 0.2;
-  mix-blend-mode: screen;
+  background-image: var(--lg-light);
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  opacity: 0.8;
 }
 
-.lg-on > .lg-rim-2 {
+/* 折射浮层：高光按加性叠加（对应着色器的加法合成 fin += spec/rim/stroke），
+   玻璃质感最强。只有少数外壳面走这一支，开销可控 */
+.lg-refract > .lg-light {
+  mix-blend-mode: plus-lighter;
   opacity: 1;
-  mix-blend-mode: overlay;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.55) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
 }
 
-/* 深色主题：轮廓更亮更明显（白字深底，亮边是主要的形态线索） */
-html.dark .lg-on > .lg-rim {
-  opacity: 0.3;
+/* 深色主题：白字深底，亮边是主要形态线索，整体略收一点避免发灰 */
+html.dark .lg-on > .lg-light {
+  opacity: 0.7;
+}
+
+html.dark .lg-refract > .lg-light {
+  opacity: 0.95;
 }
 
 /* 折射层已经负责采样与模糊，卡片自身的 backdrop-filter 必须撤掉，
    否则会出现嵌套 backdrop-filter：双重模糊 + 双重 GPU 开销 */
 /* html 前缀用来抬高优先级：视图 scoped 里的 .algo-card { background: ... } 是 (0,2,0)，
    与 .lg-on:not(.lg-sleep) 打平时按加载顺序分胜负，不可靠 */
-html .side-nav.lg-on:not(.lg-sleep),
-html .titlebar.lg-on:not(.lg-sleep),
-html .pomodoro-mini.lg-on:not(.lg-sleep) {
+/* 外壳面（侧边栏/顶栏/番茄钟浮窗）：通透底色，模糊由 .lg-warp 承担，折射直接读背景 */
+html .side-nav.lg-refract:not(.lg-sleep),
+html .titlebar.lg-refract:not(.lg-sleep),
+html .pomodoro-mini.lg-refract:not(.lg-sleep) {
   background: var(--glass-bg-lg-chrome);
   text-shadow: none;
 }
 
-html .lg-on:not(.lg-sleep) {
+/* v3.7.0 关键分层：只有**折射层**才能撤掉自身 backdrop-filter（由 .lg-warp 代偿）。
+   光照层（内容卡片等）必须保留自身底色与模糊，否则正文直接压在壁纸上不可读。 */
+html .lg-refract:not(.lg-sleep) {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   background: var(--glass-bg-lg);
+}
+
+/* 文本密集弹层（下拉/日期/轻提示）：走 ybouane 文档里的 "Frosted Panel" 用法 ——
+   折射保留，但提高白度并单独放缓模糊，守住可读性。
+   它们各自带 !important 背景，需用更高优先级同步覆盖，否则折射会被白底盖住。 */
+html .el-popper.is-light.lg-refract:not(.lg-sleep),
+html .el-message.lg-refract:not(.lg-sleep) {
+  background: var(--glass-bg-lg-pop) !important;
+  border-color: var(--glass-border) !important;
+  --lg-blur: 10px;
+}
+
+html .el-popper.is-light.lg-refract:not(.lg-sleep) .el-popper__arrow::before {
+  background: var(--glass-bg-lg-pop) !important;
 }
 
 .lg-sleep > .lg-warp {
@@ -713,117 +728,59 @@ html.dark .el-textarea__inner:focus {
 }
 
 /* ═══════════════════════════════════════════
-   v3.1.0：液态玻璃模式（Liquid Glass）
-   参考 https://github.com/ybouane/liquidglass 参数：
-   Blur=0.25, Refraction=0.69, Chrom.Aberration=0.05,
-   Edge Highlight=0.05, Specular=Fresnel, Distortion=0,
-   Corner Radius=40, Z-Radius=40, Opacity=1, Saturation=0,
-   Brightness=0, Shadow Opacity=0.3, Shadow Spread=10, Bevel=0
-   - 背景使用用户自定义背景，不覆盖
-   - 菲涅尔镜面反射：边缘亮、中心暗的 inset 渐变
-   - 大圆角 40px，柔和阴影
+   v3.7.0：液态玻璃（Liquid Glass）= 全站默认观感
+   ───────────────────────────────────────────────
+   物理模型逐项对齐参考实现 @ybouane/liquidglass 的 FS_GLASS 片元着色器：
+     Refraction=0.69, Chrom.Aberration=0.05, Edge Highlight=0.05,
+     Fresnel=pow(1-|N.z|,4), Specular=四光源 Blinn-Phong（指数 90/50/6/120）,
+     Z-Radius=0.4×半短边（半圆 bevel 高度场）, Corner Radius 大圆角,
+     Blur Amount=0 → 近无模糊, Saturation=0 → 不增饱和, Brightness=0,
+     Shadow Opacity=0.3, Distortion=0（无噪声层、无动画）
+
+   实现方式：**不引入该库**。它要求玻璃元素必须是 root 的直接子节点、用
+   html-to-image 逐帧栅格化 DOM、且每个实例占用一个 WebGL 上下文（浏览器上限约 16），
+   在 Electron 多页面应用里会明显掉帧。这里改由 utils/liquidGlass.ts 把上述模型
+   烘焙成两张静态贴图：
+     · 位移图（72px 上限）—— 它在 SVG filter 内、feImage 逐帧解码，必须小
+       → 承担真实折射（边缘弯折 + 向心放大）与真实三通道色差
+     · 光照图（256px）—— 作为 CSS background-image 只在 GPU 上传一次
+       → 承担真实菲涅尔 / 四光源镜面 / 1.5px 顶部偏置内描边 / rim / innerGlow
+   于是观感对齐参考实现，而逐帧 JS 开销为零。
+
+   本档（body.liquid-glass，顶栏与设置页可切）已从「开关」变为**更强折射档**：
+   模糊再降到 2px，并把 .lg-warp 的位移滤镜切到 1.35× 的 --lg-fx。
+   其余 token 一律继承 :root 的 ybouane 对齐值，不再各自覆盖（避免两处配置漂移）。
    ═══════════════════════════════════════════ */
 body.liquid-glass {
-  /* 玻璃变量：底色保持实心 —— 液态玻璃原则是「正文不能全透」，
-     玻璃感交给更强的 blur、大圆角与阴影，不靠降底色。降底色 = 文字压在壁纸上不可读。 */
+  /* 更强折射档下模糊更低，底色略提白以补偿可读性（正文不能全透是硬约束） */
   --glass-bg: linear-gradient(135deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.60) 50%, rgba(255,255,255,0.52) 100%);
   --glass-bg-strong: linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.84) 50%, rgba(255,255,255,0.78) 100%);
-  --glass-border: rgba(255,255,255,0.35);
-  --glass-blur: 25px;           /* Blur Amount 0.25 → 25px */
-  --glass-blur-pop: 30px;
-  --glass-saturate: 1;          /* Saturation=0 → 不增加饱和度 */
-  --glass-edge-highlight: 0.05; /* Edge Highlight 0.05 */
-  --glass-highlight-top: 0.08;
-  --glass-highlight-corner: 0.06;
-  --glass-highlight-bottom: 0.02;
-  /* Shadow Opacity 0.3 + Shadow Spread 10 + Z-Radius 40 */
-  --glass-shadow: 0 8px 32px rgba(0,0,0,0.18), 0 20px 60px rgba(0,0,0,0.12);
-  --glass-shadow-hover: 0 12px 40px rgba(0,0,0,0.22), 0 28px 72px rgba(0,0,0,0.15);
-  --glass-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  --glass-filter-pop: blur(var(--glass-blur-pop)) saturate(var(--glass-saturate));
-
-  /* Corner Radius 40 */
+  /* 大圆角是参考实现的签名特征之一 */
   --mo-radius: 24px;
   --mo-radius-lg: 32px;
   --mo-radius-sm: 16px;
-
-  /* 侧边导航 */
+  /* 外壳面更透，让折射真正读到背景结构 */
   --side-nav-bg: linear-gradient(160deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.12) 60%, rgba(255,255,255,0.08) 100%);
   --side-nav-border: rgba(255,255,255,0.25);
-
-  /* 顶栏 */
   --titlebar-bg: rgba(255,255,255,0.15);
   --titlebar-border: rgba(255,255,255,0.20);
 }
 
-/* 深色主题下的液态玻璃 */
 html.dark body.liquid-glass {
   --glass-bg: linear-gradient(135deg, rgba(38,50,74,0.72) 0%, rgba(26,35,54,0.60) 50%, rgba(19,26,40,0.54) 100%);
   --glass-bg-strong: linear-gradient(135deg, rgba(30,40,60,0.92) 0%, rgba(20,27,42,0.86) 100%);
-  --glass-border: rgba(255,255,255,0.15);
-  --glass-edge-highlight: 0.08;
-  --glass-highlight-top: 0.06;
-  --glass-highlight-corner: 0.04;
   --side-nav-bg: linear-gradient(160deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.05) 60%, rgba(255,255,255,0.03) 100%);
   --side-nav-border: rgba(255,255,255,0.10);
   --titlebar-bg: rgba(255,255,255,0.06);
   --titlebar-border: rgba(255,255,255,0.08);
 }
 
-/* 液态玻璃：菲涅尔镜面反射层（Specular=Fresnel：边缘亮、中心暗） */
-body.liquid-glass .glass-card--card::before,
-body.liquid-glass .glass-card--strong::before,
-body.liquid-glass .card::before {
-  background:
-    /* 顶部边缘高光 */
-    linear-gradient(180deg, rgba(255,255,255,calc(var(--glass-highlight-top) * 1.5)) 0%, transparent 30%),
-    /* 菲涅尔：左右边缘亮 */
-    linear-gradient(90deg, rgba(255,255,255,var(--glass-highlight-corner)) 0%, transparent 15%, transparent 85%, rgba(255,255,255,var(--glass-highlight-corner)) 100%),
-    /* 底部边缘微光 */
-    linear-gradient(0deg, rgba(255,255,255,var(--glass-highlight-bottom)) 0%, transparent 20%);
-  animation: none; /* Distortion=0：无动态扭曲 */
-}
+/* v3.7.0 已删除本段的三处「CSS 近似模拟」，它们全部被引擎烘焙的真实效果取代：
+   1. 菲涅尔近似：`::before` 的顶部/左右/底部线性渐变 → 现由光照贴图按
+      pow(1-|N.z|,4) 逐像素计算，边缘过渡是连续的而非三条直线的叠加。
+   2. 色差近似：`inset 1px 0 0 rgba(255,100,100,0.02)` 之类的彩色内阴影 →
+      现由位移图的三通道 feDisplacementMap 做真实 RGB 分离（着色器 caS）。
+   3. 噪声纹理：SVG feTurbulence 贴图 → 参考实现 Distortion 默认为 0，
+      本身没有噪声层；这是本项目自创效果，且每张卡片多一张全尺寸背景图，删除。
+   卡片悬浮只保留阴影增强（transform 会新建合成层，见下方 v3.2.7 说明）。 */
 
-/* 液态玻璃：色差效果（Chrom. Aberration 0.05：轻微 RGB 分离） */
-body.liquid-glass .glass-card--card,
-body.liquid-glass .glass-card--strong,
-body.liquid-glass .card {
-  /* 用多层 inset box-shadow 模拟色差边缘 */
-  box-shadow:
-    var(--glass-shadow),
-    inset 0 1px 0 rgba(255, 255, 255, var(--glass-edge-highlight)),
-    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
-    inset 1px 0 0 rgba(255, 100, 100, 0.02),
-    inset -1px 0 0 rgba(100, 100, 255, 0.02);
-}
-
-/* 液态玻璃：噪声纹理（细微真实感） */
-body.liquid-glass .glass-card--card::after,
-body.liquid-glass .glass-card--strong::after,
-body.liquid-glass .card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0.025;
-  z-index: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-/* 液态玻璃：卡片悬浮
-   v3.2.7：彻底移除 translateY 上浮——任何 transform 都会为元素创建新的合成层（compositing layer），
-   在存在 backdrop-filter 的卡片网格中，该合成层的绘制顺序会"跳过"兄弟节点的 z-index/isolation，
-   最终视觉上盖住相邻卡片。改为仅通过 box-shadow 的增强营造悬浮感，完全不触发合成层重建 */
-body.liquid-glass .glass-card--card:hover,
-body.liquid-glass .card:hover {
-  box-shadow:
-    0 8px 28px rgba(31, 64, 130, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, calc(var(--glass-edge-highlight) + 0.08)),
-    inset 0 -1px 0 rgba(255, 255, 255, var(--glass-highlight-bottom)),
-    inset 1px 0 0 rgba(255, 100, 100, 0.03),
-    inset -1px 0 0 rgba(100, 100, 255, 0.03);
-  isolation: isolate;
-}
-
-/* 液态玻璃：不使用背景流动动画（保留用户自定义背景） */

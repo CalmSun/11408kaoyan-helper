@@ -2,7 +2,7 @@
 REM Release entry (Windows cmd). ASCII only: cmd decodes UTF-8 as GBK and garbles CJK.
 REM Commit message / tag message are read from UTF-8 files via -F so they stay intact.
 cd /d "%~dp0.."
-set TAG=v3.6.5
+set TAG=v3.6.6
 
 echo [1/5] stage
 git add -A
