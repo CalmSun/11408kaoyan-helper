@@ -1,6 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
+import ElementPlus, { ElMessage } from 'element-plus'
 import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
@@ -35,8 +35,7 @@ app.config.errorHandler = (err, instance, info) => {
     })
   } catch (_) {}
   try {
-    // 不直接 import ElMessage，避免与 router 重复初始化
-    ElementPlus?.ElMessage?.error?.(
+    ElMessage.error(
       `运行异常: ${(err instanceof Error ? err.message : String(err)).slice(0, 60)}（详情见设置-报错日志）`
     )
   } catch (_) {}

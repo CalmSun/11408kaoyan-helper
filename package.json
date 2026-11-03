@@ -26,8 +26,6 @@
     "pdfjs-dist": "^6.2.108",
     "pinia": "^2.1.7",
     "vue": "^3.4.0",
-    "vue-demi": "^0.14.10",
-    "vue-echarts": "^6.6.8",
     "vue-router": "^4.2.5"
   },
   "devDependencies": {
@@ -86,9 +84,6 @@
   },
   "allowScripts": {
     "electron@28.3.3": true,
-    "esbuild@0.21.5": true,
-    "vue-demi@0.14.10": true,
-    "vue-demi@0.13.11": true,
-    "vue-echarts@6.7.3": true
+    "esbuild@0.21.5": true
   }
 }

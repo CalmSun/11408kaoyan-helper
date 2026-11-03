@@ -640,8 +640,8 @@ export const useMainStore = defineStore('main', () => {
     appUsageMinutes.value = getStorage('appUsageMinutes', 0)
     pomodoroSettings.value = getStorage('pomodoroSettings', {
       workDuration: 25, breakDuration: 5, longBreakDuration: 15,
-      longBreakInterval: 4, autoStartBreak: true, autoStartWork: false,
-      soundEnabled: true, forceFullscreen: false, soundVolume: 85
+      longBreakInterval: 4, enableNotification: true, enableSound: true,
+      enableTitleFlash: true, forceFullscreen: false, soundVolume: 85
     })
   }
   onStorageReady(refreshAllFromStorage)

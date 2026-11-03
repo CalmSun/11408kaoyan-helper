@@ -1,3 +1,54 @@
+# v3.6.5 补丁：两处类型错误根治（番茄钟设置 / 错误提示）+ 死依赖与重复资源清理
+
+> 本文档上方为最新一轮。液态玻璃重构本身已完成并上线，本轮**不改动任何视觉实现**（重做风格属高风险低收益），只做「检查项目 + 清除无用代码」并根治前述两处预存错误。
+
+## 1. 番茄钟设置键不一致（真实功能缺陷，非"无关错误"）
+
+`overview.md` 此前后续记录曾把 `stores/index.ts` 的 pomodoro 类型错误判为"预存无关错误"，核查后确认它是**真实缺陷**：
+
+| 位置 | 使用的键 |
+|---|---|
+| 声明默认值（`stores/index.ts:284`）、`pomodoro.ts`、`Settings.vue` | `enableNotification` / `enableSound` / `enableTitleFlash` |
+| `refreshAllFromStorage()` 的默认值（旧 `:641`） | `autoStartBreak` / `autoStartWork` / `soundEnabled` ← **错键** |
+
+**影响链**：`onStorageReady(refreshAllFromStorage)` 在存储就绪后用错键对象**整体覆盖** `pomodoroSettings`，而 `pomodoro.ts` 读的是 `enableSound` / `enableNotification` / `enableTitleFlash` → 三者均为 `undefined`（假值）→ **全新安装（无已存设置）时番茄钟完成的声音 / 通知 / 标题闪烁提醒全部静默失效**，且 `watch(deep)` 会把错键对象写回存储。已存设置的老用户走 `getStorage` 返回自身对象，**不受影响**。
+
+**修复**：默认值改用规范键，与声明处完全对齐。
+
+## 2. 全局错误提示从未生效（`main.ts`）
+
+```ts
+ElementPlus?.ElMessage?.error?.(...)   // ElementPlus 是插件对象，无 ElMessage 属性 → 恒 undefined
+```
+可选链吞掉了调用，`app.config.errorHandler` 里"写入日志**并弹提示**"的提示路径是死代码。改为具名导入 `ElMessage`（与 `router/index.ts` 一致；导入组件不涉及插件重复初始化，原注释的顾虑不成立）。
+
+## 3. 死依赖与重复资源清理（均已证明）
+
+| 项 | 证据 | 处置 |
+|---|---|---|
+| `vue-echarts` + `vue-demi` | `src/`、`vite.config.ts`、`index.html` 全库零引用；图表直接用 `echarts/core` + 手写 `echarts.init()` | `npm uninstall`；同步移除 `allowScripts` 中随之失效的 3 条（剩余 `electron`/`esbuild` 条目已核对与实装版本一致） |
+| 根目录 `background.jpg`（3 MB） | 与 `src/renderer/src/assets/background.jpg` **MD5 完全相同**（`f5258426…`）；`style.css` 引用的是 `src/` 下那份；全库无功能性引用 | `git rm` 删除重复件，规范资源保留 |
+| `.agents/skills/liquid-glass-widgets` | 空目录、未被 git 跟踪 | 删除 |
+
+## 4. 验证（可复现）
+
+- `npx vue-tsc --noEmit -p tsconfig.json`：修复前 **2 error** → 修复后 **0 error**
+- `npm run build`（`vite build && tsc -p tsconfig.node.json`）：退出码 0
+- **依赖清理零影响证明**：清理前后对 `dist/` 全量 374 个文件做逐个 SHA256 比对 → **完全一致**
+- 源码修复后产物文件数仍为 374（75 个 chunk 为哈希级联重命名，源自在被所有视图引用的 `stores/index.ts` 改动），无文件增删
+- 作用域：已存设置用户行为不变；全新安装由"提醒失效"变为"提醒生效"
+
+## 5. 本轮刻意不改（有证据但风险大于收益）
+
+| 项 | 不改的理由 |
+|---|---|
+| `style.css` 中 `.glass-strong` / `.glass-card--strong` | 无调用点传入 `variant`（恒为默认 `card`），规则实际不可达；但它属于 `GlassCard` 已声明的公开 API，删除会使该 API 静默失效。收益为几百字节，风险非零 → 仅记录 |
+| `.glass-card--lite` | 审计命中的其实是注释文字，样式规则上一轮已删 |
+| style.css 其余 15 个"孤儿"类（`.el-*` / `.is-*`） | 均为 Element Plus 运行时类名，源码中不出现属正常，属**误报**，不可删 |
+| `.qoder/`（1.7 MB 生成型 wiki）、`.trae/`、`.workbuddy/` | 第三方工具产物，非产品代码；删除会破坏用户工具状态 → 仅报告，待用户决定 |
+
+---
+
 # v3.6.5 更新：液态玻璃重构为真实折射（参照 liquid-glass-vue）+ 全站统一 + 无用代码清理
 
 ## 本轮做了什么
