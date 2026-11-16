@@ -96,6 +96,7 @@ export const useMusicStore = defineStore('music', () => {
       next()
     } else {
       isPlaying.value = false
+      if (supportMediaSession()) navigator.mediaSession.playbackState = 'paused'
     }
   })
 
@@ -141,9 +142,78 @@ export const useMusicStore = defineStore('music', () => {
   audio.addEventListener('timeupdate', () => {
     currentTime.value = audio.currentTime
     updateLyricIndex()
+    updateMediaSessionPosition()
   })
   audio.addEventListener('loadedmetadata', () => {
     duration.value = audio.duration || 0
+    updateMediaSessionPosition()
+  })
+
+  // ── 系统媒体控制（SMTC）：把播放信息与操作同步到 Windows 媒体浮层 ──
+  function supportMediaSession(): boolean {
+    return typeof navigator !== 'undefined' && 'mediaSession' in navigator
+  }
+
+  /** 同步曲目元数据（标题/艺术家/专辑/封面）到系统媒体浮层 */
+  function updateMediaSessionMetadata() {
+    if (!supportMediaSession()) return
+    const track = currentTrack.value
+    if (!track) {
+      navigator.mediaSession.metadata = null
+      return
+    }
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.name.replace(/\.[^.]+$/, ''),
+      artist: track.artist || '',
+      album: track.album || '',
+      artwork: track.cover ? [{ src: track.cover }] : []
+    })
+  }
+
+  /** 同步播放进度：让浮层进度条显示并支持拖动定位 */
+  function updateMediaSessionPosition() {
+    if (!supportMediaSession() || !navigator.mediaSession.setPositionState) return
+    const total = audio.duration
+    if (!isFinite(total) || total <= 0) return
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: total,
+        playbackRate: audio.playbackRate || 1,
+        position: Math.min(audio.currentTime, total)
+      })
+    } catch {
+      // 切换曲目瞬间进度可能越界，忽略本次同步
+    }
+  }
+
+  /** 清空曲目后关闭系统媒体浮层 */
+  function resetMediaSession() {
+    if (!supportMediaSession()) return
+    navigator.mediaSession.metadata = null
+    navigator.mediaSession.playbackState = 'none'
+  }
+
+  // 浮层/媒体键回调：播放、暂停、上一首、下一首、快进快退、停止
+  if (supportMediaSession()) {
+    const ms = navigator.mediaSession
+    ms.setActionHandler('play', () => { play() })
+    ms.setActionHandler('pause', () => { pause() })
+    ms.setActionHandler('stop', () => { pause(); seek(0) })
+    ms.setActionHandler('previoustrack', () => { prev() })
+    ms.setActionHandler('nexttrack', () => { next() })
+    ms.setActionHandler('seekbackward', d => { seek(audio.currentTime - (d.seekOffset ?? 10)) })
+    ms.setActionHandler('seekforward', d => { seek(audio.currentTime + (d.seekOffset ?? 10)) })
+    ms.setActionHandler('seekto', d => {
+      if (typeof d.seekTime === 'number') seek(d.seekTime)
+    })
+  }
+
+  audio.addEventListener('play', () => {
+    if (supportMediaSession()) navigator.mediaSession.playbackState = 'playing'
+    updateMediaSessionPosition()
+  })
+  audio.addEventListener('pause', () => {
+    if (supportMediaSession()) navigator.mediaSession.playbackState = 'paused'
   })
 
   function applyVolume() {
@@ -301,6 +371,7 @@ export const useMusicStore = defineStore('music', () => {
     const track = currentTrack.value
     if (!track) return
     audio.src = track.url
+    updateMediaSessionMetadata()
     loadLyric()
     urlRefreshRetryCount = 0
   }
@@ -410,6 +481,7 @@ export const useMusicStore = defineStore('music', () => {
       pause()
       audio.removeAttribute('src')
       currentIndex.value = 0
+      resetMediaSession()
       return
     }
     if (index < currentIndex.value) {
@@ -428,6 +500,7 @@ export const useMusicStore = defineStore('music', () => {
     playlist.value = []
     currentIndex.value = 0
     audio.removeAttribute('src')
+    resetMediaSession()
   }
 
   // ── v2.9.0：网易云在线搜索与播放 ──

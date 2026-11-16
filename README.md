@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-3.6.6-blue">
+  <img alt="版本" src="https://img.shields.io/badge/version-3.6.7-blue">
   <img alt="平台" src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey">
   <img alt="技术栈" src="https://img.shields.io/badge/stack-Vue3%20%2B%20Electron28-9cf">
   <img alt="协议" src="https://img.shields.io/badge/license-MIT-green">
@@ -87,6 +87,7 @@
 | 模块 | 详细说明 |
 | ---- | -------- |
 | 🎧 全局悬浮播放器 | 本地文件夹歌曲递归扫描；私有协议流式读取；全页面顶栏常驻；播放暂停、切歌、音量、随机模式、歌词滚动 |
+| 🪟 系统媒体控制 SMTC | 歌名/歌手/专辑/封面与播放进度实时同步到 Windows 媒体浮层与锁屏；浮层和键盘媒体键可播放暂停、上一首、下一首、快进快退、拖动定位（仅 Windows） |
 | 🔍 搜索 + 实时热搜榜 | 搜索页内置热搜卡片，点击热词一键检索；搜索后自动隐藏热搜，清空恢复榜单；在线试听、加入队列、收藏喜欢 |
 | 💽 网易云云盘 | 云盘 Tab 支持分页全量加载全部云盘歌曲（不限 50 首）；批量播放、加入队列、单歌收藏 |
 | 📋 我的歌单同步 | 同步自建歌单、收藏歌单；网格封面布局；歌单一键全量播放 / 加入播放队列 |

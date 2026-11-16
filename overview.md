@@ -1,3 +1,63 @@
+# v3.6.7 更新：音乐播放接入 Windows 系统媒体控制（SMTC）
+
+## 1. 做了什么
+
+播放器（`src/renderer/src/stores/music.ts`）此前只在应用内可见：窗口一隐藏，系统层面既看不到在放什么歌，也无法用媒体键控制。
+本版把它接到 Windows 的 **SMTC**（System Media Transport Controls）——即 Win + G / 快速设置里的媒体浮层、锁屏播放卡片、taskbar 预览，以及键盘媒体键。
+
+实现通道只有一条，就是 W3C Media Session API：`navigator.mediaSession` 由 Chromium 负责转译成
+`GlobalSystemMediaTransportControlsSessionManager` 里的会话，**没有**任何原生模块或注册表操作。
+
+| Media Session | SMTC 侧表现 |
+| ---- | ---- |
+| `metadata.title` | 浮层标题（本地曲目去掉 `.flac`/`.mp3` 等扩展名） |
+| `metadata.artist` / `album` | 副标题；网易云在线曲目有值，本地曲目为空（未做 ID3 解析） |
+| `metadata.artwork` | 封面；在线曲目用网易云封面 URL |
+| `playbackState` | Playing / Paused；跟随 audio 元素的 play/pause/ended 事件 |
+| `setPositionState()` | 浮层进度条与剩余时间，跟随 timeupdate / loadedmetadata |
+| `setActionHandler()` | 播放、暂停、停止、上一首、下一首、快退、快进、拖动定位（`seekto`） |
+
+主进程只加了一行：`app.setAppUserModelId('com.kaoyan.helper')`（仅 win32，与 `build.appId` 对齐）。
+
+## 2. 为什么必须设 AppUserModelId
+
+不设置时 SMTC 会话的 `SourceAppUserModelId` 是 Electron 默认值，实测为 `electron.exe`（开发）或
+`electron.app.11408考研助手`（打包），两者都匹配不到安装快捷方式，浮层里的应用名与图标不可控。
+设为 `com.kaoyan.helper` 后与 NSIS 快捷方式写入的 AUMID 一致，实测会话标识变为 `com.kaoyan.helper`。
+
+## 3. 实测验证（Electron 28.3.3 / Windows 11）
+
+用隔离 `--user-data-dir` 启动开发实例，真实播放 `E:\歌歌歌` 下的 FLAC，再从系统侧用 WinRT
+`GlobalSystemMediaTransportControlsSessionManager` 读回（`GetSessions()` + `TryGetMediaPropertiesAsync()` + `GetTimelineProperties()`）：
+
+| 操作 | 系统侧回读 |
+| ---- | ---- |
+| 应用内播放 | `APP=com.kaoyan.helper`，`STATUS=Playing`，标题无扩展名，`POS=3.6/274.8` |
+| 浮层「下一首」 | 标题变为「1个球 - 爱丫爱丫」，总长 210s，进度归零 |
+| 浮层拖动到 60s | `POS=62.1/210`（`seekto` 生效） |
+| 浮层暂停 | `STATUS=Paused`，store `isPlaying=false`，`playbackState=paused` |
+
+反向通道同样验证过：探针应用里 `nexttrack`/`previoustrack` 回调确实打到渲染进程。
+`npx vue-tsc --noEmit` 与 `npx tsc -p tsconfig.node.json` 均 0 错误。
+
+## 4. 为什么没做浮层歌词
+
+Windows 只开放 title / artist / album / artwork 四个文本位，**没有歌词通道**。要显示歌词只能借用 artist
+位（牺牲歌手名）或拼接（长句被系统截断），属于污染元数据而非补功能，故保持现状；滚动歌词仍在应用内
+（音乐页 + 顶栏，走原有 `.lrc` / 网易云歌词接口）。
+
+## 5. 版本号为何是 3.6.7
+
+覆盖同版本 tag 只适合同一版本内的修补；本次改变了已安装用户可感知的运行时行为，且
+`electron-updater` 按 semver 比较，不升版则老用户收不到更新。故 3.6.6 → **3.6.7**。
+
+## 6. 遗留
+
+- 本地 FLAC/MP3 的 ID3 标签未解析，浮层歌手与专辑为空；需要时再补元数据读取。
+- 浮层按钮切歌后系统侧标题有约 1s 延迟，属 Chromium 侧 SMTC 传播节奏，未做额外规避。
+
+---
+
 # v3.6.6 更新：液态玻璃改用 liquid-glass.pro 的 SVG 位移方案（取消 WebGL）
 
 > 参考目标：<https://www.liquid-glass.pro/doc/vue.html>（库 `@tinymomentum/liquid-glass-vue@1.0.9`）。

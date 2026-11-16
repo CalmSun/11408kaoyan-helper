@@ -389,6 +389,9 @@ if (!gotTheLock) {
   })
 
   app.whenReady().then(() => {
+    // 系统媒体控制（SMTC）：统一 Windows 应用标识，媒体浮层显示为「考研助手」而非 Electron
+    if (process.platform === 'win32') app.setAppUserModelId('com.kaoyan.helper')
+
     // 初始化数据目录并迁移旧版本文件（v2.8.0）
     migrateLegacyDataFiles()
 
