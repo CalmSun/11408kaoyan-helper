@@ -92,6 +92,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setDataDir: () => ipcRenderer.invoke('data:set-dir'),
   openDataDir: () => ipcRenderer.invoke('data:open-dir'),
   syncDataToDir: (json: string) => ipcRenderer.invoke('data:sync', json),
+  // ── v3.6.8：桌面歌词窗 + 托盘音乐菜单 ──
+  setDesktopLyrics: (on: boolean) => ipcRenderer.invoke('lyrics:set-visible', on),
+  getDesktopLyrics: () => ipcRenderer.invoke('lyrics:is-visible'),
+  sendLyricLine: (payload: { line: string; next?: string; title?: string; playing?: boolean }) =>
+    ipcRenderer.send('lyrics:update', payload),
+  syncTrayMusic: (state: { hasTrack: boolean; playing: boolean; shuffle: boolean; title: string; desktopLyric?: boolean }) =>
+    ipcRenderer.send('tray:music-state', state),
+  onTrayMusicCommand: (cb: (command: string) => void) => {
+    ipcRenderer.on('tray:music-command', (_e, command) => cb(command))
+  },
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => {
     const channels = ['update:available', 'update:not-available', 'update:progress', 'update:downloaded', 'update:error']
     channels.forEach(ch => {

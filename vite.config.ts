@@ -22,6 +22,11 @@ export default defineConfig({
     emptyOutDir: true,
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
+      // v3.6.8：桌面歌词窗作为第二入口（独立轻量页面，不引入 Vue 运行时）
+      input: {
+        main: resolve(__dirname, 'src/renderer/index.html'),
+        lyrics: resolve(__dirname, 'src/renderer/lyrics.html')
+      },
       output: {
         manualChunks: {
           'vendor-vue': ['vue', 'vue-router', 'pinia'],

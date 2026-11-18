@@ -1,3 +1,52 @@
+# v3.6.8 更新：桌面歌词（全局悬浮）+ 托盘音乐控制 + 精简与效率优化
+
+## 1. 桌面歌词（全局显示）
+
+新增独立透明置顶窗 `src/renderer/lyrics.html`，由主进程 `createLyricsWindow()` 按需创建：
+
+| 属性 | 取值 | 说明 |
+| ---- | ---- | ---- |
+| frame / transparent | false / true | 无边框透明窗，桌面悬浮观感 |
+| alwaysOnTop | screen-saver 级 | 悬于普通窗口之上，但不抢全屏应用 |
+| skipTaskbar / focusable | true / false | 不进任务栏、不抢输入焦点，避免打断学习 |
+| showInactive() | 显示时 | 不激活窗口，前台应用不被打断 |
+
+歌词窗**不加载 Vue 运行时**：`lyrics.html` 是纯 DOM 页面（约 2.3 KB），只通过 `lyrics-preload.ts` 暴露两个回调
+（`onRender` / `ready`），因此第二个渲染进程的额外内存开销极小。
+
+### 效率设计（避免重蹈 SMTC 高频 IPC 的覆辙）
+
+| 措施 | 效果 |
+| ---- | ---- |
+| 仅在 `currentLyricIndex` 变化时推送 | timeupdate 约 4 次/秒，但换行才推送，稳态约每句一次 |
+| `lastDesktopPeer` 去重（行/下一句/标题/播放态四元组） | 同一行重复进入不会产生 IPC |
+| play/pause 走 `force` 强制刷新 | 暂停态即时可见，无需轮询 |
+| 歌词窗关闭时不推送 | `desktopLyrics` 为 false 直接 return |
+| 主进程侧菜单按状态摘要去重重建 | 只有 hasTrack/playing/shuffle/title/desktopLyric 变化才重建菜单 |
+
+## 2. 托盘音乐控制
+
+`buildTrayMenu()` 重建托盘右键菜单，含：当前曲目（过长截断到 28 字符）、播放/暂停、上一首、下一首、
+随机播放（checkbox）、桌面歌词（checkbox）、退出。
+
+主进程不持有播放器：菜单点击只 `webContents.send('tray:music-command', ...)`，由 store 的
+`bindTrayMusicCommands()` 转调既有 `toggle/prev/next/toggleShuffle/toggleDesktopLyrics`，**不复制播放逻辑**。
+菜单摘要由渲染进程经 `tray:music-state` 上报，主进程比对上次摘要后才重建菜单。
+
+## 3. 精简与兼容性
+
+- 未删除任何既有功能：扫描确认 7 个 utils 与 15 个 views 均有引用，无死代码可清理。
+- 托盘单击不再弹菜单：修复新菜单与原有「双击恢复窗口」的冲突。
+- 顶栏/设置页新增开关均复用 store 既有状态，未改动播放、歌词解析、SMTC、更新器逻辑。
+
+## 4. 验证
+
+- `npx vue-tsc --noEmit` 与 `npx tsc -p tsconfig.node.json --noEmit` 均 0 错误。
+- `cmd /c scripts\build.cmd` 构建成功，产出 `dist/renderer/lyrics.html`（2314 B）与 `dist/preload/lyrics-preload.js`（459 B）。
+- 产物核查：`dist/main/main.js` 含 4 处新 IPC 端点；`dist/preload/preload.js` 含 4 个新 API。
+- **未完成**：本机当前无可用桌面会话，Electron GUI 无法常驻，因此歌词窗实际显示效果与托盘菜单点击未做真机验证，需安装后手动确认。
+
+---
 # v3.6.7 性能优化：修复 SMTC 导致的 CPU 占用过高（覆盖更新）
 
 ## 0. 问题与根因

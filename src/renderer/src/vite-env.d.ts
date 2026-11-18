@@ -256,6 +256,12 @@ interface ElectronAPI {
   setDataDir: () => Promise<{ success: boolean; canceled?: boolean; dir?: string; message?: string }>
   openDataDir: () => Promise<{ success: boolean }>
   syncDataToDir: (json: string) => Promise<{ success: boolean; path?: string; message?: string }>
+  // v3.6.8：桌面歌词窗 + 托盘音乐菜单
+  setDesktopLyrics: (on: boolean) => Promise<{ success: boolean; visible: boolean }>
+  getDesktopLyrics: () => Promise<boolean>
+  sendLyricLine: (payload: { line: string; next?: string; title?: string; playing?: boolean }) => void
+  syncTrayMusic: (state: { hasTrack: boolean; playing: boolean; shuffle: boolean; title: string; desktopLyric?: boolean }) => void
+  onTrayMusicCommand: (cb: (command: string) => void) => void
   onUpdateEvent: (cb: (channel: string, payload?: unknown) => void) => void
 }
 

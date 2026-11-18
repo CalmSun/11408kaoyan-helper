@@ -151,6 +151,21 @@
           </el-select>
           <span class="unit-desc">影响在线歌曲播放音质（无损/Hi-Res 需登录 VIP 账号）</span>
         </el-form-item>
+        <!-- v3.6.8：桌面歌词（全局悬浮） -->
+        <el-form-item label="桌面歌词">
+          <el-switch
+            v-model="musicStore.desktopLyrics"
+            @change="handleDesktopLyricsChange"
+          />
+          <span class="unit-desc">在桌面显示全局悬浮歌词，关闭应用窗口后仍然显示</span>
+        </el-form-item>
+        <el-form-item label="顶栏歌词">
+          <el-switch
+            v-model="musicStore.showLyrics"
+            @change="handleTopLyricsChange"
+          />
+          <span class="unit-desc">在窗口顶栏显示一行滚动歌词</span>
+        </el-form-item>
       </el-form>
     </GlassCard>
 
@@ -382,6 +397,19 @@ const appVersion = __APP_VERSION__
 
 // v3.3.3：在线歌曲音质等级
 const musicQualityLevel = ref(musicStore.qualityLevel)
+// v3.6.8：桌面歌词由 store 的 toggle 统一处理（含窗口开关与持久化）
+function handleDesktopLyricsChange(value: string | number | boolean) {
+  const want = !!value
+  if (want !== musicStore.desktopLyrics) {
+    musicStore.toggleDesktopLyrics()
+  } else {
+    // el-switch 已改 v-model，仍需让主进程窗口状态跟随后端
+    window.electronAPI?.setDesktopLyrics?.(want).catch(() => { /* ignore */ })
+  }
+}
+function handleTopLyricsChange(value: string | number | boolean) {
+  if (!!value !== musicStore.showLyrics) musicStore.toggleLyrics()
+}
 function handleQualityChange(level: string) {
   musicStore.setQualityLevel(level)
   const labelMap: Record<string, string> = {

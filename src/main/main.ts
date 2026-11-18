@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, nativeTheme, protocol, net, Tray, Menu, nativeImage, shell, screen } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import * as path from 'path'
 import * as fs from 'fs'
@@ -201,6 +201,13 @@ let tray: Tray | null = null
 let isQuitting = false       // 是否真正退出（区分"关闭隐藏到托盘"与"托盘菜单退出"）
 let trayHintShown = false    // 托盘提示气泡是否已展示过
 
+// ── v3.6.8：桌面歌词状态 + 托盘音乐菜单状态 ──
+// 播放器实例在渲染进程，主进程只缓存一份用于构建菜单的摘要（仅在变化时重建菜单）
+const trayMusic = { hasTrack: false, playing: false, shuffle: false, title: '', desktopLyric: false }
+let trayLyricText = ''
+// 桌面歌词窗（v3.6.8）：透明置顶窗，按需创建，关闭后置空
+let lyricsWindow: BrowserWindow | null = null
+
 // v3.5.2：pdf.js 静态资源（cmaps / standard_fonts）回环 HTTP 服务基址。
 // 背景：pdf.js fetchData 只对 http(s) URL 走 fetch 分支，其余协议（file:// / 自定义协议）一律走 XHR；
 // 打包后 XHR 访问自定义协议（kaoyan-assets://）在部分环境仍不可靠（历经多轮修复未根治）。
@@ -339,20 +346,49 @@ function showTrayHint() {
   }
 }
 
-function createTray() {
-  const icon = nativeImage.createFromPath(trayIconPath())
-  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
-  tray.setToolTip('11408考研助手')
+/** v3.6.8：向渲染进程下发托盘音乐指令（播放器实例在渲染进程，主进程只转发） */
+function sendMusicCommand(command: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('tray:music-command', command)
+  }
+}
 
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** v3.6.8：重建托盘菜单（仅在状态变化时调用，避免频繁重建开销） */
+function buildTrayMenu(): void {
+  if (!tray || tray.isDestroyed()) return
+  const raw = trayMusic.title || ''
+  const label = raw ? (raw.length > 28 ? raw.slice(0, 28) + '…' : raw) : '暂无播放'
   const menu = Menu.buildFromTemplate([
+    { label: '显示主窗口', click: showMainWindow },
+    { type: 'separator' },
+    { label: '♪ ' + label, enabled: false },
     {
-      label: '显示主窗口',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show()
-          mainWindow.focus()
-        }
-      }
+      label: trayMusic.playing ? '暂停' : '播放',
+      enabled: trayMusic.hasTrack,
+      click: () => sendMusicCommand('toggle')
+    },
+    { label: '上一首', enabled: trayMusic.hasTrack, click: () => sendMusicCommand('prev') },
+    { label: '下一首', enabled: trayMusic.hasTrack, click: () => sendMusicCommand('next') },
+    {
+      label: '随机播放',
+      type: 'checkbox',
+      checked: trayMusic.shuffle,
+      enabled: trayMusic.hasTrack,
+      click: (item) => sendMusicCommand(item.checked ? 'shuffle-on' : 'shuffle-off')
+    },
+    { type: 'separator' },
+    {
+      label: '桌面歌词',
+      type: 'checkbox',
+      checked: trayMusic.desktopLyric,
+      click: (item) => sendMusicCommand(item.checked ? 'desktop-lyric-on' : 'desktop-lyric-off')
     },
     { type: 'separator' },
     {
@@ -364,14 +400,129 @@ function createTray() {
     }
   ])
   tray.setContextMenu(menu)
+}
 
-  // 双击托盘图标恢复窗口
-  tray.on('double-click', () => {
-    if (mainWindow) {
-      mainWindow.show()
-      mainWindow.focus()
+/**
+ * v3.6.8：桌面歌词窗
+ * 独立 BrowserWindow（透明、无边框、置顶、点击穿透），加载轻量 lyrics.html（纯 DOM，不打包 Vue 运行时），
+ * 因此额外内存开销极小。位置/锁定/字号由渲染进程通过 IPC 控制。
+ */
+function createLyricsWindow(): BrowserWindow {
+  const bounds = lyricsWindowBounds()
+  const win = new BrowserWindow({
+    width: bounds.width,
+    height: bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/lyrics-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      backgroundThrottling: false
     }
   })
+  // 悬在普通窗口之上，但不抢占全屏应用
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  // 注意：不设 setIgnoreMouseEvents(true)——歌词窗需可拖动定位；
+  // 窗口本身 focusable:false + skipTaskbar，不会抢焦点或切走前台应用。
+  win.loadFile(path.join(__dirname, '../renderer/lyrics.html'))
+  win.on('closed', () => { lyricsWindow = null })
+  return win
+}
+
+/** 歌词窗默认位置：屏幕底部居中，宽度取主屏 60% */
+function lyricsWindowBounds(): { width: number; height: number; x: number; y: number } {
+  const area = screen.getPrimaryDisplay().workAreaSize
+  const width = Math.max(520, Math.round(area.width * 0.6))
+  const height = 132
+  return {
+    width,
+    height,
+    x: Math.round((area.width - width) / 2),
+    y: area.height - height - 72
+  }
+}
+
+/** v3.6.8：显示/隐藏桌面歌词窗 */
+function setDesktopLyricsVisible(on: boolean): void {
+  if (on) {
+    if (!lyricsWindow || lyricsWindow.isDestroyed()) {
+      lyricsWindow = createLyricsWindow()
+    }
+    lyricsWindow.once('ready-to-show', () => {
+      if (lyricsWindow && !lyricsWindow.isDestroyed()) lyricsWindow.showInactive()
+    })
+    if (lyricsWindow.webContents && !lyricsWindow.webContents.isLoading()) {
+      lyricsWindow.showInactive()
+    }
+  } else if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.hide()
+  }
+  trayMusic.desktopLyric = on
+  buildTrayMenu()
+}
+
+ipcMain.handle('lyrics:set-visible', (_e, on: boolean) => {
+  setDesktopLyricsVisible(!!on)
+  return { success: true, visible: trayMusic.desktopLyric }
+})
+
+ipcMain.handle('lyrics:is-visible', () => trayMusic.desktopLyric)
+
+// 渲染进程把“当前歌词行 + 曲目信息”推给歌词窗（仅在歌词行变化时调用，避免高频 IPC）
+ipcMain.on('lyrics:update', (_e, payload: { line: string; next?: string; title?: string; playing?: boolean }) => {
+  trayLyricText = payload?.line || ''
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.webContents.send('lyrics:render', payload)
+  }
+})
+
+// 歌词窗自绘完成后告知可用
+ipcMain.on('lyrics:ready', () => {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.webContents.send('lyrics:render', { line: trayLyricText, playing: trayMusic.playing })
+  }
+})
+
+// 渲染进程同步托盘菜单所需的播放摘要（仅在状态变化时调用）
+ipcMain.on('tray:music-state', (_e, state: { hasTrack: boolean; playing: boolean; shuffle: boolean; title: string; desktopLyric?: boolean }) => {
+  const prev = trayMusic.hasTrack + '|' + trayMusic.playing + '|' + trayMusic.shuffle + '|' + trayMusic.title + '|' + trayMusic.desktopLyric
+  trayMusic.hasTrack = !!state.hasTrack
+  trayMusic.playing = !!state.playing
+  trayMusic.shuffle = !!state.shuffle
+  trayMusic.title = state.title || ''
+  if (typeof state.desktopLyric === 'boolean') trayMusic.desktopLyric = state.desktopLyric
+  const next = trayMusic.hasTrack + '|' + trayMusic.playing + '|' + trayMusic.shuffle + '|' + trayMusic.title + '|' + trayMusic.desktopLyric
+  if (prev !== next) buildTrayMenu()
+})
+
+// 渲染进程请求把桌面歌词窗拉到最前（例如用户刚开启该功能）
+ipcMain.on('lyrics:bring-front', () => {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) lyricsWindow.moveTop()
+})
+
+function createTray() {
+  const icon = nativeImage.createFromPath(trayIconPath())
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+  tray.setToolTip('11408考研助手')
+  buildTrayMenu()
+
+  // 右键菜单由 setContextMenu 提供（含 v3.6.8 音乐控制项）
+  // 单击不弹菜单：保留原有「双击恢复窗口」行为不受干扰
+  tray.on('double-click', showMainWindow)
 }
 
 // 单实例锁：避免重复启动多个应用实例

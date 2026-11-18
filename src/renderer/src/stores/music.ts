@@ -52,6 +52,8 @@ export const useMusicStore = defineStore('music', () => {
   const currentLyricIndex = ref(-1)
   // v2.9.2：顶栏歌词显示开关（持久化）
   const showLyrics = ref<boolean>(getStorage('musicShowLyrics', true))
+  // v3.6.8：桌面歌词（全局悬浮）开关，持久化
+  const desktopLyrics = ref<boolean>(getStorage('musicDesktopLyrics', false))
 
   // v2.9.0：播放进度（供音乐页面和顶栏显示）
   const currentTime = ref(0)
@@ -88,6 +90,15 @@ export const useMusicStore = defineStore('music', () => {
 
   if (typeof window !== 'undefined' && window.electronAPI?.restoreMusicFolder) {
     restoreMusicFolder()
+  }
+
+  // v3.6.8：绑定托盘菜单音乐指令 + 恢复桌面歌词窗（用户上次开启过）
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    bindTrayMusicCommands()
+    syncTrayMusic()
+    if (desktopLyrics.value) {
+      window.electronAPI.setDesktopLyrics?.(true).catch(() => { /* ignore */ })
+    }
   }
 
   // 自动续播
@@ -228,10 +239,12 @@ export const useMusicStore = defineStore('music', () => {
   audio.addEventListener('play', () => {
     if (supportMediaSession()) navigator.mediaSession.playbackState = 'playing'
     updateMediaSessionPosition(true)
+    pushDesktopLyric(true)
   })
   audio.addEventListener('pause', () => {
     if (supportMediaSession()) navigator.mediaSession.playbackState = 'paused'
     updateMediaSessionPosition(true)
+    pushDesktopLyric(true)
   })
 
   function applyVolume() {
@@ -326,6 +339,7 @@ export const useMusicStore = defineStore('music', () => {
   function updateLyricIndex() {
     if (lyricLines.value.length === 0) {
       currentLyricIndex.value = -1
+      pushDesktopLyric()
       return
     }
     const t = audio.currentTime
@@ -336,7 +350,64 @@ export const useMusicStore = defineStore('music', () => {
         break
       }
     }
-    currentLyricIndex.value = idx
+    // 仅在歌词行真正变化时才推送（timeupdate 约 4 次/秒，避免高频 IPC）
+    if (idx !== currentLyricIndex.value) {
+      currentLyricIndex.value = idx
+      pushDesktopLyric()
+    }
+  }
+
+  // ── v3.6.8：桌面歌词（全局悬浮） ──
+  let lastDesktopPeer: string | null = null
+
+  /** 把当前歌词行推给桌面歌词窗；无变化时直接返回（由 updateLyricIndex 保证只在换行时调用） */
+  function pushDesktopLyric(force = false) {
+    const api = window.electronAPI
+    if (!api?.sendLyricLine) return
+    if (!desktopLyrics.value) return
+    if (force) lastDesktopPeer = null
+    const track = currentTrack.value
+    const idx = currentLyricIndex.value
+    const line = idx >= 0 && lyricLines.value[idx] ? lyricLines.value[idx].text : ''
+    const nextLine = idx >= 0 && lyricLines.value[idx + 1] ? lyricLines.value[idx + 1].text : ''
+    const payload = {
+      line,
+      next: nextLine,
+      title: track ? track.name.replace(/\.[^.]+$/, '') : '',
+      playing: isPlaying.value
+    }
+    const peer = payload.line + '\u0001' + payload.next + '\u0001' + payload.title + '\u0001' + payload.playing
+    if (peer === lastDesktopPeer) return
+    lastDesktopPeer = peer
+    api.sendLyricLine(payload)
+  }
+
+  /** 开启/关闭桌面歌词窗 */
+  async function toggleDesktopLyrics(): Promise<void> {
+    const api = window.electronAPI
+    if (!api?.setDesktopLyrics) return
+    const next = !desktopLyrics.value
+    desktopLyrics.value = next
+    setStorage('musicDesktopLyrics', next)
+    try {
+      await api.setDesktopLyrics(next)
+    } catch { /* ignore */ }
+    lastDesktopPeer = null
+    if (next) pushDesktopLyric()
+    syncTrayMusic()
+  }
+
+  /** 同步托盘菜单摘要：仅在状态变化时调用，避免频繁重建菜单 */
+  function syncTrayMusic() {
+    const api = window.electronAPI
+    if (!api?.syncTrayMusic) return
+    api.syncTrayMusic({
+      hasTrack: !!currentTrack.value,
+      playing: isPlaying.value,
+      shuffle: shuffle.value,
+      title: currentTrack.value ? currentTrack.value.name.replace(/\.[^.]+$/, '') : '',
+      desktopLyric: desktopLyrics.value
+    })
   }
 
   function revokeIfBlob(url: string) {
@@ -392,6 +463,9 @@ export const useMusicStore = defineStore('music', () => {
     updateMediaSessionMetadata()
     loadLyric()
     urlRefreshRetryCount = 0
+    // v3.6.8：切歌后同步托盘标题/桌面歌词（歌词行会在 loadLyric 完成后自然推送）
+    syncTrayMusic()
+    lastDesktopPeer = null
   }
 
   async function play() {
@@ -429,11 +503,15 @@ export const useMusicStore = defineStore('music', () => {
         isPlaying.value = false
       }
     }
+    syncTrayMusic()
+    pushDesktopLyric()
   }
 
   function pause() {
     audio.pause()
     isPlaying.value = false
+    syncTrayMusic()
+    pushDesktopLyric()
   }
 
   function toggle() {
@@ -483,6 +561,37 @@ export const useMusicStore = defineStore('music', () => {
   function toggleShuffle() {
     shuffle.value = !shuffle.value
     setStorage('musicShuffle', shuffle.value)
+    syncTrayMusic()
+  }
+
+  /**
+   * v3.6.8：响应托盘菜单的音乐指令。
+   * 在 store 初始化末尾注册一次监听；指令只是转调已有动作，不改变原有逻辑。
+   */
+  function bindTrayMusicCommands(): void {
+    const api = window.electronAPI
+    if (!api?.onTrayMusicCommand) return
+    api.onTrayMusicCommand((command: string) => {
+      switch (command) {
+        case 'toggle': toggle(); break
+        case 'prev': prev(); break
+        case 'next': next(); break
+        case 'shuffle-on':
+          if (!shuffle.value) toggleShuffle()
+          break
+        case 'shuffle-off':
+          if (shuffle.value) toggleShuffle()
+          break
+        case 'desktop-lyric-on':
+          if (!desktopLyrics.value) toggleDesktopLyrics()
+          break
+        case 'desktop-lyric-off':
+          if (desktopLyrics.value) toggleDesktopLyrics()
+          break
+        default: break
+      }
+      syncTrayMusic()
+    })
   }
 
   /** v2.9.2：切换顶栏歌词显示 */
@@ -1625,6 +1734,10 @@ export const useMusicStore = defineStore('music', () => {
     lyricLines,
     currentLyricIndex,
     showLyrics,
+    // v3.6.8：桌面歌词（全局悬浮）
+    desktopLyrics,
+    toggleDesktopLyrics,
+    pushDesktopLyric,
     currentTime,
     duration,
     searchResults,

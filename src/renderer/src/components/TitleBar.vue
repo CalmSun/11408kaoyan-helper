@@ -108,6 +108,16 @@
                   <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 3 H10 M2 6 H8 M2 9 H6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
                   歌词
                 </button>
+                <!-- v3.6.8：桌面歌词（全局悬浮）开关 -->
+                <button
+                  class="mp-lyric-btn"
+                  :class="{ active: music.desktopLyrics }"
+                  :title="music.desktopLyrics ? '关闭桌面歌词' : '开启桌面歌词（全局显示）'"
+                  @click="music.toggleDesktopLyrics()"
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="2" width="10" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M3.2 6.4 H8.8" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M4.5 10.2 H7.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+                  桌面
+                </button>
               </div>
               <!-- 歌词显示 -->
               <div class="mp-lyrics" v-if="music.showLyrics && music.lyricLines.length > 0">
