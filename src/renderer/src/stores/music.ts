@@ -142,11 +142,17 @@ export const useMusicStore = defineStore('music', () => {
   audio.addEventListener('timeupdate', () => {
     currentTime.value = audio.currentTime
     updateLyricIndex()
+    // v3.6.7 性能修复：setPositionState 是跨进程 IPC，不在每次 timeupdate 逐次推送，
+    // 由 updateMediaSessionPosition 内部按 5 秒节流（Windows 会按 playbackRate 自行推进进度）
     updateMediaSessionPosition()
   })
   audio.addEventListener('loadedmetadata', () => {
     duration.value = audio.duration || 0
-    updateMediaSessionPosition()
+    updateMediaSessionPosition(true)
+  })
+  // 应用内拖动进度条 / 浮层 seek 后立即锚定新位置
+  audio.addEventListener('seeked', () => {
+    updateMediaSessionPosition(true)
   })
 
   // ── 系统媒体控制（SMTC）：把播放信息与操作同步到 Windows 媒体浮层 ──
@@ -170,11 +176,22 @@ export const useMusicStore = defineStore('music', () => {
     })
   }
 
-  /** 同步播放进度：让浮层进度条显示并支持拖动定位 */
-  function updateMediaSessionPosition() {
+  /**
+   * 同步播放进度：让浮层进度条显示并支持拖动定位。
+   * v3.6.7 性能修复：setPositionState 是 renderer → browser → Windows SMTC 的跨进程 IPC，
+   * 每次调用都要序列化状态并通知系统。Windows 会依据 playbackRate 自行推进进度，
+   * 无需跟随 timeupdate（约 4 次/秒）逐次推送；改为 5 秒节流 + 离散事件强制刷新。
+   */
+  const MS_POSITION_INTERVAL = 5000
+  let lastMsPositionPush = 0
+
+  function updateMediaSessionPosition(force = false) {
     if (!supportMediaSession() || !navigator.mediaSession.setPositionState) return
     const total = audio.duration
     if (!isFinite(total) || total <= 0) return
+    const now = Date.now()
+    if (!force && now - lastMsPositionPush < MS_POSITION_INTERVAL) return
+    lastMsPositionPush = now
     try {
       navigator.mediaSession.setPositionState({
         duration: total,
@@ -210,10 +227,11 @@ export const useMusicStore = defineStore('music', () => {
 
   audio.addEventListener('play', () => {
     if (supportMediaSession()) navigator.mediaSession.playbackState = 'playing'
-    updateMediaSessionPosition()
+    updateMediaSessionPosition(true)
   })
   audio.addEventListener('pause', () => {
     if (supportMediaSession()) navigator.mediaSession.playbackState = 'paused'
+    updateMediaSessionPosition(true)
   })
 
   function applyVolume() {

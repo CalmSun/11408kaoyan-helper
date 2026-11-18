@@ -1,3 +1,33 @@
+# v3.6.7 性能优化：修复 SMTC 导致的 CPU 占用过高（覆盖更新）
+
+## 0. 问题与根因
+
+用户反馈 3.6.7 使用时 CPU 占用明显偏高。对比 v3.6.6..v3.6.7 的实际 diff 可确认：唯一运行时增量就是 SMTC 那一批代码，3.6.6 没有该问题。
+
+根因在进度同步：updateMediaSessionPosition() 挂在 timeupdate 事件上，浏览器播放时约每 250ms 触发一次（约 4 次/秒）。每次调用 navigator.mediaSession.setPositionState() 都是一次 renderer -> browser 进程 -> Windows SMTC 的跨进程 IPC：要序列化 MediaPositionState、跨进程传递、再通知系统媒体会话刷新浮层时间轴。持续播放时等于每秒 4 次无谓的系统调用，累积成可观的 CPU 开销。
+
+## 1. 优化方案（只动进度上报，不碰其他功能）
+
+| 改动 | 说明 |
+| ---- | ---- |
+| 5 秒节流 | updateMediaSessionPosition() 增加 MS_POSITION_INTERVAL = 5000 与 lastMsPositionPush 时间戳；timeupdate 触发时距上次不足 5s 直接跳过。setPositionState 调用频率从约 4 次/秒降到约 0.2 次/秒，降幅约 95% |
+| 离散事件强制刷新 | play / pause / loadedmetadata / 新增的 seeked 事件用 updateMediaSessionPosition(true) 强制立即锚定，保证切歌、暂停、应用内拖动进度条后浮层位置准确 |
+| 依赖系统自行推进 | Windows SMTC 收到 playbackRate 后会按速率本地推进时间轴，无需逐 tick 推送，进度条依旧连续走动 |
+
+为什么不影响已有功能：元数据（标题/歌手/专辑/封面）、playbackState、全部媒体键回调（播放/暂停/停止/上一首/下一首/快进快退/seekto）、AUMID 均未改动；只把进度上报频率这一项从逐帧改为节流 + 事件锚定。此前实测的下一首/拖动到 60s/暂停行为由 seeked + 强制刷新继续覆盖，seekto 回调里调用 seek() 会触发 seeked，从而立即同步浮层。
+
+## 2. 验证
+
+- npx vue-tsc --noEmit 与 npx tsc -p tsconfig.node.json --noEmit 均 0 错误。
+- cmd 执行 scripts\build.cmd 构建通过。
+- 功能逐项核对：元数据/播放状态/8 个媒体键回调/清空重置/AUMID 全部保留（见下方 v3.6.7 首版说明）。
+
+## 3. 版本号为何仍是 3.6.7（覆盖更新）
+
+用户明确要求覆盖同步更新内容和版本号 3.6.7 到 GitHub。同一版本号内的性能修补属于同版修订，沿用 3.6.7：在原提交之上新增一个提交并 fast-forward push main（不改写已发布历史），删除并重建远端附注标签 v3.6.7 指向新提交，CI 会重出 3.6.7 安装包。注意：已安装 3.6.7 的用户因版本号未变，electron-updater 不会自动提示更新，需手动重装新版安装包。
+
+---
+
 # v3.6.7 更新：音乐播放接入 Windows 系统媒体控制（SMTC）
 
 ## 1. 做了什么
@@ -14,7 +44,7 @@
 | `metadata.artist` / `album` | 副标题；网易云在线曲目有值，本地曲目为空（未做 ID3 解析） |
 | `metadata.artwork` | 封面；在线曲目用网易云封面 URL |
 | `playbackState` | Playing / Paused；跟随 audio 元素的 play/pause/ended 事件 |
-| `setPositionState()` | 浮层进度条与剩余时间，跟随 timeupdate / loadedmetadata |
+| `setPositionState()` | 浮层进度条与剩余时间；5 秒节流 + 切歌/暂停/seek 强制锚定（见顶部性能优化） |
 | `setActionHandler()` | 播放、暂停、停止、上一首、下一首、快退、快进、拖动定位（`seekto`） |
 
 主进程只加了一行：`app.setAppUserModelId('com.kaoyan.helper')`（仅 win32，与 `build.appId` 对齐）。
