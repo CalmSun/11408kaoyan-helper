@@ -15,3 +15,9 @@ src/renderer/public/pdfjs/
 
 # 发布脚本用的临时提交信息（UTF-8，由 git -F 读取，不入库）
 .git-*.txt
+
+# 误展开的环境变量目录（非项目内容）
+%SystemDrive%/
+
+# 独立的油猴脚本项目（不属于考研助手仓库）
+rewards-auto/
