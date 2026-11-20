@@ -347,10 +347,41 @@ export const useMusicStore = defineStore('music', () => {
     return lines.sort((a, b) => a.time - b.time)
   }
 
+  /**
+   * v3.6.8：无逐字时间轴时的估算兜底。
+   * 按「本行到下一行」的时长把字符均分（空白权重更低），保证卡拉OK一定能逐字点亮。
+   * 有真实 yrc 数据的行不会被覆盖。
+   */
+  function estimateWords(lines: LyricLine[]): void {
+    for (let i = 0; i < lines.length; i++) {
+      const cur = lines[i]
+      if (cur.words && cur.words.length) continue
+      const text = cur.text
+      if (!text) continue
+      const next = lines[i + 1]
+      const end = next ? next.time : cur.time + Math.min(8, Math.max(2, text.length * 0.25))
+      const span = Math.max(0.6, end - cur.time)
+      const chars = Array.from(text)
+      const weights = chars.map(ch => (/\s/.test(ch) ? 0.35 : 1))
+      const total = weights.reduce((a, b) => a + b, 0) || 1
+      let t = cur.time
+      const words: LyricWord[] = []
+      for (let k = 0; k < chars.length; k++) {
+        const w = (weights[k] / total) * span
+        words.push({ time: t, duration: w, text: chars[k] })
+        t += w
+      }
+      cur.words = words
+    }
+  }
+
   /** v3.6.8：解析并合并翻译歌词（按时间就近匹配，容差 300ms） */
   function parseLyric(content: string, translation?: string): LyricLine[] {
     const lines = parseLrcLines(content)
-    if (!translation || lines.length === 0) return lines
+    if (!translation || lines.length === 0) {
+      estimateWords(lines)
+      return lines
+    }
     const transLines = parseLrcLines(translation)
     if (transLines.length === 0) return lines
     let j = 0
@@ -361,6 +392,7 @@ export const useMusicStore = defineStore('music', () => {
         line.trans = cand.text
       }
     }
+    estimateWords(lines)
     return lines
   }
 
@@ -450,6 +482,12 @@ export const useMusicStore = defineStore('music', () => {
     const cur = idx >= 0 ? lyricLines.value[idx] : undefined
     const line = cur ? cur.text : ''
     const nextLine = idx >= 0 && lyricLines.value[idx + 1] ? lyricLines.value[idx + 1].text : ''
+    // 关键：lyricLines 是 Vue 响应式数组，其元素与元素内的 words 都是 Proxy。
+    // 结构化克隆无法复制 Proxy（报 "An object could not be cloned."），
+    // 因此必须逐字段取出为纯对象再跨进程发送。
+    const plainWords = cur?.words
+      ? cur.words.map(w => ({ time: w.time, duration: w.duration, text: w.text }))
+      : undefined
     const payload = {
       line,
       trans: cur?.trans || '',
@@ -458,13 +496,18 @@ export const useMusicStore = defineStore('music', () => {
       playing: isPlaying.value,
       // 逐字时间轴与音频时间基准：歌词窗用本地时钟推进卡拉OK填充，无需按帧 IPC。
       // 基准取真实播放位置（而非行起始时间），暂停/恢复或拖动后填充进度不会错位。
-      words: cur?.words,
+      words: plainWords,
       lineTime: audio.currentTime
     }
-    const peer = payload.line + '\u0001' + payload.trans + '\u0001' + payload.next + '\u0001' + payload.title + '\u0001' + payload.playing + '\u0001' + (payload.words ? payload.words.length : 0)
+    const peer = payload.line + '\u0001' + payload.trans + '\u0001' + payload.next + '\u0001' + payload.title + '\u0001' + payload.playing + '\u0001' + (plainWords ? plainWords.length : 0)
     if (peer === lastDesktopPeer) return
     lastDesktopPeer = peer
-    api.sendLyricLine(payload)
+    // 兜底：任何序列化异常都不允许冒泡打断播放流程
+    try {
+      api.sendLyricLine(payload)
+    } catch {
+      lastDesktopPeer = null
+    }
   }
 
   /** 开启/关闭桌面歌词窗 */
