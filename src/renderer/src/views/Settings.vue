@@ -169,6 +169,65 @@
       </el-form>
     </GlassCard>
 
+    <!-- v3.6.8：桌面歌词窗显示设置（与托盘菜单共用同一份配置） -->
+    <GlassCard class="card setting-section" v-if="musicStore.desktopLyrics">
+      <h3 class="section-title">
+        <el-icon><Headset /></el-icon>
+        桌面歌词显示
+      </h3>
+      <el-form label-width="120px" style="max-width: 560px;">
+        <el-form-item label="字号">
+          <el-slider
+            :model-value="lyricCfg.fontSize"
+            :min="16" :max="40" :step="2"
+            style="width: 260px;"
+            @change="patchLyricConfig({ fontSize: $event })"
+          />
+          <span class="unit-desc">{{ lyricCfg.fontSize }} px</span>
+        </el-form-item>
+        <el-form-item label="文字颜色">
+          <div class="lyric-colors">
+            <button
+              v-for="c in LYRIC_COLORS"
+              :key="c.value"
+              class="lyric-color-dot"
+              :class="{ active: lyricCfg.color === c.value }"
+              :style="{ background: c.value }"
+              :title="c.label"
+              @click="patchLyricConfig({ color: c.value })"
+            />
+          </div>
+        </el-form-item>
+        <el-form-item label="不透明度">
+          <el-slider
+            :model-value="Math.round(lyricCfg.opacity * 100)"
+            :min="35" :max="100" :step="5"
+            style="width: 260px;"
+            @change="patchLyricConfig({ opacity: Number($event) / 100 })"
+          />
+          <span class="unit-desc">{{ Math.round(lyricCfg.opacity * 100) }}%</span>
+        </el-form-item>
+        <el-form-item label="对齐方式">
+          <el-radio-group :model-value="lyricCfg.align" @change="patchLyricConfig({ align: $event as 'left' | 'center' | 'right' })">
+            <el-radio-button value="left">左对齐</el-radio-button>
+            <el-radio-button value="center">居中</el-radio-button>
+            <el-radio-button value="right">右对齐</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="显示翻译">
+          <el-switch :model-value="lyricCfg.showTranslation" @change="patchLyricConfig({ showTranslation: !!$event })" />
+          <span class="unit-desc">在线歌曲的外文歌词会显示中文翻译</span>
+        </el-form-item>
+        <el-form-item label="显示下一句">
+          <el-switch :model-value="lyricCfg.showNext" @change="patchLyricConfig({ showNext: !!$event })" />
+        </el-form-item>
+        <el-form-item label="锁定位置">
+          <el-switch :model-value="lyricCfg.locked" @change="patchLyricConfig({ locked: !!$event })" />
+          <span class="unit-desc">锁定时鼠标穿透，不遮挡桌面操作；解锁后可拖动歌词窗定位</span>
+        </el-form-item>
+      </el-form>
+    </GlassCard>
+
     <!-- 数据管理 -->
     <GlassCard class="card setting-section">
       <h3 class="section-title">
@@ -397,6 +456,37 @@ const appVersion = __APP_VERSION__
 
 // v3.3.3：在线歌曲音质等级
 const musicQualityLevel = ref(musicStore.qualityLevel)
+
+// v3.6.8：桌面歌词窗配置（由主进程持有并持久化，托盘菜单与设置页共用）
+const LYRIC_COLORS = [
+  { value: '#ffffff', label: '白色' },
+  { value: '#7dd3fc', label: '天蓝' },
+  { value: '#f9a8d4', label: '粉色' },
+  { value: '#86efac', label: '薄荷' },
+  { value: '#fde047', label: '暖黄' },
+  { value: '#fca5a5', label: '珊瑚' }
+] as const
+
+const lyricCfg = ref<LyricWinConfig>({
+  fontSize: 26, color: '#ffffff', opacity: 1, align: 'center',
+  showTranslation: true, showNext: true, locked: false
+})
+
+async function loadLyricConfig() {
+  try {
+    const cfg = await window.electronAPI?.getLyricConfig?.()
+    if (cfg) lyricCfg.value = cfg
+  } catch { /* ignore */ }
+}
+
+async function patchLyricConfig(patch: Partial<LyricWinConfig>) {
+  try {
+    const cfg = await window.electronAPI?.setLyricConfig?.(patch)
+    if (cfg) lyricCfg.value = cfg
+  } catch { /* ignore */ }
+}
+
+onMounted(() => { loadLyricConfig() })
 // v3.6.8：桌面歌词由 store 的 toggle 统一处理（含窗口开关与持久化）
 function handleDesktopLyricsChange(value: string | number | boolean) {
   const want = !!value
@@ -944,6 +1034,17 @@ onMounted(() => {
   font-size: 14px;
   color: var(--mo-text-2);
 }
+
+/* v3.6.8：桌面歌词颜色选择 */
+.lyric-colors { display: flex; gap: 8px; align-items: center; }
+.lyric-color-dot {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.35);
+  cursor: pointer; padding: 0;
+  transition: transform .15s ease, border-color .15s ease;
+}
+.lyric-color-dot:hover { transform: scale(1.12); }
+.lyric-color-dot.active { border-color: var(--el-color-primary); box-shadow: 0 0 0 2px var(--el-color-primary-light-7); }
 
 .unit-desc {
   margin-left: 10px;

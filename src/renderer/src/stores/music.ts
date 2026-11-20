@@ -21,6 +21,21 @@ interface NetEaseSong {
   cover: string
 }
 
+/** v3.6.8：逐字歌词中的一个字/词（时间与持续时长均为秒） */
+export interface LyricWord {
+  time: number
+  duration: number
+  text: string
+}
+
+/** v3.6.8：一行歌词，可携带翻译与逐字时间轴 */
+export interface LyricLine {
+  time: number
+  text: string
+  trans?: string
+  words?: LyricWord[]
+}
+
 /** 可识别的音频扩展名 */
 const AUDIO_EXTS = ['mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'wma', 'opus']
 
@@ -47,8 +62,24 @@ export const useMusicStore = defineStore('music', () => {
     setStorage('musicQualityLevel', level)
   }
 
-  // v2.8.2：歌词相关状态
-  const lyricLines = ref<{ time: number; text: string }[]>([])
+  // v2.8.2：歌词相关状态（v3.6.8 升级为支持翻译与逐字）
+  const lyricLines = ref<LyricLine[]>([])
+  // v3.6.8：歌词显示设置（持久化）
+  const lyricFontSize = ref<number>(getStorage('musicLyricFontSize', 22))
+  const lyricFocusMode = ref<boolean>(getStorage('musicLyricFocus', true))
+  const lyricShowTranslation = ref<boolean>(getStorage('musicLyricTrans', true))
+  function setLyricFontSize(size: number) {
+    lyricFontSize.value = Math.min(34, Math.max(14, Math.round(size)))
+    setStorage('musicLyricFontSize', lyricFontSize.value)
+  }
+  function toggleLyricFocus() {
+    lyricFocusMode.value = !lyricFocusMode.value
+    setStorage('musicLyricFocus', lyricFocusMode.value)
+  }
+  function toggleLyricTranslation() {
+    lyricShowTranslation.value = !lyricShowTranslation.value
+    setStorage('musicLyricTrans', lyricShowTranslation.value)
+  }
   const currentLyricIndex = ref(-1)
   // v2.9.2：顶栏歌词显示开关（持久化）
   const showLyrics = ref<boolean>(getStorage('musicShowLyrics', true))
@@ -164,6 +195,7 @@ export const useMusicStore = defineStore('music', () => {
   // 应用内拖动进度条 / 浮层 seek 后立即锚定新位置
   audio.addEventListener('seeked', () => {
     updateMediaSessionPosition(true)
+    pushDesktopLyric(true)
   })
 
   // ── 系统媒体控制（SMTC）：把播放信息与操作同步到 Windows 媒体浮层 ──
@@ -269,24 +301,67 @@ export const useMusicStore = defineStore('music', () => {
     return AUDIO_EXTS.includes(ext)
   }
 
-  function parseLyric(content: string): { time: number; text: string }[] {
-    const lines: { time: number; text: string }[] = []
-    const regex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/
-    const rawLines = content.split('\n')
-    for (const line of rawLines) {
-      const match = line.match(regex)
-      if (match) {
-        const min = parseInt(match[1], 10)
-        const sec = parseInt(match[2], 10)
-        const ms = match[3] ? parseInt(match[3].padEnd(3, '0'), 10) : 0
-        const time = min * 60 + sec + ms / 1000
-        const text = match[4].trim()
-        if (text) {
-          lines.push({ time, text })
+  /**
+   * v3.6.8：解析歌词，同时支持两种格式
+   * - 标准 LRC：`[mm:ss.xx]文本`
+   * - 逐字 yrc：`[起始ms,时长ms](起始ms,时长ms,0)字(…)`（网易云逐字歌词）
+   */
+  function parseLrcLines(content: string): LyricLine[] {
+    const lines: LyricLine[] = []
+    if (!content) return lines
+    for (const raw of content.split('\n')) {
+      const text = raw.trim()
+      if (!text) continue
+      // 逐字 yrc
+      const ym = text.match(/^\[(\d+),(\d+)\](.*)$/)
+      if (ym) {
+        const start = parseInt(ym[1], 10) / 1000
+        const body = ym[3] || ''
+        const words: LyricWord[] = []
+        let plain = ''
+        const wr = /\((\d+),(\d+)(?:,[^)]*)?\)([^()]*)/g
+        let wm: RegExpExecArray | null
+        while ((wm = wr.exec(body)) !== null) {
+          const wText = wm[3]
+          if (!wText) continue
+          words.push({
+            time: parseInt(wm[1], 10) / 1000,
+            duration: parseInt(wm[2], 10) / 1000,
+            text: wText
+          })
+          plain += wText
         }
+        if (plain.trim()) lines.push({ time: start, text: plain.trim(), words })
+        continue
+      }
+      // 标准 LRC
+      const lm = text.match(/^\[(\d{1,2}):(\d{2})(?:[.:](\d{2,3}))?\]\s*(.*)$/)
+      if (lm) {
+        const min = parseInt(lm[1], 10)
+        const sec = parseInt(lm[2], 10)
+        const ms = lm[3] ? parseInt(lm[3].padEnd(3, '0'), 10) : 0
+        const body = (lm[4] || '').trim()
+        if (body) lines.push({ time: min * 60 + sec + ms / 1000, text: body })
       }
     }
     return lines.sort((a, b) => a.time - b.time)
+  }
+
+  /** v3.6.8：解析并合并翻译歌词（按时间就近匹配，容差 300ms） */
+  function parseLyric(content: string, translation?: string): LyricLine[] {
+    const lines = parseLrcLines(content)
+    if (!translation || lines.length === 0) return lines
+    const transLines = parseLrcLines(translation)
+    if (transLines.length === 0) return lines
+    let j = 0
+    for (const line of lines) {
+      while (j < transLines.length && transLines[j].time < line.time - 0.3) j++
+      const cand = transLines[j]
+      if (cand && Math.abs(cand.time - line.time) <= 0.3 && cand.text !== line.text) {
+        line.trans = cand.text
+      }
+    }
+    return lines
   }
 
   async function loadLyric() {
@@ -303,8 +378,12 @@ export const useMusicStore = defineStore('music', () => {
       if (api?.neteaseLyric) {
         try {
           const res = await api.neteaseLyric(track.id)
-          if (res.success && res.lyric) {
-            lyricLines.value = parseLyric(res.lyric)
+          if (res.success && (res.yrc || res.lyric)) {
+            // v3.6.8：优先使用逐字歌词（yrc），其翻译为 ytlrc；否则回退普通 LRC + tlyric
+            const useYrc = !!(res.yrc && res.yrc.trim())
+            lyricLines.value = useYrc
+              ? parseLyric(res.yrc as string, res.ytlrc)
+              : parseLyric(res.lyric as string, res.tlyric)
             currentLyricIndex.value = -1
             return
           }
@@ -368,15 +447,21 @@ export const useMusicStore = defineStore('music', () => {
     if (force) lastDesktopPeer = null
     const track = currentTrack.value
     const idx = currentLyricIndex.value
-    const line = idx >= 0 && lyricLines.value[idx] ? lyricLines.value[idx].text : ''
+    const cur = idx >= 0 ? lyricLines.value[idx] : undefined
+    const line = cur ? cur.text : ''
     const nextLine = idx >= 0 && lyricLines.value[idx + 1] ? lyricLines.value[idx + 1].text : ''
     const payload = {
       line,
+      trans: cur?.trans || '',
       next: nextLine,
       title: track ? track.name.replace(/\.[^.]+$/, '') : '',
-      playing: isPlaying.value
+      playing: isPlaying.value,
+      // 逐字时间轴与音频时间基准：歌词窗用本地时钟推进卡拉OK填充，无需按帧 IPC。
+      // 基准取真实播放位置（而非行起始时间），暂停/恢复或拖动后填充进度不会错位。
+      words: cur?.words,
+      lineTime: audio.currentTime
     }
-    const peer = payload.line + '\u0001' + payload.next + '\u0001' + payload.title + '\u0001' + payload.playing
+    const peer = payload.line + '\u0001' + payload.trans + '\u0001' + payload.next + '\u0001' + payload.title + '\u0001' + payload.playing + '\u0001' + (payload.words ? payload.words.length : 0)
     if (peer === lastDesktopPeer) return
     lastDesktopPeer = peer
     api.sendLyricLine(payload)

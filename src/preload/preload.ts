@@ -95,6 +95,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── v3.6.8：桌面歌词窗 + 托盘音乐菜单 ──
   setDesktopLyrics: (on: boolean) => ipcRenderer.invoke('lyrics:set-visible', on),
   getDesktopLyrics: () => ipcRenderer.invoke('lyrics:is-visible'),
+  getLyricConfig: () => ipcRenderer.invoke('lyrics:get-config'),
+  setLyricConfig: (patch: Record<string, unknown>) => ipcRenderer.invoke('lyrics:set-config', patch),
   sendLyricLine: (payload: { line: string; next?: string; title?: string; playing?: boolean }) =>
     ipcRenderer.send('lyrics:update', payload),
   syncTrayMusic: (state: { hasTrack: boolean; playing: boolean; shuffle: boolean; title: string; desktopLyric?: boolean }) =>

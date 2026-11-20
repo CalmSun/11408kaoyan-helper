@@ -17,6 +17,17 @@ interface MaterialNode {
   size?: number
 }
 
+/** v3.6.8：桌面歌词窗配置 */
+interface LyricWinConfig {
+  fontSize: number
+  color: string
+  opacity: number
+  align: 'left' | 'center' | 'right'
+  showTranslation: boolean
+  showNext: boolean
+  locked: boolean
+}
+
 interface ElectronAPI {
   exportData: (data: string) => Promise<{ success: boolean; path?: string }>
   importData: () => Promise<{ success: boolean; data?: string }>
@@ -91,6 +102,8 @@ interface ElectronAPI {
     success: boolean
     lyric?: string
     tlyric?: string
+    yrc?: string
+    ytlrc?: string
     message?: string
   }>
   // v2.9.2：网易云登录与歌单
@@ -259,6 +272,8 @@ interface ElectronAPI {
   // v3.6.8：桌面歌词窗 + 托盘音乐菜单
   setDesktopLyrics: (on: boolean) => Promise<{ success: boolean; visible: boolean }>
   getDesktopLyrics: () => Promise<boolean>
+  getLyricConfig: () => Promise<LyricWinConfig>
+  setLyricConfig: (patch: Partial<LyricWinConfig>) => Promise<LyricWinConfig>
   sendLyricLine: (payload: { line: string; next?: string; title?: string; playing?: boolean }) => void
   syncTrayMusic: (state: { hasTrack: boolean; playing: boolean; shuffle: boolean; title: string; desktopLyric?: boolean }) => void
   onTrayMusicCommand: (cb: (command: string) => void) => void

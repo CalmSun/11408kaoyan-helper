@@ -386,9 +386,77 @@ function buildTrayMenu(): void {
     { type: 'separator' },
     {
       label: '桌面歌词',
-      type: 'checkbox',
-      checked: trayMusic.desktopLyric,
-      click: (item) => sendMusicCommand(item.checked ? 'desktop-lyric-on' : 'desktop-lyric-off')
+      submenu: [
+        {
+          label: '显示桌面歌词',
+          type: 'checkbox',
+          checked: trayMusic.desktopLyric,
+          click: (item) => sendMusicCommand(item.checked ? 'desktop-lyric-on' : 'desktop-lyric-off')
+        },
+        {
+          label: '锁定（鼠标穿透）',
+          type: 'checkbox',
+          checked: lyricConfig.locked,
+          click: (item) => updateLyricConfig({ locked: item.checked })
+        },
+        { type: 'separator' },
+        {
+          label: '显示翻译',
+          type: 'checkbox',
+          checked: lyricConfig.showTranslation,
+          click: (item) => updateLyricConfig({ showTranslation: item.checked })
+        },
+        {
+          label: '显示下一句',
+          type: 'checkbox',
+          checked: lyricConfig.showNext,
+          click: (item) => updateLyricConfig({ showNext: item.checked })
+        },
+        { type: 'separator' },
+        {
+          label: '字号',
+          submenu: [16, 20, 24, 26, 28, 32, 36, 40].map(size => ({
+            label: String(size),
+            type: 'radio' as const,
+            checked: lyricConfig.fontSize === size,
+            click: () => updateLyricConfig({ fontSize: size })
+          }))
+        },
+        {
+          label: '对齐',
+          submenu: ([['left', '左对齐'], ['center', '居中'], ['right', '右对齐']] as const).map(([value, label]) => ({
+            label,
+            type: 'radio' as const,
+            checked: lyricConfig.align === value,
+            click: () => updateLyricConfig({ align: value })
+          }))
+        },
+        {
+          label: '颜色',
+          submenu: ([
+            ['#ffffff', '白色'],
+            ['#7dd3fc', '天蓝'],
+            ['#f9a8d4', '粉色'],
+            ['#86efac', '薄荷'],
+            ['#fde047', '暖黄'],
+            ['#fca5a5', '珊瑚']
+          ] as const).map(([value, label]) => ({
+            label,
+            type: 'radio' as const,
+            checked: lyricConfig.color === value,
+            click: () => updateLyricConfig({ color: value })
+          }))
+        },
+        {
+          label: '不透明度',
+          submenu: ([['100%', 1], ['85%', 0.85], ['70%', 0.7], ['55%', 0.55]] as const).map(([label, value]) => ({
+            label,
+            type: 'radio' as const,
+            checked: Math.abs(lyricConfig.opacity - value) < 0.01,
+            click: () => updateLyricConfig({ opacity: value })
+          }))
+        }
+      ]
     },
     { type: 'separator' },
     {
@@ -443,11 +511,89 @@ function createLyricsWindow(): BrowserWindow {
   return win
 }
 
-/** 歌词窗默认位置：屏幕底部居中，宽度取主屏 60% */
+// ── v3.6.8：桌面歌词窗配置（持久化，托盘菜单与设置页共享同一份） ──
+interface LyricWinConfig {
+  fontSize: number                 // 字号 16–40
+  color: string                    // 文字颜色
+  opacity: number                  // 整体不透明度 0.35–1
+  align: 'left' | 'center' | 'right' // 对齐方式
+  showTranslation: boolean         // 显示翻译行
+  showNext: boolean                // 显示下一句
+  locked: boolean                  // true = 鼠标穿透（不挡桌面操作，不可拖动）
+}
+
+const LYRIC_WIN_CONFIG = path.join(app.getPath('userData'), 'lyrics-window.json')
+const DEFAULT_LYRIC_CONFIG: LyricWinConfig = {
+  fontSize: 26,
+  color: '#ffffff',
+  opacity: 1,
+  align: 'center',
+  showTranslation: true,
+  showNext: true,
+  locked: false
+}
+
+function loadLyricConfig(): LyricWinConfig {
+  try {
+    if (fs.existsSync(LYRIC_WIN_CONFIG)) {
+      const raw = JSON.parse(fs.readFileSync(LYRIC_WIN_CONFIG, 'utf-8')) as Partial<LyricWinConfig>
+      return { ...DEFAULT_LYRIC_CONFIG, ...raw }
+    }
+  } catch { /* 配置损坏回退默认值 */ }
+  return { ...DEFAULT_LYRIC_CONFIG }
+}
+
+const lyricConfig: LyricWinConfig = loadLyricConfig()
+
+function saveLyricConfig(): void {
+  try {
+    fs.writeFileSync(LYRIC_WIN_CONFIG, JSON.stringify(lyricConfig, null, 2), 'utf-8')
+  } catch (err) {
+    console.error('Failed to save lyric window config:', err)
+  }
+}
+
+/** 把配置推给歌词窗并应用鼠标穿透 */
+function applyLyricConfig(): void {
+  if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    // locked=true 时整窗鼠标穿透：不拦截桌面点击，也无法拖动定位
+    lyricsWindow.setIgnoreMouseEvents(lyricConfig.locked, { forward: true })
+    lyricsWindow.webContents.send('lyrics:config', lyricConfig)
+  }
+}
+
+/** 合并更新配置并持久化，随后广播给歌词窗与托盘菜单 */
+function updateLyricConfig(patch: Partial<LyricWinConfig>): LyricWinConfig {
+  if (typeof patch.fontSize === 'number') {
+    lyricConfig.fontSize = Math.min(40, Math.max(16, Math.round(patch.fontSize)))
+  }
+  if (typeof patch.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(patch.color)) {
+    lyricConfig.color = patch.color
+  }
+  if (typeof patch.opacity === 'number') {
+    lyricConfig.opacity = Math.min(1, Math.max(0.35, patch.opacity))
+  }
+  if (patch.align === 'left' || patch.align === 'center' || patch.align === 'right') {
+    lyricConfig.align = patch.align
+  }
+  if (typeof patch.showTranslation === 'boolean') lyricConfig.showTranslation = patch.showTranslation
+  if (typeof patch.showNext === 'boolean') lyricConfig.showNext = patch.showNext
+  if (typeof patch.locked === 'boolean') lyricConfig.locked = patch.locked
+  saveLyricConfig()
+  applyLyricConfig()
+  buildTrayMenu()
+  return lyricConfig
+}
+
+/** 歌词窗几何：记住上次位置，否则屏幕底部居中 */
 function lyricsWindowBounds(): { width: number; height: number; x: number; y: number } {
   const area = screen.getPrimaryDisplay().workAreaSize
   const width = Math.max(520, Math.round(area.width * 0.6))
-  const height = 132
+  const height = 150
+  // 位置记忆：上次关闭时的位置存到配置旁的 .pos 字段更简单——这里用内存变量即可
+  if (lastLyricBounds) {
+    return { width: lastLyricBounds.width, height: lastLyricBounds.height, x: lastLyricBounds.x, y: lastLyricBounds.y }
+  }
   return {
     width,
     height,
@@ -456,11 +602,16 @@ function lyricsWindowBounds(): { width: number; height: number; x: number; y: nu
   }
 }
 
+// 记住用户拖动后的位置（会话内有效）
+let lastLyricBounds: { width: number; height: number; x: number; y: number } | null = null
+
 /** v3.6.8：显示/隐藏桌面歌词窗 */
 function setDesktopLyricsVisible(on: boolean): void {
   if (on) {
     if (!lyricsWindow || lyricsWindow.isDestroyed()) {
       lyricsWindow = createLyricsWindow()
+      // 新窗口创建后按其加载状态应用配置（ready 时再推一次）
+      lyricsWindow.webContents.once('did-finish-load', () => applyLyricConfig())
     }
     lyricsWindow.once('ready-to-show', () => {
       if (lyricsWindow && !lyricsWindow.isDestroyed()) lyricsWindow.showInactive()
@@ -469,6 +620,8 @@ function setDesktopLyricsVisible(on: boolean): void {
       lyricsWindow.showInactive()
     }
   } else if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    const b = lyricsWindow.getBounds()
+    lastLyricBounds = { width: b.width, height: b.height, x: b.x, y: b.y }
     lyricsWindow.hide()
   }
   trayMusic.desktopLyric = on
@@ -482,17 +635,30 @@ ipcMain.handle('lyrics:set-visible', (_e, on: boolean) => {
 
 ipcMain.handle('lyrics:is-visible', () => trayMusic.desktopLyric)
 
-// 渲染进程把“当前歌词行 + 曲目信息”推给歌词窗（仅在歌词行变化时调用，避免高频 IPC）
-ipcMain.on('lyrics:update', (_e, payload: { line: string; next?: string; title?: string; playing?: boolean }) => {
+ipcMain.handle('lyrics:get-config', () => lyricConfig)
+
+ipcMain.handle('lyrics:set-config', (_e, patch: Partial<LyricWinConfig>) => updateLyricConfig(patch || {}))
+
+// 渲染进程把当前歌词行、翻译、下一句、逐字时间轴推给歌词窗（仅在变化时调用）
+ipcMain.on('lyrics:update', (_e, payload: {
+  line: string
+  trans?: string
+  next?: string
+  title?: string
+  playing?: boolean
+  words?: { time: number; duration: number; text: string }[]
+  lineTime?: number
+}) => {
   trayLyricText = payload?.line || ''
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     lyricsWindow.webContents.send('lyrics:render', payload)
   }
 })
 
-// 歌词窗自绘完成后告知可用
+// 歌词窗自绘完成后告知可用：补发当前行与配置
 ipcMain.on('lyrics:ready', () => {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
+    lyricsWindow.webContents.send('lyrics:config', lyricConfig)
     lyricsWindow.webContents.send('lyrics:render', { line: trayLyricText, playing: trayMusic.playing })
   }
 })
@@ -1540,13 +1706,28 @@ ipcMain.handle('netease:song-url', async (_e, ids: number[], level?: string) => 
 
 ipcMain.handle('netease:lyric', async (_e, id: number) => {
   try {
+    // v3.6.8：lv/kv/tv 取普通歌词与翻译，yv/ytv 取逐字歌词（yrc）与其翻译
     const data = await neteaseSmartRequest('/song/lyric', {
       id,
       lv: -1,
       kv: -1,
-      tv: -1
-    }) as { lrc?: { lyric?: string }; tlyric?: { lyric?: string } }
-    return { success: true, lyric: data.lrc?.lyric || '', tlyric: data.tlyric?.lyric || '' }
+      tv: -1,
+      yv: -1,
+      ytv: -1
+    }) as {
+      lrc?: { lyric?: string }
+      tlyric?: { lyric?: string }
+      yrc?: { lyric?: string }
+      ytlrc?: { lyric?: string }
+      yromalrc?: { lyric?: string }
+    }
+    return {
+      success: true,
+      lyric: data.lrc?.lyric || '',
+      tlyric: data.tlyric?.lyric || '',
+      yrc: data.yrc?.lyric || '',
+      ytlrc: data.ytlrc?.lyric || ''
+    }
   } catch (err) {
     return { success: false, lyric: '', tlyric: '', message: String(err) }
   }
