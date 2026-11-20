@@ -161,7 +161,8 @@
     if (typeof p.next === 'string') state.next = p.next
     if (typeof p.title === 'string') state.title = p.title
     if (typeof p.lineTime === 'number') state.lineTime = p.lineTime
-    if (Array.isArray(p.words)) state.words = p.words
+    // 显式覆盖：该行没有逐字数据时必须清空，否则会残留上一行的时间轴
+    state.words = Array.isArray(p.words) && p.words.length ? p.words : null
 
     var text = state.line
     var key = text + '\u0001' + (state.words ? state.words.length : 0) + '\u0001' + state.playing

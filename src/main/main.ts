@@ -640,6 +640,16 @@ ipcMain.handle('lyrics:get-config', () => lyricConfig)
 ipcMain.handle('lyrics:set-config', (_e, patch: Partial<LyricWinConfig>) => updateLyricConfig(patch || {}))
 
 // 渲染进程把当前歌词行、翻译、下一句、逐字时间轴推给歌词窗（仅在变化时调用）
+let lastLyricPayload: {
+  line: string
+  trans?: string
+  next?: string
+  title?: string
+  playing?: boolean
+  words?: { time: number; duration: number; text: string }[]
+  lineTime?: number
+} | null = null
+
 ipcMain.on('lyrics:update', (_e, payload: {
   line: string
   trans?: string
@@ -650,6 +660,7 @@ ipcMain.on('lyrics:update', (_e, payload: {
   lineTime?: number
 }) => {
   trayLyricText = payload?.line || ''
+  lastLyricPayload = payload
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     lyricsWindow.webContents.send('lyrics:render', payload)
   }
@@ -659,7 +670,8 @@ ipcMain.on('lyrics:update', (_e, payload: {
 ipcMain.on('lyrics:ready', () => {
   if (lyricsWindow && !lyricsWindow.isDestroyed()) {
     lyricsWindow.webContents.send('lyrics:config', lyricConfig)
-    lyricsWindow.webContents.send('lyrics:render', { line: trayLyricText, playing: trayMusic.playing })
+    // 窗口重建后补发最后一次完整 payload，避免丢失逐字时间轴
+    lyricsWindow.webContents.send('lyrics:render', lastLyricPayload || { line: trayLyricText, playing: trayMusic.playing })
   }
 })
 
